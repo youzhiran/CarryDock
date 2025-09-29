@@ -689,12 +689,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
         .watch<DeveloperOptionsProvider>()
         .enabled;
 
-    final typography = FluentTheme.of(context).typography;
+  final typography = FluentTheme.of(context).typography;
 
-    final page = ScaffoldPage.scrollable(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      header: PageHeader(title: Text('设置', style: typography.title)),
-      children: [
+  final page = ScaffoldPage.scrollable(
+    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+    header: PageHeader(title: Text('设置', style: typography.title)),
+    children: [
+        // 开发阶段提示：如遇异常请删除配置文件
+        InfoBar(
+          title: const Text('开发提示'),
+          content: const Text('应用当前处于开发阶段，更新不考虑旧版兼容性，若出现异常，请删除配置文件后重启应用。'),
+          severity: InfoBarSeverity.warning,
+        ),
+        const SizedBox(height: 12),
         _buildSectionHeader(context, '存储配置'),
         const SizedBox(height: 12),
         InfoLabel(

@@ -1,9 +1,9 @@
 import 'dart:io';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:carrydock/models/software.dart';
 import 'package:carrydock/services/archive_extractor.dart';
-import 'package:carrydock/services/json_storage_service.dart';
 import 'package:carrydock/services/settings_service.dart';
 import 'package:carrydock/utils/error_handler.dart';
 import 'package:carrydock/utils/logger.dart';
@@ -109,10 +109,10 @@ class InstallPathNotConfiguredException implements Exception {
 
 class SoftwareService {
   static const String _defaultArchiveFolderName = '~archives';
-  static const String _softwareListKey = 'software_list';
+  static const String _softwareListFileName = 'software_list.json';
+  static const String _softwareListLockFileName = 'software_list.lock';
 
   final SettingsService _settingsService = SettingsService();
-  final JsonStorageService _storageService = JsonStorageService();
   final Uuid _uuid = const Uuid();
   final ErrorHandler? errorHandler;
 
@@ -145,14 +145,56 @@ class SoftwareService {
     return archivesDir;
   }
 
+  /// 获取位于归档目录中的软件列表文件路径。
+  Future<File> get _softwareListFile async {
+    final dir = await _archivesDir;
+    return File(p.join(dir.path, _softwareListFileName));
+  }
+
+  /// 获取软件列表锁文件路径。
+  Future<File> get _softwareListLockFile async {
+    final dir = await _archivesDir;
+    final file = File(p.join(dir.path, _softwareListLockFileName));
+    if (!await file.exists()) {
+      await file.create(recursive: true);
+    }
+    return file;
+  }
+
+  /// 在软件列表文件上加独占锁，序列化并发读写。
+  Future<T> _withSoftwareListLock<T>(Future<T> Function() action) async {
+    RandomAccessFile? raf;
+    try {
+      final lockFile = await _softwareListLockFile;
+      raf = await lockFile.open(mode: FileMode.write);
+      await raf.lock(FileLock.exclusive);
+      return await action();
+    } finally {
+      try {
+        await raf?.unlock();
+      } catch (_) {}
+      await raf?.close();
+    }
+  }
+
   Future<List<Software>> getSoftwareList() async {
     logger.i('开始获取软件列表...');
     try {
       final List<Software> managedSoftware = await _loadManagedSoftware();
 
+      // 同步运行时状态：归档是否存在、安装目录是否存在
       for (final software in managedSoftware) {
         final archiveFile = File(software.archivePath);
         software.archiveExists = await archiveFile.exists();
+
+        // 若安装目录已被删除，则将其标记为未知安装，提示用户处理残留归档/记录
+        if (software.installPath.isNotEmpty) {
+          final installDir = Directory(software.installPath);
+          final installExists = await installDir.exists();
+          if (!installExists) {
+            software.status = SoftwareStatus.unknownInstall;
+          }
+        }
       }
 
       final installPath = await _settingsService.getInstallPath();
@@ -198,6 +240,12 @@ class SoftwareService {
         final entities = await archivesDir.list().toList();
         for (final entity in entities) {
           if (entity is File) {
+            // 忽略内部维护文件，避免被识别为未知归档
+            final base = p.basename(entity.path).toLowerCase();
+            if (base == _softwareListFileName.toLowerCase() ||
+                base == _softwareListLockFileName.toLowerCase()) {
+              continue;
+            }
             final isManaged = managedSoftware.any(
               (s) => p.equals(s.archivePath, entity.path),
             );
@@ -228,15 +276,20 @@ class SoftwareService {
   }
 
   Future<void> _saveSoftwareList(List<Software> softwareList) async {
-    final managedSoftware =
-        softwareList.where((s) => s.status == SoftwareStatus.managed).toList()
-          ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    final managedSoftware = softwareList
+        .where((s) => s.status == SoftwareStatus.managed)
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
     for (var i = 0; i < managedSoftware.length; i++) {
       managedSoftware[i].sortOrder = i;
     }
     try {
-      final jsonList = managedSoftware.map((s) => s.toJson()).toList();
-      await _storageService.setValue(_softwareListKey, jsonList);
+      final file = await _softwareListFile;
+      final data = managedSoftware.map((s) => s.toJson()).toList();
+      await _withSoftwareListLock(() async {
+        const encoder = JsonEncoder.withIndent('  ');
+        await file.writeAsString(encoder.convert(data));
+      });
     } catch (e, s) {
       logger.e('保存软件列表失败', error: e, stackTrace: s);
       errorHandler?.handleError(e, s);
@@ -912,19 +965,26 @@ class SoftwareService {
 
   Future<List<Software>> _loadManagedSoftware() async {
     try {
-      final jsonList = await _storageService.getValue<List<dynamic>>(
-        _softwareListKey,
-      );
-      if (jsonList == null) {
-        return [];
+      final file = await _softwareListFile;
+      if (await file.exists()) {
+        return await _withSoftwareListLock(() async {
+          final content = await file.readAsString();
+          if (content.trim().isNotEmpty) {
+            final decoded = json.decode(content);
+            if (decoded is List) {
+              final softwareList = decoded
+                  .map((e) => Software.fromJson(Map<String, dynamic>.from(e)))
+                  .toList();
+              for (var i = 0; i < softwareList.length; i++) {
+                softwareList[i].sortOrder = i;
+              }
+              return softwareList;
+            }
+          }
+          return <Software>[];
+        });
       }
-      final softwareList = jsonList
-          .map((json) => Software.fromJson(json))
-          .toList();
-      for (var i = 0; i < softwareList.length; i++) {
-        softwareList[i].sortOrder = i;
-      }
-      return softwareList;
+      return [];
     } catch (e, s) {
       logger.e('读取托管软件列表失败', error: e, stackTrace: s);
       rethrow;
