@@ -18,6 +18,7 @@ class SoftwareListTile extends StatefulWidget {
   final VoidCallback onChangeExecutable;
   final VoidCallback onLaunch;
   final ValueChanged<String> onLaunchAlternative;
+  final VoidCallback? onRehost;
   final SoftwareTileDisplay displayStyle;
   final bool isReorderMode;
 
@@ -28,6 +29,7 @@ class SoftwareListTile extends StatefulWidget {
     required this.onChangeExecutable,
     required this.onLaunch,
     required this.onLaunchAlternative,
+    this.onRehost,
     this.displayStyle = SoftwareTileDisplay.list,
     this.isReorderMode = false,
   });
@@ -48,6 +50,30 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
   List<String> _availableExecutables = const [];
   bool _isContextMenuActive = false;
   bool _isGridTileHovered = false;
+
+  /// 构建归档存在状态的小徽章，统一高度并居中，确保与右侧图标按钮上下对齐。
+  Widget _buildArchiveStatusPill({required bool exists, String? tooltip}) {
+    final pill = ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 28),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: (exists ? Colors.green : Colors.red).withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Icon(
+          FluentIcons.archive,
+          size: 14,
+          color: exists ? Colors.green : Colors.red,
+        ),
+      ),
+    );
+    if (tooltip != null && tooltip.isNotEmpty) {
+      return Tooltip(message: tooltip, child: pill);
+    }
+    return pill;
+  }
 
   @override
   void initState() {
@@ -427,8 +453,9 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
       required String tooltip,
       required VoidCallback? onPressed,
       bool isDestructive = false,
+      Color? color,
     }) {
-      final Color? accentColor = isDestructive ? Colors.red : null;
+      final Color? accentColor = isDestructive ? Colors.red : color;
       return Tooltip(
         message: tooltip,
         child: IconButton(
@@ -528,40 +555,54 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
           : Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (widget.software.status == SoftwareStatus.managed) ...[
-                  Tooltip(
-                    message: widget.software.archiveExists
-                        ? '归档文件存在'
-                        : '归档文件不存在',
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: widget.software.archiveExists
-                            ? Colors.green.withValues(alpha: 0.12)
-                            : Colors.red.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Icon(
-                        FluentIcons.archive,
-                        color: widget.software.archiveExists
-                            ? Colors.green
-                            : Colors.red,
+                if (widget.software.status == SoftwareStatus.unknownInstall) ...[
+                  if (widget.software.archiveExists) ...[
+                    _buildArchiveStatusPill(
+                      exists: true,
+                      tooltip: '归档文件存在',
+                    ),
+                    const SizedBox(width: controlSpacing),
+                  ],
+                  if (widget.onRehost != null)
+                    Tooltip(
+                      message: '重新托管',
+                      child: IconButton(
+                        icon: const Icon(FluentIcons.refresh),
+                        style: ButtonStyle(
+                          foregroundColor: WidgetStateProperty.all(Colors.green),
+                        ),
+                        onPressed: widget.onRehost,
                       ),
                     ),
+                  if (widget.onRehost != null) const SizedBox(width: controlSpacing),
+                ],
+                if (widget.software.status == SoftwareStatus.managed) ...[
+                  _buildArchiveStatusPill(
+                    exists: widget.software.archiveExists,
+                    tooltip: widget.software.archiveExists ? '归档文件存在' : '归档文件不存在',
                   ),
                   const SizedBox(width: controlSpacing),
+                  // 备选程序入口（固定宽度插槽）
                   buildAlternativeSlot(),
                   const SizedBox(width: controlSpacing),
-                  buildActionControl(
-                    icon: FluentIcons.edit,
-                    tooltip: changeExecutableTooltip,
-                    onPressed: canChangeExecutable
-                        ? widget.onChangeExecutable
-                        : null,
-                  ),
+                  // 仅在“目录已删除且有归档文件”时，用“重新托管”替代“更改主程序”
+                  if (!widget.software.installExists &&
+                      widget.software.archiveExists &&
+                      widget.onRehost != null)
+                    buildActionControl(
+                      icon: FluentIcons.refresh,
+                      tooltip: '重新托管',
+                      onPressed: widget.onRehost,
+                      color: Colors.green,
+                    )
+                  else
+                    buildActionControl(
+                      icon: FluentIcons.edit,
+                      tooltip: changeExecutableTooltip,
+                      onPressed: canChangeExecutable
+                          ? widget.onChangeExecutable
+                          : null,
+                    ),
                   const SizedBox(width: controlSpacing),
                 ],
                 buildActionControl(
@@ -590,8 +631,14 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
     switch (widget.software.status) {
       case SoftwareStatus.managed:
         listTitle = _fileDescription ?? widget.software.name;
-        subtitleText = p.basename(widget.software.executablePath);
-        gridSupplementaryText = null;
+        if (!widget.software.installExists) {
+          subtitleText = '软件目录已删除';
+          titleColor = Colors.orange;
+          gridSupplementaryText = '软件目录已删除';
+        } else {
+          subtitleText = p.basename(widget.software.executablePath);
+          gridSupplementaryText = null;
+        }
         break;
       case SoftwareStatus.unknownInstall:
         listTitle = widget.software.name;
@@ -610,19 +657,59 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
     Widget content;
 
     if (useGrid) {
+      Widget? supplementary;
+      if (widget.software.status == SoftwareStatus.unknownInstall) {
+        supplementary = Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('未知文件夹'),
+            if (widget.software.archiveExists) ...[
+              const SizedBox(height: 6),
+              Tooltip(
+                message: '归档文件存在',
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Icon(
+                    FluentIcons.archive,
+                    color: Colors.green,
+                  ),
+                ),
+              ),
+            ],
+            if (widget.onRehost != null) ...[
+              const SizedBox(height: 8),
+              Tooltip(
+                message: '重新托管',
+                child: IconButton(
+                  icon: const Icon(FluentIcons.refresh),
+                  style: ButtonStyle(
+                    foregroundColor: WidgetStateProperty.all(Colors.green),
+                  ),
+                  onPressed: widget.onRehost,
+                ),
+              ),
+            ],
+          ],
+        );
+      } else if (gridSupplementaryText != null) {
+        supplementary = Text(
+          gridSupplementaryText,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        );
+      }
+
       content = _buildGridTile(
         context: context,
         icon: icon,
         // 网格视图标题与列表保持一致，优先显示可执行文件描述
         title: listTitle,
         titleColor: titleColor,
-        supplementary: gridSupplementaryText != null
-            ? Text(
-                gridSupplementaryText,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              )
-            : null,
+        supplementary: supplementary,
       );
     } else {
       final List<String> effectiveExecutables = _isExecutableLoading

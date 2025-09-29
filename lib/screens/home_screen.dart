@@ -335,6 +335,60 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _performRehostAction(Software software) async {
+    _showProgressDialog('正在从归档恢复，请稍候...');
+    bool shouldReload = false;
+    try {
+      final result = await _softwareService.rehostSoftware(software);
+      switch (result.type) {
+        case AddSoftwareResultType.success:
+          shouldReload = true;
+          break;
+        case AddSoftwareResultType.needsSelection:
+          _popSafely();
+          if (!mounted) return;
+          final pending = result.pendingAddition!;
+          final selected = await showDialog<String>(
+            context: context,
+            barrierDismissible: true,
+            builder: (context) => SelectExecutableDialog(
+              executablePaths: pending.executablePaths,
+            ),
+          );
+          if (selected != null) {
+            if (!mounted) return;
+            _showProgressDialog('正在完成重新托管...');
+            await _softwareService.completeSoftwareRehost(
+              existingId: pending.existingSoftwareId ?? software.id,
+              installPath: pending.installPath,
+              archivePath: pending.archivePath,
+              selectedExecutablePath: selected,
+            );
+            shouldReload = true;
+          } else {
+            if (!mounted) return;
+            _showProgressDialog('正在取消操作...');
+            await _softwareService.cleanupTemporaryFiles(
+              installPath: pending.installPath,
+            );
+          }
+          break;
+        case AddSoftwareResultType.cancelled:
+        case AddSoftwareResultType.duplicate:
+        case AddSoftwareResultType.error:
+          break;
+      }
+    } catch (e, s) {
+      logger.e('重新托管失败', error: e, stackTrace: s);
+      _softwareService.errorHandler?.handleError(e, s);
+    } finally {
+      _popSafely();
+    }
+    if (shouldReload) {
+      await _loadSoftware();
+    }
+  }
+
   Future<void> _handleDroppedItems(DropDoneDetails detail) async {
     final candidatePaths = <String>{};
 
@@ -437,6 +491,16 @@ class _HomeScreenState extends State<HomeScreen> {
     String? executablePath,
   }) async {
     final targetExecutable = executablePath ?? software.executablePath;
+    final installDirExists = await Directory(software.installPath).exists();
+    if (!installDirExists) {
+      await _showMessageDialog(
+        '无法启动软件',
+        software.archiveExists
+            ? '安装目录不存在。您可以尝试使用“重新托管”从归档恢复。'
+            : '安装目录不存在，且未找到归档文件。',
+      );
+      return;
+    }
     if (software.status != SoftwareStatus.managed || targetExecutable.isEmpty) {
       logger.w('无法启动软件，因为状态不是 managed 或可执行路径为空: ${software.name}');
       await _showMessageDialog('无法启动软件', '请确认该软件已托管并且已经配置主程序路径后再尝试启动。');
@@ -666,6 +730,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 onLaunch: () => _handleLaunchSoftware(software),
                 onLaunchAlternative: (path) =>
                     _handleLaunchSoftware(software, executablePath: path),
+                onRehost: ((software.status == SoftwareStatus.unknownInstall ||
+                            (software.status == SoftwareStatus.managed && !software.installExists)) &&
+                        software.archiveExists)
+                    ? () => _performRehostAction(software)
+                    : null,
                 displayStyle: SoftwareTileDisplay.grid,
               );
             },
@@ -704,6 +773,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     onLaunch: () => _handleLaunchSoftware(software),
                     onLaunchAlternative: (path) =>
                         _handleLaunchSoftware(software, executablePath: path),
+                    onRehost: ((software.status == SoftwareStatus.unknownInstall ||
+                                (software.status == SoftwareStatus.managed && !software.installExists)) &&
+                            software.archiveExists)
+                        ? () => _performRehostAction(software)
+                        : null,
                     displayStyle: SoftwareTileDisplay.list,
                     isReorderMode: _isReorderModeEnabled,
                   );
@@ -744,6 +818,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     onLaunch: () => _handleLaunchSoftware(software),
                     onLaunchAlternative: (path) =>
                         _handleLaunchSoftware(software, executablePath: path),
+                    onRehost: ((software.status == SoftwareStatus.unknownInstall ||
+                                (software.status == SoftwareStatus.managed && !software.installExists)) &&
+                            software.archiveExists)
+                        ? () => _performRehostAction(software)
+                        : null,
                     displayStyle: SoftwareTileDisplay.list,
                   );
                 },

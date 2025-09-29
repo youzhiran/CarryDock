@@ -8,6 +8,8 @@ class Software {
   final String archivePath;
   final String? iconPath;
   bool archiveExists;
+  // 运行时状态：安装目录是否存在（不进行持久化，仅用于 UI 呈现与交互判断）。
+  bool installExists;
   SoftwareStatus status;
   int sortOrder;
 
@@ -19,6 +21,7 @@ class Software {
     this.archivePath = '',
     this.iconPath,
     this.archiveExists = false,
+    this.installExists = true,
     this.status = SoftwareStatus.managed,
     this.sortOrder = 0,
   });

@@ -18,12 +18,15 @@ class PendingSoftwareAddition {
   final String archivePath;
   final List<String> executablePaths;
   final int? preferredSortOrder;
+  // 仅用于“重新托管”场景：指向需要更新的已存在软件ID。
+  final String? existingSoftwareId;
 
   PendingSoftwareAddition({
     required this.installPath,
     required this.archivePath,
     required this.executablePaths,
     this.preferredSortOrder,
+    this.existingSoftwareId,
   });
 }
 
@@ -182,18 +185,17 @@ class SoftwareService {
     try {
       final List<Software> managedSoftware = await _loadManagedSoftware();
 
-      // 同步运行时状态：归档是否存在、安装目录是否存在
+      // 同步运行时状态：归档是否存在、安装目录是否存在，但不改变托管状态
       for (final software in managedSoftware) {
         final archiveFile = File(software.archivePath);
         software.archiveExists = await archiveFile.exists();
 
-        // 若安装目录已被删除，则将其标记为未知安装，提示用户处理残留归档/记录
         if (software.installPath.isNotEmpty) {
           final installDir = Directory(software.installPath);
           final installExists = await installDir.exists();
-          if (!installExists) {
-            software.status = SoftwareStatus.unknownInstall;
-          }
+          software.installExists = installExists;
+        } else {
+          software.installExists = false;
         }
       }
 
@@ -714,6 +716,155 @@ class SoftwareService {
     }
   }
 
+  /// 重新托管：当安装目录丢失但归档仍存在时，根据归档重新解压并恢复托管状态。
+  ///
+  /// - 若找到多个可执行程序，返回 needsSelection 并携带可选路径与上下文；
+  /// - 若找到一个可执行程序，直接更新现有记录并返回 success；
+  /// - 若归档缺失或无可执行程序，返回 error。
+  Future<AddSoftwareResult> rehostSoftware(Software software) async {
+    try {
+      // 确定归档文件：优先使用记录路径；若不存在，尝试在归档目录中按文件名或软件名匹配；仍未找到则直接报错。
+      File? archiveFile;
+      if (software.archivePath.isNotEmpty) {
+        final recorded = File(software.archivePath);
+        if (await recorded.exists()) {
+          archiveFile = recorded;
+        }
+      }
+
+      if (archiveFile == null) {
+        final archivesDir = await _archivesDir;
+        if (await archivesDir.exists()) {
+          final expectedName = software.archivePath.isNotEmpty
+              ? p.basename(software.archivePath)
+              : '';
+          final candidates = <File>[];
+          await for (final entity in archivesDir.list()) {
+            if (entity is File) {
+              final base = p.basename(entity.path);
+              if (expectedName.isNotEmpty && base == expectedName) {
+                candidates.add(entity);
+                break;
+              }
+              // 回退：按软件名前缀尝试匹配
+              if (expectedName.isEmpty && base.startsWith(software.name)) {
+                candidates.add(entity);
+              }
+            }
+          }
+          if (candidates.length == 1) {
+            archiveFile = candidates.first;
+          }
+        }
+      }
+
+      if (archiveFile == null) {
+        throw Exception('归档文件不存在，无法重新托管。');
+      }
+
+      // 识别归档或可执行文件
+      final format = ArchiveExtractor.detectFormat(archiveFile.path);
+      final ext = p.extension(archiveFile.path).toLowerCase();
+      final normalizedExt = ext.startsWith('.') ? ext.substring(1) : ext;
+      final allowedExecExts = (await _settingsService.getExecutableExtensions())
+          .map((e) => e.toLowerCase())
+          .toSet();
+
+      if (software.installPath.isEmpty) {
+        throw Exception('安装路径未知，无法重新托管。');
+      }
+      final destinationDir = Directory(software.installPath);
+      await destinationDir.create(recursive: true);
+
+      if (format != null) {
+        // 归档：解压 + 可选扁平化 + 扫描可执行文件
+        logger.i('开始重新托管(归档): ${archiveFile.path} -> ${destinationDir.path}');
+        await ArchiveExtractor.extract(
+          archiveFile: archiveFile,
+          destination: destinationDir,
+          format: format,
+        );
+
+        final removeNested = await _settingsService.getRemoveNestedFoldersEnabled();
+        if (removeNested) {
+          final flattened = await _flattenRedundantTopDirectory(destinationDir);
+          if (flattened) {
+            logger.i('已自动展开嵌套目录: ${destinationDir.path}');
+          }
+        }
+
+        final executables = await findExecutablesInDirectory(destinationDir);
+        if (executables.isEmpty) {
+          throw Exception('未能在归档内容中发现可执行程序。');
+        }
+
+        if (executables.length == 1) {
+          await completeSoftwareRehost(
+            existingId: software.id,
+            installPath: destinationDir.path,
+            archivePath: archiveFile.path,
+            selectedExecutablePath: executables.first,
+          );
+          return AddSoftwareResult(AddSoftwareResultType.success);
+        }
+
+        return AddSoftwareResult(
+          AddSoftwareResultType.needsSelection,
+          pendingAddition: PendingSoftwareAddition(
+            installPath: destinationDir.path,
+            archivePath: archiveFile.path,
+            executablePaths: executables,
+            preferredSortOrder: null,
+            existingSoftwareId: software.id,
+          ),
+        );
+      } else if (allowedExecExts.contains(normalizedExt)) {
+        // 可执行文件：直接复制到安装目录并作为主程序
+        logger.i('开始重新托管(可执行文件): ${archiveFile.path} -> ${destinationDir.path}');
+        final destPath = p.join(destinationDir.path, p.basename(archiveFile.path));
+        await archiveFile.copy(destPath);
+        await completeSoftwareRehost(
+          existingId: software.id,
+          installPath: destinationDir.path,
+          archivePath: archiveFile.path,
+          selectedExecutablePath: destPath,
+        );
+        return AddSoftwareResult(AddSoftwareResultType.success);
+      } else {
+        throw Exception('不支持的归档格式：${p.extension(archiveFile.path)}');
+      }
+    } catch (e, s) {
+      logger.e('重新托管失败', error: e, stackTrace: s);
+      errorHandler?.handleError(e, s);
+      return AddSoftwareResult(AddSoftwareResultType.error);
+    }
+  }
+
+  /// 在用户选择主程序后，完成重新托管：更新现有记录为 managed 并保存。
+  Future<void> completeSoftwareRehost({
+    required String existingId,
+    required String installPath,
+    required String archivePath,
+    required String selectedExecutablePath,
+  }) async {
+    logger.i('完成重新托管: $installPath');
+    try {
+      final softwareList = await _loadManagedSoftware();
+      final idx = softwareList.indexWhere((s) => s.id == existingId);
+      if (idx < 0) {
+        throw Exception('找不到需要更新的软件记录 (ID: $existingId)');
+      }
+      final existing = softwareList[idx];
+      existing.executablePath = selectedExecutablePath;
+      existing.status = SoftwareStatus.managed;
+      // 保持名称、排序、归档路径不变
+      await _saveSoftwareList(softwareList);
+    } catch (e, s) {
+      logger.e('完成重新托管失败', error: e, stackTrace: s);
+      errorHandler?.handleError(e, s);
+      rethrow;
+    }
+  }
   /// 在用户选择主程序后，完成软件的添加。
   Future<void> completeSoftwareAddition({
     required String installPath,
@@ -1162,17 +1313,34 @@ class SoftwareService {
   }) async {
     logger.i('开始删除软件: ${software.name} (ID: ${software.id})');
     try {
+      // 先加载已托管列表，用于判断当前条目是否来源于持久化记录
+      final managedList = await _loadManagedSoftware();
+      final existsPersisted = managedList.any((s) => s.id == software.id);
+
       if (software.status == SoftwareStatus.unknownInstall) {
-        final installDir = Directory(software.installPath);
-        if (await installDir.exists()) {
-          await installDir.delete(recursive: true);
+        if (deleteInstallDir) {
+          final installDir = Directory(software.installPath);
+          if (await installDir.exists()) {
+            await installDir.delete(recursive: true);
+          }
+        }
+        // 若该未知条目实际上源自持久化记录（安装目录丢失导致变为未知），则从列表中移除记录
+        if (existsPersisted) {
+          managedList.removeWhere((s) => s.id == software.id);
+          await _saveSoftwareList(managedList);
         }
         return;
       }
       if (software.status == SoftwareStatus.unknownArchive) {
-        final archiveFile = File(software.archivePath);
-        if (await archiveFile.exists()) {
-          await archiveFile.delete();
+        if (deleteArchive) {
+          final archiveFile = File(software.archivePath);
+          if (await archiveFile.exists()) {
+            await archiveFile.delete();
+          }
+        }
+        if (existsPersisted) {
+          managedList.removeWhere((s) => s.id == software.id);
+          await _saveSoftwareList(managedList);
         }
         return;
       }
@@ -1191,11 +1359,8 @@ class SoftwareService {
         }
       }
 
-      final softwareList = await _loadManagedSoftware();
-
-      softwareList.removeWhere((s) => s.id == software.id);
-
-      await _saveSoftwareList(softwareList);
+      managedList.removeWhere((s) => s.id == software.id);
+      await _saveSoftwareList(managedList);
     } catch (e, s) {
       logger.e('删除软件 "${software.name}" 失败', error: e, stackTrace: s);
       errorHandler?.handleError(e, s);
