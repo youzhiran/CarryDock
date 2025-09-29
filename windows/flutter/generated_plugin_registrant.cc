@@ -10,11 +10,11 @@
 #include <desktop_drop/desktop_drop_plugin.h>
 #include <url_launcher_windows/url_launcher_windows.h>
 
-void RegisterPlugins(flutter::PluginRegistry *registry) {
-    BitsdojoWindowPluginRegisterWithRegistrar(
-            registry->GetRegistrarForPlugin("BitsdojoWindowPlugin"));
-    DesktopDropPluginRegisterWithRegistrar(
-            registry->GetRegistrarForPlugin("DesktopDropPlugin"));
-    UrlLauncherWindowsRegisterWithRegistrar(
-            registry->GetRegistrarForPlugin("UrlLauncherWindows"));
+void RegisterPlugins(flutter::PluginRegistry* registry) {
+  BitsdojoWindowPluginRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("BitsdojoWindowPlugin"));
+  DesktopDropPluginRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("DesktopDropPlugin"));
+  UrlLauncherWindowsRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("UrlLauncherWindows"));
 }
