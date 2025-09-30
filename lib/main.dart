@@ -10,6 +10,7 @@ import 'providers/developer_options_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/developer_options_screen.dart';
+import 'screens/archive_manager_screen.dart';
 import 'screens/settings_screen.dart';
 
 void main() {
@@ -173,6 +174,11 @@ class _MyHomePageState extends State<MyHomePage> {
                     valueListenable: _homeScreenNotifier,
                     builder: (context, _, __) => const HomeScreen(),
                   ),
+                ),
+                PaneItem(
+                  icon: const Icon(FluentIcons.archive),
+                  title: const Text('归档管理'),
+                  body: const ArchiveManagerScreen(),
                 ),
               ],
               footerItems: footerItems,

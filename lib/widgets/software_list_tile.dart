@@ -80,6 +80,51 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
     return pill;
   }
 
+  /// 构建小徽章（图标+颜色），用于显示归档/备份状态。
+  Widget _buildStatusBadge({
+    required IconData icon,
+    required Color color,
+    String? tooltip,
+  }) {
+    final pill = ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 28),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color),
+        ),
+        child: Icon(icon, size: 14, color: color),
+      ),
+    );
+    if (tooltip != null && tooltip.isNotEmpty) {
+      return Tooltip(message: tooltip, child: pill);
+    }
+    return pill;
+  }
+
+  /// 同时展示“归档状态（绿/红）”与“备份状态（蓝/灰）”。
+  Widget _buildArchiveAndBackupBadges(Software s) {
+    final hasArchive = s.archiveExists;
+    // 按最新约定：仅根据服务层扫描结果判断“备份存在”
+    final hasBackup = s.isBackupArchive;
+    final widgets = <Widget>[];
+    widgets.add(_buildStatusBadge(
+      icon: FluentIcons.archive,
+      color: hasArchive ? Colors.green : Colors.red,
+      tooltip: hasArchive ? '归档文件存在' : '归档文件不存在',
+    ));
+    widgets.add(const SizedBox(width: 6));
+    widgets.add(_buildStatusBadge(
+      icon: FluentIcons.update_restore,
+      color: hasBackup ? Colors.blue : Colors.grey,
+      tooltip: hasBackup ? '检测到备份' : '未检测到备份',
+    ));
+    return Row(mainAxisSize: MainAxisSize.min, children: widgets);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -332,22 +377,46 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
                 text: const Text('创建备份'),
                 onPressed: widget.software.installPath.isNotEmpty
                     ? () async {
-                        try {
                           final dir = Directory(widget.software.installPath);
                           if (!await dir.exists()) {
                             _showInfoBar('提示', '安装目录不存在，无法创建备份。');
                             return;
                           }
-                          final created = await _softwareService
-                              .createBackupForSoftware(widget.software);
-                          _showInfoBar('成功', '已创建备份：${p.basename(created)}',
-                              severity: InfoBarSeverity.success);
-                        } catch (e, s) {
-                          logger.e('创建备份失败', error: e, stackTrace: s);
-                          _showInfoBar('错误', '创建备份失败，请稍后重试。',
-                              severity: InfoBarSeverity.error);
+                          // 显示进度（非阻塞等待）
+                          // 注意：不要 await showDialog，以免阻塞后续逻辑。
+                          // 由后续逻辑中关闭对话框。
+                          // ignore: use_build_context_synchronously
+                          showDialog(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (dialogContext) => const ContentDialog(
+                              content: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  ProgressRing(),
+                                  SizedBox(width: 12),
+                                  Text('正在创建备份...'),
+                                ],
+                              ),
+                            ),
+                          );
+                          try {
+                            final created = await _softwareService
+                                .createBackupForSoftware(widget.software);
+                            if (mounted && Navigator.of(this.context).canPop()) {
+                              Navigator.of(this.context).pop();
+                            }
+                            _showInfoBar('成功', '已创建备份：${p.basename(created)}',
+                                severity: InfoBarSeverity.success);
+                          } catch (e, s) {
+                            logger.e('创建备份失败', error: e, stackTrace: s);
+                            if (mounted && Navigator.of(this.context).canPop()) {
+                              Navigator.of(this.context).pop();
+                            }
+                            _showInfoBar('错误', '创建备份失败，请稍后重试。',
+                                severity: InfoBarSeverity.error);
+                          }
                         }
-                      }
                     : null,
               ),
               MenuFlyoutItem(
@@ -610,10 +679,7 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
                   if (widget.onRehost != null) const SizedBox(width: controlSpacing),
                 ],
                 if (widget.software.status == SoftwareStatus.managed) ...[
-                  _buildArchiveStatusPill(
-                    exists: widget.software.archiveExists,
-                    tooltip: widget.software.archiveExists ? '归档文件存在' : '归档文件不存在',
-                  ),
+                  _buildArchiveAndBackupBadges(widget.software),
                   const SizedBox(width: controlSpacing),
                   // 备选程序入口（固定宽度插槽）
                   buildAlternativeSlot(),

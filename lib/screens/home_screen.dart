@@ -164,7 +164,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
           _unmanagedSoftware =
               softwareList
-                  .where((s) => s.status != SoftwareStatus.managed)
+                  .where((s) => s.status == SoftwareStatus.unknownInstall)
                   .toList()
                 ..sort((a, b) {
                   final statusCompare = a.status.index.compareTo(
@@ -244,7 +244,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 8),
                     Text(
                       withArchive
-                          ? '将为每个目录创建带时间戳的备份 ZIP${backupDirShown != null ? '（保存到：$backupDirShown）' : ''}。'
+                          ? '将为每个目录创建带时间的备份 ZIP${backupDirShown != null ? '（保存到：$backupDirShown）' : ''}。'
                           : '不会创建备份归档，仅识别并加入软件列表。',
                     ),
                     const SizedBox(height: 12),
@@ -662,7 +662,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _performRehostAction(Software software) async {
-    _showProgressDialog('正在从归档恢复，请稍候...');
+    _showProgressDialog('正在从归档/备份恢复，请稍候...');
     bool shouldReload = false;
     try {
       final result = await _softwareService.rehostSoftware(software);
@@ -928,11 +928,17 @@ class _HomeScreenState extends State<HomeScreen> {
             child: const Text('删除'),
             onPressed: () async {
               Navigator.of(context).pop();
-              await _softwareService.deleteSoftware(
-                software,
-                deleteInstallDir: deleteInstallDir,
-                deleteArchive: deleteArchive,
-              );
+              // 显示删除进度
+              _showProgressDialog('正在删除，请稍候...');
+              try {
+                await _softwareService.deleteSoftware(
+                  software,
+                  deleteInstallDir: deleteInstallDir,
+                  deleteArchive: deleteArchive,
+                );
+              } finally {
+                _popSafely();
+              }
               await _loadSoftware();
             },
           ),

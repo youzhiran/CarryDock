@@ -405,6 +405,123 @@ class SoftwareService {
     }
   }
 
+  /// 提供给“归档管理”页面使用的扫描方法：
+  /// 返回归档根目录与 backup 子目录下的文件列表（不包含内部维护文件）。
+  Future<List<Software>> listArchivesForManager({bool includeBackups = true}) async {
+    final archives = <Software>[];
+    final dir = await _archivesDir;
+    if (await dir.exists()) {
+      await for (final entity in dir.list(recursive: false, followLinks: false)) {
+        if (entity is File) {
+          final base = p.basename(entity.path).toLowerCase();
+          if (base == _softwareListFileName.toLowerCase() ||
+              base == _softwareListLockFileName.toLowerCase()) {
+            continue;
+          }
+          archives.add(
+            Software(
+              id: entity.path,
+              name: p.basename(entity.path),
+              archivePath: entity.path,
+              archiveExists: true,
+              status: SoftwareStatus.unknownArchive,
+            ),
+          );
+        }
+      }
+    }
+
+    if (includeBackups) {
+      final backup = await _backupDir;
+      if (await backup.exists()) {
+        await for (final entity in backup.list(recursive: false, followLinks: false)) {
+          if (entity is File) {
+            archives.add(
+              Software(
+                id: entity.path,
+                name: p.basename(entity.path),
+                archivePath: entity.path,
+                archiveExists: true,
+                status: SoftwareStatus.unknownArchive,
+                isBackupArchive: true,
+              ),
+            );
+          }
+        }
+      }
+    }
+
+    return archives;
+  }
+
+  /// 将指定归档（或备份）路径手动关联到某个已托管软件。
+  Future<void> linkArchiveToSoftware({
+    required String softwareId,
+    required String archivePath,
+  }) async {
+    try {
+      final list = await _loadManagedSoftware();
+      final idx = list.indexWhere((s) => s.id == softwareId);
+      if (idx < 0) {
+        throw Exception('未找到指定软件');
+      }
+      final existing = list[idx];
+      final isBackup = _isBackupFilePath(archivePath);
+      list[idx] = Software(
+        id: existing.id,
+        name: existing.name,
+        installPath: existing.installPath,
+        executablePath: existing.executablePath,
+        archivePath: isBackup ? existing.archivePath : archivePath,
+        backupPath: isBackup ? archivePath : existing.backupPath,
+        iconPath: existing.iconPath,
+        archiveExists: true,
+        installExists: existing.installExists,
+        status: existing.status,
+        sortOrder: existing.sortOrder,
+      );
+      await _saveSoftwareList(list);
+    } catch (e, s) {
+      logger.e('手动关联归档失败', error: e, stackTrace: s);
+      errorHandler?.handleError(e, s);
+      rethrow;
+    }
+  }
+
+  /// 清除所有软件中指向指定备份路径的关联（将 backupPath 置空）。
+  Future<void> clearBackupAssociationsForPath(String backupPath) async {
+    try {
+      final list = await _loadManagedSoftware();
+      var changed = false;
+      for (var i = 0; i < list.length; i++) {
+        final s = list[i];
+        if (s.backupPath.isNotEmpty && p.equals(s.backupPath, backupPath)) {
+          list[i] = Software(
+            id: s.id,
+            name: s.name,
+            installPath: s.installPath,
+            executablePath: s.executablePath,
+            archivePath: s.archivePath,
+            backupPath: '',
+            iconPath: s.iconPath,
+            archiveExists: s.archiveExists,
+            installExists: s.installExists,
+            status: s.status,
+            sortOrder: s.sortOrder,
+          );
+          changed = true;
+        }
+      }
+      if (changed) {
+        await _saveSoftwareList(list);
+      }
+    } catch (e, s) {
+      logger.e('清除备份关联失败', error: e, stackTrace: s);
+      errorHandler?.handleError(e, s);
+      rethrow;
+    }
+  }
+
   /// 扫描安装目录下的一级子目录并批量压缩为 ZIP 文件存入归档目录。
   ///
   /// 约定与处理规则：
@@ -610,7 +727,7 @@ class SoftwareService {
     );
   }
 
-  /// 将任意目录压缩为 ZIP 到 backup 子目录，文件名包含日期时间戳。
+  /// 将任意目录压缩为 ZIP 到 backup 子目录，文件名包含日期时间。
   Future<String> createBackupFromDirectory({
     required Directory sourceDir,
     String? displayName,
@@ -630,7 +747,7 @@ class SoftwareService {
     return targetPath;
   }
 
-  /// 以 yyyyMMdd_HHmmss 生成时间戳片段，用于文件名。
+  /// 以 yyyyMMdd_HHmmss 生成时间片段，用于文件名。
   String _formatNowForFilename() {
     final now = DateTime.now();
     String two(int n) => n.toString().padLeft(2, '0');
@@ -640,7 +757,21 @@ class SoftwareService {
     final hh = two(now.hour);
     final mm = two(now.minute);
     final ss = two(now.second);
-    return '${y}${m}${d}_${hh}${mm}${ss}';
+    return '$y$m${d}_$hh$mm$ss';
+  }
+
+  bool _isBackupFilePath(String path) {
+    try {
+      return p.basename(p.dirname(path)) == _backupSubfolder;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 去除形如 `-YYYYMMDD_HHMMSS` 的结尾时间后缀。
+  String _stripBackupTimestampFromName(String name) {
+    final reg = RegExp(r'-\d{8}_\d{6}$');
+    return name.replaceFirst(reg, '');
   }
 
   /// 应用用户对“直接关联归档”的决策：
@@ -1013,12 +1144,17 @@ class SoftwareService {
   }) async {
     String? archivedPath;
     Directory? destinationDir;
+    bool _sameSourceAsDest = false;
 
     try {
       final baseName = p.basenameWithoutExtension(archiveFile.path);
-      final fallbackName = baseName.isEmpty
+      String fallbackName = baseName.isEmpty
           ? p.basename(archiveFile.path)
           : baseName;
+      // 备份文件：移除结尾的时间后缀
+      if (customSoftwareName == null && _isBackupFilePath(archiveFile.path)) {
+        fallbackName = _stripBackupTimestampFromName(fallbackName);
+      }
       final softwareName = _sanitizeSoftwareName(
         customSoftwareName ?? fallbackName,
       );
@@ -1058,14 +1194,21 @@ class SoftwareService {
       }
 
       int? preferredSortOrder;
+      _sameSourceAsDest = p.equals(archiveFile.path, archivedPath);
       if (allowOverride) {
         preferredSortOrder = await _prepareForOverride(
           installPath: destinationDir.path,
-          archivePath: archivedPath,
+          // 当源文件即目标文件时，避免在覆盖准备阶段删除源文件
+          archivePath: _sameSourceAsDest ? '' : archivedPath,
         );
       }
 
-      final storedArchiveFile = await archiveFile.copy(archivedPath);
+      final File storedArchiveFile;
+      if (_sameSourceAsDest) {
+        storedArchiveFile = archiveFile;
+      } else {
+        storedArchiveFile = await archiveFile.copy(archivedPath);
+      }
       await destinationDir.create(recursive: true);
 
       logger.i(
@@ -1093,12 +1236,12 @@ class SoftwareService {
       }
 
       if (executables.length == 1) {
-        await completeSoftwareAddition(
-          installPath: destinationDir.path,
-          archivePath: archivedPath,
-          selectedExecutablePath: executables.first,
-          preferredSortOrder: preferredSortOrder,
-        );
+      await completeSoftwareAddition(
+        installPath: destinationDir.path,
+        archivePath: archivedPath,
+        selectedExecutablePath: executables.first,
+        preferredSortOrder: preferredSortOrder,
+      );
         return AddSoftwareResult(AddSoftwareResultType.success);
       }
 
@@ -1114,7 +1257,7 @@ class SoftwareService {
     } catch (e) {
       await cleanupTemporaryFiles(
         installPath: destinationDir?.path,
-        archivePath: archivedPath,
+        archivePath: _sameSourceAsDest ? null : archivedPath,
       );
       rethrow;
     }
@@ -1128,6 +1271,7 @@ class SoftwareService {
   }) async {
     String? archivedPath;
     Directory? destinationDir;
+    bool _sameSourceAsDest = false;
 
     try {
       final baseName = p.basenameWithoutExtension(executableFile.path);
@@ -1173,14 +1317,17 @@ class SoftwareService {
       }
 
       int? preferredSortOrder;
+      _sameSourceAsDest = p.equals(executableFile.path, archivedPath);
       if (allowOverride) {
         preferredSortOrder = await _prepareForOverride(
           installPath: destinationDir.path,
-          archivePath: archivedPath,
+          archivePath: _sameSourceAsDest ? '' : archivedPath,
         );
       }
 
-      await executableFile.copy(archivedPath);
+      if (!_sameSourceAsDest) {
+        await executableFile.copy(archivedPath);
+      }
       await destinationDir.create(recursive: true);
 
       final executableDestinationPath = p.join(
@@ -1200,7 +1347,7 @@ class SoftwareService {
     } catch (e) {
       await cleanupTemporaryFiles(
         installPath: destinationDir?.path,
-        archivePath: archivedPath,
+        archivePath: _sameSourceAsDest ? null : archivedPath,
       );
       rethrow;
     }
@@ -1345,9 +1492,20 @@ class SoftwareService {
         throw Exception('找不到需要更新的软件记录 (ID: $existingId)');
       }
       final existing = softwareList[idx];
-      existing.executablePath = selectedExecutablePath;
-      existing.status = SoftwareStatus.managed;
-      // 保持名称、排序、归档路径不变
+      final isBackup = _isBackupFilePath(archivePath);
+      softwareList[idx] = Software(
+        id: existing.id,
+        name: existing.name,
+        installPath: installPath,
+        executablePath: selectedExecutablePath,
+        archivePath: archivePath,
+        backupPath: isBackup ? archivePath : existing.backupPath,
+        iconPath: existing.iconPath,
+        archiveExists: true,
+        installExists: true,
+        status: SoftwareStatus.managed,
+        sortOrder: existing.sortOrder,
+      );
       await _saveSoftwareList(softwareList);
     } catch (e, s) {
       logger.e('完成重新托管失败', error: e, stackTrace: s);
@@ -1374,12 +1532,14 @@ class SoftwareService {
           }
         }
       }
+      final isBackup = _isBackupFilePath(archivePath);
       final newSoftware = Software(
         id: _uuid.v4(),
         name: softwareName,
         installPath: installPath,
         executablePath: selectedExecutablePath,
         archivePath: archivePath,
+        backupPath: isBackup ? archivePath : '',
         status: SoftwareStatus.managed,
         sortOrder: preferredSortOrder ?? _nextSortOrder(softwareList),
       );

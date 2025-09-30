@@ -6,6 +6,8 @@ class Software {
   final String installPath;
   String executablePath;
   final String archivePath;
+  // 最近一次用于还原/关联的备份文件路径（若存在）。
+  final String backupPath;
   final String? iconPath;
   bool archiveExists;
   // 运行时状态：安装目录是否存在（不进行持久化，仅用于 UI 呈现与交互判断）。
@@ -21,6 +23,7 @@ class Software {
     this.installPath = '',
     this.executablePath = '',
     this.archivePath = '',
+    this.backupPath = '',
     this.iconPath,
     this.archiveExists = false,
     this.installExists = true,
@@ -36,6 +39,7 @@ class Software {
       'installPath': installPath,
       'executablePath': executablePath,
       'archivePath': archivePath,
+      'backupPath': backupPath,
       'iconPath': iconPath,
       'sortOrder': sortOrder,
       // 注意：isBackupArchive 为运行时标记，不进行持久化
@@ -48,7 +52,8 @@ class Software {
       name: json['name'],
       installPath: json['installPath'],
       executablePath: json['executablePath'],
-      archivePath: json['archivePath'],
+      archivePath: json['archivePath'] ?? '',
+      backupPath: json['backupPath'] ?? '',
       iconPath: json['iconPath'],
       sortOrder: json['sortOrder'] is int ? json['sortOrder'] as int : 0,
     );
