@@ -141,6 +141,11 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadSoftware();
   }
 
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
   Future<void> _loadSoftware() async {
     setState(() => _isLoading = true);
     try {
@@ -196,6 +201,327 @@ class _HomeScreenState extends State<HomeScreen> {
       logger.e('打开软件安装目录时发生异常', error: e, stackTrace: s);
       _softwareService.errorHandler?.handleError(e, s);
       await _showMessageDialog('操作失败', '无法打开软件安装目录，请重试。');
+    }
+  }
+
+  /// 触发“扫描当前目录软件”：
+  /// - 询问用户确认；
+  /// - 显示进度；
+  /// - 调用服务层批量压缩安装目录的子目录至归档目录；
+  /// - 展示结果摘要并刷新列表。
+  Future<void> _handleScanAndArchive() async {
+    try {
+      final installPath = await _settingsService.getInstallPath();
+      if (installPath == null || installPath.isEmpty) {
+        await _showMessageDialog('安装路径未设置', '请先在设置页面配置绿色软件安装目录。');
+        return;
+      }
+
+      String? archiveDir;
+      try {
+        archiveDir = await _softwareService.resolveArchiveDirectoryPath();
+      } catch (_) {
+        archiveDir = null;
+      }
+      final backupDirShown = archiveDir != null ? p.join(archiveDir, 'backup') : null;
+
+      if (!mounted) return;
+      bool withArchive = true;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          return StatefulBuilder(
+            builder: (context, setState) {
+              return ContentDialog(
+                title: const Text('扫描并归档'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '即将扫描安装目录（$installPath）下的所有子目录。',
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      withArchive
+                          ? '将为每个目录创建带时间戳的备份 ZIP${backupDirShown != null ? '（保存到：$backupDirShown）' : ''}。'
+                          : '不会创建备份归档，仅识别并加入软件列表。',
+                    ),
+                    const SizedBox(height: 12),
+                    ToggleSwitch(
+                      content: const Text('创建备份归档'),
+                      checked: withArchive,
+                      onChanged: (v) => setState(() => withArchive = v),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '关闭后将不创建 ZIP（归档），仅维护软件列表。',
+                      style: FluentTheme.of(context).typography.caption,
+                    ),
+                  ],
+                ),
+                actions: [
+                  Button(
+                    child: const Text('取消'),
+                    onPressed: () => Navigator.of(context).pop(false),
+                  ),
+                  FilledButton(
+                    child: const Text('开始'),
+                    onPressed: () => Navigator.of(context).pop(true),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+      if (confirmed != true) return;
+
+      // 显示带百分比的进度弹窗
+      int done = 0;
+      int total = 0;
+      double progress = 0.0;
+      String currentName = '';
+      StateSetter? dialogSetState;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) {
+          final theme = FluentTheme.of(context);
+          return StatefulBuilder(
+            builder: (context, setState) {
+              dialogSetState = setState;
+              final percent = (progress * 100).clamp(0, 100).toStringAsFixed(0);
+              return ContentDialog(
+                title: const Text('正在扫描并添加'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 4),
+                    Container(
+                      width: 360,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: theme.resources.controlFillColorDefault,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: theme.resources.controlStrokeColorDefault,
+                        ),
+                      ),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: FractionallySizedBox(
+                          alignment: Alignment.centerLeft,
+                          widthFactor: progress.isNaN ? 0 : progress.clamp(0.0, 1.0),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: theme.accentColor,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text('进度：$done/$total ($percent%)'),
+                    const SizedBox(height: 6),
+                    if (currentName.isNotEmpty)
+                      Text('当前：$currentName'),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      );
+
+      try {
+        final summary = await _softwareService.archiveInstallSubdirectories(
+          overwrite: false,
+          manageRecognized: true,
+          onProgress: (d, t) {
+            if (dialogSetState != null) {
+              dialogSetState!(() {
+                done = d;
+                total = t;
+                progress = t > 0 ? d / t : 0.0;
+              });
+            }
+          },
+          onCurrentItem: (name) {
+            if (dialogSetState != null) {
+              dialogSetState!(() {
+                currentName = name;
+              });
+            }
+          },
+          createBackup: withArchive,
+        );
+        if (!mounted) return;
+        final sb = StringBuffer()
+          ..writeln('安装目录：${summary.installDirPath}')
+          ..writeln('归档目录：${summary.archiveDirPath}')
+          ..writeln('总计扫描：${summary.total}')
+          ..writeln('成功归档：${summary.archived.length}')
+          ..writeln('已存在跳过：${summary.skippedExisting.length}')
+          ..writeln('失败：${summary.failures.length}');
+        if (summary.failures.isNotEmpty) {
+          for (final f in summary.failures.take(5)) {
+            sb.writeln('- ${f.name}: ${f.error}');
+          }
+          if (summary.failures.length > 5) {
+            sb.writeln('... 其余 ${summary.failures.length - 5} 项略');
+          }
+        }
+        _popSafely();
+        // 扫描完成后的“统一关联”对话框
+        if (summary.suggestions.isNotEmpty) {
+          final suggestions = summary.suggestions;
+          // 记录每项是否关联与所选候选
+          final associate = <String, bool>{};
+          final selectedMap = <String, String>{};
+          for (final s in suggestions) {
+            associate[s.installPath] = true;
+            selectedMap[s.installPath] = s.candidates.first;
+          }
+
+          final confirmedAssoc = await showDialog<bool>(
+            context: context,
+            builder: (context) {
+              final screen = MediaQuery.of(context).size;
+              final maxDialogWidth = screen.width >= 600
+                  ? (screen.width * 0.7).clamp(420.0, 720.0)
+                  : (screen.width - 32).clamp(280.0, screen.width);
+              final maxDialogHeight = (screen.height * 0.8).clamp(320.0, 820.0);
+              return StatefulBuilder(
+                builder: (context, setState) {
+                  return ContentDialog(
+                    constraints: BoxConstraints(
+                      maxWidth: maxDialogWidth.toDouble(),
+                      maxHeight: maxDialogHeight.toDouble(),
+                    ),
+                    title: Text('发现可关联归档（${suggestions.length} 项）'),
+                    content: SizedBox(
+                      width: double.infinity,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('请选择需要直接关联到现有归档的项目：'),
+                          const SizedBox(height: 8),
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              // 列表区域高度自适应并可滚动
+                              minHeight: 120,
+                              maxHeight: (maxDialogHeight.toDouble() - 200).clamp(120.0, 520.0),
+                            ),
+                            child: ListView.builder(
+                              itemCount: suggestions.length,
+                              itemBuilder: (context, index) {
+                                final s = suggestions[index];
+                                final checked = associate[s.installPath] ?? false;
+                                final items = s.candidates
+                                    .map((p0) => ComboBoxItem<String>(
+                                          value: p0,
+                                          child: Text(p.basename(p0), overflow: TextOverflow.ellipsis),
+                                        ))
+                                    .toList();
+                                final selected = selectedMap[s.installPath];
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 6),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      // 第一行：开关 + 名称（名称单独渲染，避免与 ToggleSwitch 内部布局叠加）
+                                      Row(
+                                        children: [
+                                          ToggleSwitch(
+                                            content: const SizedBox.shrink(),
+                                            checked: checked,
+                                            onChanged: (v) => setState(() => associate[s.installPath] = v),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          // 名称占满剩余空间，单行省略
+                                          Expanded(
+                                            child: Tooltip(
+                                              message: s.displayName,
+                                              child: Text(
+                                                s.displayName,
+                                                overflow: TextOverflow.ellipsis,
+                                                maxLines: 1,
+                                                softWrap: false,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      // 第二行：归档选择下拉，单个候选时禁用
+                                      ComboBox<String>(
+                                        isExpanded: true,
+                                        items: items,
+                                        value: selected,
+                                        onChanged: (checked && s.candidates.length > 1)
+                                            ? (v) => setState(() {
+                                                  if (v != null) selectedMap[s.installPath] = v;
+                                                })
+                                            : null,
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    actions: [
+                      Button(
+                        child: const Text('跳过全部'),
+                        onPressed: () => Navigator.of(context).pop(false),
+                      ),
+                      FilledButton(
+                        child: const Text('应用关联'),
+                        onPressed: () => Navigator.of(context).pop(true),
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
+          );
+
+          if (confirmedAssoc == true) {
+            final selections = <ArchiveAssociationResolution>[];
+            for (final s in suggestions) {
+              final doAssoc = associate[s.installPath] == true;
+              final sel = doAssoc ? (selectedMap[s.installPath] ?? '') : '';
+              selections.add(ArchiveAssociationResolution(
+                installPath: s.installPath,
+                selectedArchivePath: doAssoc && sel.isNotEmpty ? sel : null,
+              ));
+            }
+            await _softwareService.applyArchiveAssociations(
+              resolutions: selections,
+              createBackupForUnselected: withArchive,
+            );
+          }
+        }
+
+        await _showMessageDialog('扫描完成', sb.toString());
+        await _loadSoftware();
+      } catch (e, s) {
+        logger.e('扫描并归档失败', error: e, stackTrace: s);
+        _softwareService.errorHandler?.handleError(e, s);
+        _popSafely();
+        await _showMessageDialog('操作失败', '扫描/归档过程中发生错误，请稍后重试。');
+      }
+    } catch (e, s) {
+      logger.e('扫描并归档操作触发失败', error: e, stackTrace: s);
+      _softwareService.errorHandler?.handleError(e, s);
+      await _showMessageDialog('操作失败', '无法开始扫描，请检查安装路径设置后重试。');
     }
   }
 
@@ -696,6 +1022,14 @@ class _HomeScreenState extends State<HomeScreen> {
                           },
                         ),
                       ],
+                // 将“扫描当前目录软件”默认放在更多（Overflow）中
+                secondaryItems: [
+                  CommandBarButton(
+                    icon: const Icon(FluentIcons.search),
+                    label: const Text('扫描当前目录软件'),
+                    onPressed: _handleScanAndArchive,
+                  ),
+                ],
               ),
             ),
           ],

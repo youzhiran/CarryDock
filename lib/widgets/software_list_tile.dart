@@ -53,19 +53,24 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
 
   /// 构建归档存在状态的小徽章，统一高度并居中，确保与右侧图标按钮上下对齐。
   Widget _buildArchiveStatusPill({required bool exists, String? tooltip}) {
+    // 备份归档使用蓝色强调（无论条目状态为何），否则按照存在状态使用绿色/红色
+    final bool isBackup = widget.software.isBackupArchive;
+    final Color accent = isBackup
+        ? Colors.blue
+        : (exists ? Colors.green : Colors.red);
     final pill = ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 28),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: (exists ? Colors.green : Colors.red).withValues(alpha: 0.12),
+          color: accent.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(6),
         ),
         child: Icon(
           FluentIcons.archive,
           size: 14,
-          color: exists ? Colors.green : Colors.red,
+          color: accent,
         ),
       ),
     );
@@ -205,6 +210,11 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
         fit: BoxFit.contain,
       );
     }
+    // 备份归档：使用蓝色归档图标以示区分
+    if (widget.software.status == SoftwareStatus.unknownArchive &&
+        widget.software.isBackupArchive) {
+      return Icon(FluentIcons.archive, size: size, color: Colors.blue);
+    }
     return Icon(FluentIcons.app_icon_default, size: size);
   }
 
@@ -315,6 +325,29 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
                 text: const Text('打开软件文件夹'),
                 onPressed: widget.software.installPath.isNotEmpty
                     ? _openInstallDirectory
+                    : null,
+              ),
+              MenuFlyoutItem(
+                leading: const Icon(FluentIcons.archive),
+                text: const Text('创建备份'),
+                onPressed: widget.software.installPath.isNotEmpty
+                    ? () async {
+                        try {
+                          final dir = Directory(widget.software.installPath);
+                          if (!await dir.exists()) {
+                            _showInfoBar('提示', '安装目录不存在，无法创建备份。');
+                            return;
+                          }
+                          final created = await _softwareService
+                              .createBackupForSoftware(widget.software);
+                          _showInfoBar('成功', '已创建备份：${p.basename(created)}',
+                              severity: InfoBarSeverity.success);
+                        } catch (e, s) {
+                          logger.e('创建备份失败', error: e, stackTrace: s);
+                          _showInfoBar('错误', '创建备份失败，请稍后重试。',
+                              severity: InfoBarSeverity.error);
+                        }
+                      }
                     : null,
               ),
               MenuFlyoutItem(
@@ -603,6 +636,13 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
                           ? widget.onChangeExecutable
                           : null,
                     ),
+                  const SizedBox(width: controlSpacing),
+                ],
+                if (widget.software.status == SoftwareStatus.unknownArchive) ...[
+                  _buildArchiveStatusPill(
+                    exists: true,
+                    tooltip: widget.software.isBackupArchive ? '备份归档' : '归档文件',
+                  ),
                   const SizedBox(width: controlSpacing),
                 ],
                 buildActionControl(

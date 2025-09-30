@@ -8,6 +8,7 @@ import 'package:carrydock/services/settings_service.dart';
 import 'package:carrydock/utils/error_handler.dart';
 import 'package:carrydock/utils/logger.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
@@ -83,6 +84,87 @@ class AddSoftwareResult {
   AddSoftwareResult(this.type, {this.pendingAddition, this.duplicateInfo});
 }
 
+/// 批量归档失败项描述，用于在摘要中携带错误原因。
+class BatchArchiveFailure {
+  /// 被尝试归档的目录名（不含路径）。
+  final String name;
+
+  /// 失败原因（字符串化错误信息）。
+  final String error;
+
+  const BatchArchiveFailure({required this.name, required this.error});
+}
+
+/// 扫描阶段发现的“可关联归档”候选项。
+class ArchiveAssociationSuggestion {
+  /// 展示名称（通常为目录名）。
+  final String displayName;
+
+  /// 安装目录的绝对路径，用于定位软件条目。
+  final String installPath;
+
+  /// 可供关联的归档候选路径列表。
+  final List<String> candidates;
+
+  const ArchiveAssociationSuggestion({
+    required this.displayName,
+    required this.installPath,
+    required this.candidates,
+  });
+}
+
+/// 扫描完成后由用户做出的关联决策。
+class ArchiveAssociationResolution {
+  /// 安装目录路径（用于定位要更新的软件记录）。
+  final String installPath;
+
+  /// 选中的归档路径；若为 null 表示不关联旧归档。
+  final String? selectedArchivePath;
+
+  const ArchiveAssociationResolution({
+    required this.installPath,
+    this.selectedArchivePath,
+  });
+}
+
+/// 批量归档结果摘要，包含计数与路径。
+class BatchArchiveSummary {
+  /// 扫描到的总项数（archived + skipped + failures）。
+  final int total;
+
+  /// 成功归档的目录名列表。
+  final List<String> archived;
+
+  /// 已存在同名 ZIP 而跳过的目录名列表。
+  final List<String> skippedExisting;
+
+  /// 失败列表（包含错误信息）。
+  final List<BatchArchiveFailure> failures;
+
+  /// 实际使用的归档目录路径。
+  final String archiveDirPath;
+
+  /// 实际扫描的安装根目录路径。
+  final String installDirPath;
+
+  /// 是否为覆盖模式（用于日志和提示）。
+  final bool overwrite;
+
+  /// 需要用户在扫描完成后统一处理的关联建议。
+  final List<ArchiveAssociationSuggestion> suggestions;
+
+  const BatchArchiveSummary({
+    required this.total,
+    required this.archived,
+    required this.skippedExisting,
+    required this.failures,
+    required this.archiveDirPath,
+    required this.installDirPath,
+    required this.overwrite,
+    this.suggestions = const [],
+  });
+}
+
 /// 表示用户尚未配置安装路径的异常，用于提示用户前往设置界面。
 class InstallPathNotConfiguredException implements Exception {
   /// 输出到日志的文本。
@@ -114,6 +196,7 @@ class SoftwareService {
   static const String _defaultArchiveFolderName = '~archives';
   static const String _softwareListFileName = 'software_list.json';
   static const String _softwareListLockFileName = 'software_list.lock';
+  static const String _backupSubfolder = 'backup';
 
   final SettingsService _settingsService = SettingsService();
   final Uuid _uuid = const Uuid();
@@ -146,6 +229,22 @@ class SoftwareService {
       await archivesDir.create(recursive: true);
     }
     return archivesDir;
+  }
+
+  /// 对外暴露归档目录的实际路径，便于 UI 层展示确认信息。
+  Future<String> resolveArchiveDirectoryPath() async {
+    final dir = await _archivesDir;
+    return dir.path;
+  }
+
+  /// 归档目录下的“backup”子目录。
+  Future<Directory> get _backupDir async {
+    final dir = await _archivesDir;
+    final backup = Directory(p.join(dir.path, _backupSubfolder));
+    if (!await backup.exists()) {
+      await backup.create(recursive: true);
+    }
+    return backup;
   }
 
   /// 获取位于归档目录中的软件列表文件路径。
@@ -236,13 +335,14 @@ class SoftwareService {
         }
       }
 
+
       final archivesDir = await _archivesDir;
       final List<Software> unknownArchives = [];
       if (await archivesDir.exists()) {
+        // 扫描归档根目录下的文件（不包含 backup 子目录，避免列表“多一个”）
         final entities = await archivesDir.list().toList();
         for (final entity in entities) {
           if (entity is File) {
-            // 忽略内部维护文件，避免被识别为未知归档
             final base = p.basename(entity.path).toLowerCase();
             if (base == _softwareListFileName.toLowerCase() ||
                 base == _softwareListLockFileName.toLowerCase()) {
@@ -266,6 +366,34 @@ class SoftwareService {
         }
       }
 
+      // 标注“已托管软件”是否存在备份归档：
+      // 规则：archivePath 位于 backup 子目录 或 backup 子目录存在以“sanitizedName-”开头的 zip
+      try {
+        final backupDir = await _backupDir;
+        final backupExists = await backupDir.exists();
+        final backupFiles = <String>[];
+        if (backupExists) {
+          await for (final entity in backupDir.list(recursive: false)) {
+            if (entity is File && p.extension(entity.path).toLowerCase() == '.zip') {
+              backupFiles.add(p.basename(entity.path));
+            }
+          }
+        }
+        for (final s in managedSoftware) {
+          final isArchiveInBackup = s.archivePath.isNotEmpty &&
+              p.basename(p.dirname(s.archivePath)) == _backupSubfolder;
+          var hasBackupByName = false;
+          if (backupFiles.isNotEmpty) {
+            final sanitizedName = _sanitizeSoftwareName(s.name);
+            final prefix = '$sanitizedName-';
+            hasBackupByName = backupFiles.any((f) => f.startsWith(prefix));
+          }
+          s.isBackupArchive = isArchiveInBackup || hasBackupByName;
+        }
+      } catch (e, s) {
+        logger.w('标注备份归档状态失败', error: e, stackTrace: s);
+      }
+
       return [...managedSoftware, ...unknownInstalls, ...unknownArchives];
     } on InstallPathNotConfiguredException catch (e) {
       e.notify(errorHandler, hintMessage: '请先在设置中指定安装路径，之后即可加载软件列表。');
@@ -274,6 +402,368 @@ class SoftwareService {
       logger.e('获取软件列表失败', error: e, stackTrace: s);
       errorHandler?.handleError(e, s);
       rethrow;
+    }
+  }
+
+  /// 扫描安装目录下的一级子目录并批量压缩为 ZIP 文件存入归档目录。
+  ///
+  /// 约定与处理规则：
+  /// - 仅处理安装根目录下的直接子文件夹；
+  /// - 跳过保留目录（如 `~archives` 以及配置的归档目录名等）；
+  /// - 若目标 ZIP 已存在且 `overwrite=false`，则跳过；
+  /// - 使用 `archive` 库的 `ZipFileEncoder` 进行压缩，包含顶层目录名；
+  /// - 返回压缩结果摘要，供 UI 展示。
+  Future<BatchArchiveSummary> archiveInstallSubdirectories({
+    bool overwrite = false,
+    void Function(int done, int total)? onProgress,
+    void Function(String currentName)? onCurrentItem,
+    bool manageRecognized = true,
+    bool createBackup = true,
+  }) async {
+    logger.i('开始扫描安装目录并批量归档...');
+    final processed = <String>[];
+    final skipped = <String>[];
+    final failed = <BatchArchiveFailure>[];
+    try {
+      final installPath = await _settingsService.getInstallPath();
+      if (installPath == null || installPath.isEmpty) {
+        throw const InstallPathNotConfiguredException();
+      }
+
+      final installDir = Directory(installPath);
+      if (!await installDir.exists()) {
+        throw Exception('安装目录不存在：$installPath');
+      }
+
+      final backupDir = await _backupDir;
+
+      // 需要跳过的保留目录名集合
+      final archivePath = await _settingsService.getArchivePath();
+      final defaultPortableArchivesPath = await _getPortableArchivesPath();
+      final reservedArchiveDirNames = <String>{
+        _defaultArchiveFolderName,
+        if (archivePath != null && archivePath.isNotEmpty)
+          p.basename(archivePath),
+        p.basename(defaultPortableArchivesPath),
+        _backupSubfolder,
+      };
+
+      final entities = await installDir.list(followLinks: false).toList();
+      final dirEntities = <Directory>[];
+      for (final entity in entities) {
+        if (entity is Directory) {
+          dirEntities.add(entity);
+        }
+      }
+
+      final total = dirEntities.length;
+      onProgress?.call(0, total);
+
+      // 预加载已托管列表，便于在扫描过程中维护 JSON
+      final managedList = await _loadManagedSoftware();
+      int nextOrder = managedList.isEmpty
+          ? 0
+          : managedList.map((s) => s.sortOrder).reduce(math.max) + 1;
+
+      final suggestions = <ArchiveAssociationSuggestion>[];
+      for (var i = 0; i < dirEntities.length; i++) {
+        final entity = dirEntities[i];
+        final baseName = p.basename(entity.path);
+        onCurrentItem?.call(baseName);
+        if (reservedArchiveDirNames.contains(baseName)) {
+          logger.d('跳过保留目录: $baseName');
+          onProgress?.call(i + 1, total);
+          continue;
+        }
+
+        try {
+          String? createdPath;
+          // 先收集关联候选，统一在扫描完成后由 UI 决定是否关联
+          final sanitized = _sanitizeSoftwareName(baseName);
+          final candidates = <String>[];
+          final archivesDir = await _archivesDir;
+          if (await archivesDir.exists()) {
+            await for (final e in archivesDir.list(recursive: false, followLinks: false)) {
+              if (e is File) {
+                final fmt = ArchiveExtractor.detectFormat(e.path);
+                if (fmt == null) continue;
+                // 仅归档根目录下的文件参与关联，备份目录（backup）不参与
+                final parentBase = p.basename(p.dirname(e.path));
+                if (parentBase == _backupSubfolder) continue;
+                final bn = p.basenameWithoutExtension(e.path);
+                if (bn == sanitized || bn.startsWith('$sanitized-')) {
+                  candidates.add(e.path);
+                }
+              }
+            }
+          }
+          // 过滤掉已被托管软件占用的归档
+          candidates.removeWhere((path) =>
+              managedList.any((s) => s.archivePath.isNotEmpty && p.equals(s.archivePath, path)));
+          if (candidates.isNotEmpty) {
+            suggestions.add(ArchiveAssociationSuggestion(
+              displayName: baseName,
+              installPath: entity.path,
+              candidates: candidates,
+            ));
+          } else if (createBackup) {
+            // 若没有候选且允许创建备份，立即创建
+            createdPath = await createBackupFromDirectory(
+              sourceDir: entity,
+              displayName: baseName,
+            );
+          }
+          processed.add(baseName);
+          if (manageRecognized) {
+            // 查找是否已有同安装目录的软件
+            final idx = managedList.indexWhere(
+              (s) => p.equals(s.installPath, entity.path),
+            );
+            if (idx >= 0) {
+              final existing = managedList[idx];
+              var newExecutable = existing.executablePath;
+              if (newExecutable.isEmpty) {
+                final execs = await findExecutablesInDirectory(entity);
+                if (execs.isNotEmpty) {
+                  newExecutable = _pickShallowestExecutablePath(execs, entity);
+                }
+              }
+              managedList[idx] = Software(
+                id: existing.id,
+                name: existing.name,
+                installPath: existing.installPath,
+                executablePath: newExecutable,
+                archivePath: createdPath ?? existing.archivePath,
+                iconPath: existing.iconPath,
+                archiveExists: createdPath != null ? true : existing.archiveExists,
+                installExists: existing.installExists,
+                status: existing.status,
+                sortOrder: existing.sortOrder,
+              );
+            } else {
+              final execs = await findExecutablesInDirectory(entity);
+              String exe = '';
+              if (execs.isNotEmpty) {
+                exe = _pickShallowestExecutablePath(execs, entity);
+              }
+              final software = Software(
+                id: _uuid.v4(),
+                name: _sanitizeSoftwareName(baseName),
+                installPath: entity.path,
+                executablePath: exe,
+                archivePath: createdPath ?? '',
+                status: SoftwareStatus.managed,
+                sortOrder: nextOrder++,
+              );
+              managedList.add(software);
+            }
+          }
+          if (createBackup && createdPath != null) {
+            logger.i('已归档(backup): ${entity.path} -> $createdPath');
+          } else {
+            logger.i('已识别(未归档): ${entity.path}');
+          }
+        } catch (e, s) {
+          logger.e('归档失败: ${entity.path}', error: e, stackTrace: s);
+          failed.add(BatchArchiveFailure(name: baseName, error: e.toString()));
+        }
+        onProgress?.call(i + 1, total);
+      }
+
+      if (manageRecognized) {
+        await _saveSoftwareList(managedList);
+      }
+
+      return BatchArchiveSummary(
+        total: processed.length + skipped.length + failed.length,
+        archived: processed,
+        skippedExisting: skipped,
+        failures: failed,
+        archiveDirPath: backupDir.path,
+        installDirPath: installDir.path,
+        overwrite: overwrite,
+        suggestions: suggestions,
+      );
+    } on InstallPathNotConfiguredException catch (e) {
+      e.notify(errorHandler, hintMessage: '请先在设置中指定安装路径，之后即可执行扫描归档。');
+      rethrow;
+    } catch (e, s) {
+      logger.e('批量归档过程中发生错误', error: e, stackTrace: s);
+      errorHandler?.handleError(e, s);
+      rethrow;
+    }
+  }
+
+  /// 为指定的软件创建一次“备份归档”，压缩其安装目录到归档目录的 backup 子目录。
+  /// 返回创建的 ZIP 文件路径。
+  Future<String> createBackupForSoftware(Software software) async {
+    if (software.installPath.isEmpty) {
+      throw Exception('该软件未配置安装目录，无法创建备份。');
+    }
+    final dir = Directory(software.installPath);
+    if (!await dir.exists()) {
+      throw Exception('安装目录不存在：${software.installPath}');
+    }
+    return createBackupFromDirectory(
+      sourceDir: dir,
+      displayName: software.name,
+    );
+  }
+
+  /// 将任意目录压缩为 ZIP 到 backup 子目录，文件名包含日期时间戳。
+  Future<String> createBackupFromDirectory({
+    required Directory sourceDir,
+    String? displayName,
+  }) async {
+    final backupDir = await _backupDir;
+    final baseName = displayName ?? p.basename(sourceDir.path);
+    final sanitized = _sanitizeSoftwareName(baseName);
+    final timestamp = _formatNowForFilename();
+    final filename = '$sanitized-$timestamp.zip';
+    final targetPath = p.join(backupDir.path, filename);
+
+    final encoder = ZipFileEncoder();
+    encoder.create(targetPath);
+    // 必须等待目录添加完成后再关闭，否则在 Windows 上可能出现文件被关闭后仍写入导致的“拒绝访问”错误。
+    await encoder.addDirectory(sourceDir, includeDirName: true);
+    encoder.close();
+    return targetPath;
+  }
+
+  /// 以 yyyyMMdd_HHmmss 生成时间戳片段，用于文件名。
+  String _formatNowForFilename() {
+    final now = DateTime.now();
+    String two(int n) => n.toString().padLeft(2, '0');
+    final y = now.year.toString().padLeft(4, '0');
+    final m = two(now.month);
+    final d = two(now.day);
+    final hh = two(now.hour);
+    final mm = two(now.minute);
+    final ss = two(now.second);
+    return '${y}${m}${d}_${hh}${mm}${ss}';
+  }
+
+  /// 应用用户对“直接关联归档”的决策：
+  /// - 对于有 selectedArchivePath 的项，直接更新对应软件的 archivePath；
+  /// - 对于未选择关联且允许创建备份的项，为其创建备份并更新；
+  /// - 若软件主程序为空，自动选择相对目录更浅的可执行文件。
+  Future<void> applyArchiveAssociations({
+    required List<ArchiveAssociationResolution> resolutions,
+    required bool createBackupForUnselected,
+  }) async {
+    if (resolutions.isEmpty) return;
+    try {
+      final managedList = await _loadManagedSoftware();
+      var updatedAny = false;
+      for (final r in resolutions) {
+        final idx = managedList.indexWhere((s) => p.equals(s.installPath, r.installPath));
+        if (idx < 0) {
+          // 兜底：若未找到，尝试新增记录
+          final dir = Directory(r.installPath);
+          if (!await dir.exists()) continue;
+          final execs = await findExecutablesInDirectory(dir);
+          String exe = '';
+          if (execs.isNotEmpty) {
+            exe = _pickShallowestExecutablePath(execs, dir);
+          }
+          String archivePath = '';
+          if (r.selectedArchivePath != null && r.selectedArchivePath!.isNotEmpty) {
+            archivePath = r.selectedArchivePath!;
+          } else if (createBackupForUnselected) {
+            archivePath = await createBackupFromDirectory(
+              sourceDir: dir,
+              displayName: p.basename(r.installPath),
+            );
+          }
+          managedList.add(Software(
+            id: _uuid.v4(),
+            name: _sanitizeSoftwareName(p.basename(r.installPath)),
+            installPath: r.installPath,
+            executablePath: exe,
+            archivePath: archivePath,
+            status: SoftwareStatus.managed,
+            sortOrder: _nextSortOrder(managedList),
+          ));
+          updatedAny = true;
+          continue;
+        }
+
+        final existing = managedList[idx];
+        String archivePath = existing.archivePath;
+        if (r.selectedArchivePath != null && r.selectedArchivePath!.isNotEmpty) {
+          archivePath = r.selectedArchivePath!;
+        } else if (createBackupForUnselected && (archivePath.isEmpty || !await File(archivePath).exists())) {
+          final dir = Directory(existing.installPath);
+          if (await dir.exists()) {
+            archivePath = await createBackupFromDirectory(
+              sourceDir: dir,
+              displayName: existing.name,
+            );
+          }
+        }
+
+        var exe = existing.executablePath;
+        if (exe.isEmpty) {
+          final dir = Directory(existing.installPath);
+          if (await dir.exists()) {
+            final execs = await findExecutablesInDirectory(dir);
+            if (execs.isNotEmpty) {
+              exe = _pickShallowestExecutablePath(execs, dir);
+            }
+          }
+        }
+
+        managedList[idx] = Software(
+          id: existing.id,
+          name: existing.name,
+          installPath: existing.installPath,
+          executablePath: exe,
+          archivePath: archivePath,
+          iconPath: existing.iconPath,
+          archiveExists: archivePath.isNotEmpty,
+          installExists: existing.installExists,
+          status: existing.status,
+          sortOrder: existing.sortOrder,
+        );
+        updatedAny = true;
+      }
+
+      if (updatedAny) {
+        await _saveSoftwareList(managedList);
+      }
+    } catch (e, s) {
+      logger.e('应用归档关联决策失败', error: e, stackTrace: s);
+      errorHandler?.handleError(e, s);
+      rethrow;
+    }
+  }
+
+  /// 在给定的可执行文件列表中，选择相对 root 目录层级最浅的路径。
+  /// 若存在并列，取字典序较小者，保证稳定性。
+  String _pickShallowestExecutablePath(List<String> executables, Directory root) {
+    if (executables.isEmpty) return '';
+    String best = executables.first;
+    int bestDepth = _relativeDepth(best, root.path);
+    for (var i = 1; i < executables.length; i++) {
+      final path = executables[i];
+      final depth = _relativeDepth(path, root.path);
+      if (depth < bestDepth || (depth == bestDepth && path.compareTo(best) < 0)) {
+        best = path;
+        bestDepth = depth;
+      }
+    }
+    return best;
+  }
+
+  int _relativeDepth(String path, String root) {
+    try {
+      final rel = p.relative(path, from: root);
+      final parts = p.split(rel);
+      return parts.length;
+    } catch (_) {
+      // 回退：用分隔符计数
+      final normalized = p.normalize(path).replaceAll('\\\\', '/');
+      return '/'.allMatches(normalized).length;
     }
   }
 

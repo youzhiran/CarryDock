@@ -12,6 +12,8 @@ class Software {
   bool installExists;
   SoftwareStatus status;
   int sortOrder;
+  // 运行时状态：是否为“备份归档”（位于归档目录下的 backup 子目录）。不会持久化到文件。
+  bool isBackupArchive;
 
   Software({
     required this.id,
@@ -24,6 +26,7 @@ class Software {
     this.installExists = true,
     this.status = SoftwareStatus.managed,
     this.sortOrder = 0,
+    this.isBackupArchive = false,
   });
 
   Map<String, dynamic> toJson() {
@@ -35,6 +38,7 @@ class Software {
       'archivePath': archivePath,
       'iconPath': iconPath,
       'sortOrder': sortOrder,
+      // 注意：isBackupArchive 为运行时标记，不进行持久化
     };
   }
 
