@@ -43,6 +43,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _versionTapCount = 0;
   DateTime? _firstVersionTap;
   String _appVersion = '加载中...';
+  String _buildTime = '未知';
 
   bool _installPathDirty = false;
   bool _archivePathDirty = false;
@@ -90,6 +91,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadArchiveHandlingSettings();
     _loadExecutableSettings();
     _loadAppVersion();
+    _loadBuildTime();
     _loadConfigFilePath();
   }
 
@@ -179,6 +181,66 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _appVersion = '未知';
       });
     }
+  }
+
+  Future<void> _loadBuildTime() async {
+    try {
+      // 尝试从生成的构建信息文件中读取
+      final buildInfo = await _readBuildInfo();
+      if (!mounted) return;
+      setState(() {
+        _buildTime = buildInfo;
+      });
+    } catch (e, s) {
+      logger.w('获取编译时间失败', error: e, stackTrace: s);
+      if (!mounted) return;
+      setState(() {
+        _buildTime = '未知';
+      });
+    }
+  }
+
+  Future<String> _readBuildInfo() async {
+    try {
+      // 这里我们将使用一个在构建时生成的文件
+      // 首先检查是否存在这个文件
+      final buildInfoFile = File('build_info.txt');
+      String buildTime;
+      
+      if (await buildInfoFile.exists()) {
+        buildTime = await buildInfoFile.readAsString();
+      } else {
+        // 如果文件不存在，返回当前时间（用于开发环境）
+        buildTime = DateTime.now().toString();
+      }
+      
+      // 处理时间格式，只显示到秒
+      final trimmedTime = _formatBuildTime(buildTime);
+      return trimmedTime;
+    } catch (e) {
+      // 如果读取失败，返回当前时间（格式化后）
+      return _formatBuildTime(DateTime.now().toString());
+    }
+  }
+  
+  String _formatBuildTime(String rawTime) {
+    try {
+      // 尝试解析时间字符串
+      final dateTime = DateTime.parse(rawTime.trim());
+      // 格式化只显示到秒
+      return '${dateTime.year}-${_twoDigits(dateTime.month)}-${_twoDigits(dateTime.day)} ${_twoDigits(dateTime.hour)}:${_twoDigits(dateTime.minute)}:${_twoDigits(dateTime.second)}';
+    } catch (e) {
+      // 如果解析失败，尝试直接截取到秒
+      final trimmed = rawTime.trim();
+      if (trimmed.contains('.')) {
+        return trimmed.split('.')[0];
+      }
+      return trimmed;
+    }
+  }
+  
+  String _twoDigits(int n) {
+    return n.toString().padLeft(2, '0');
   }
 
   Future<void> _saveInstallPath() async {
@@ -707,6 +769,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               const Text('版本'),
               Text(_appVersion, style: typography.bodyStrong),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+          decoration: BoxDecoration(
+            color: resources.controlFillColorSecondary,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('编译时间'),
+              Text(_buildTime, style: typography.bodyStrong),
             ],
           ),
         ),

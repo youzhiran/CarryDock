@@ -1,0 +1,81 @@
+name: Windows CI/CD
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.x'
+          channel: 'stable'
+      
+      - name: Install dependencies
+        run: flutter pub get
+      
+      - name: Get version from pubspec.yaml
+        id: get_version
+        run: |
+          $pubspec = Get-Content pubspec.yaml -Raw
+          $version = [regex]::Match($pubspec, 'version: (\d+\.\d+\.\d+)\+(\d+)').Groups[1].Value
+          $build = [regex]::Match($pubspec, 'version: (\d+\.\d+\.\d+)\+(\d+)').Groups[2].Value
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+          echo "build=$build" >> $env:GITHUB_OUTPUT
+      
+      - name: Generate build info file
+        run: |
+          # 直接获取当前时间 DateTime 对象，然后转换为 UTC+8
+          $now = Get-Date
+          # 获取 UTC+8 时间（直接使用当前时间加上 8 小时，因为 GitHub Actions 环境是 UTC 时区）
+          $utc8Time = $now.AddHours(8)
+          $formattedTime = $utc8Time.ToString("yyyy-MM-dd HH:mm:ss")
+          $formattedTime > build_info.txt
+          echo "build_time=$formattedTime" >> $env:GITHUB_OUTPUT
+        id: build_info
+      
+      - name: Build Windows app
+        run: flutter build windows --release
+      
+      - name: Prepare release files
+        run: |
+          $version = "${{ steps.get_version.outputs.version }}"
+          $build = "${{ steps.get_version.outputs.build }}"
+          $releaseName = "carrydock-v${version}+${build}"
+          $zipFile = "${releaseName}.zip"
+          
+          # 直接从构建目录创建 ZIP，避免双重压缩
+          Compress-Archive -Path build/windows/x64/runner/Release/*,build_info.txt -DestinationPath $zipFile -Force
+          
+          echo "release_name=$releaseName" >> $env:GITHUB_OUTPUT
+          echo "zip_file=$zipFile" >> $env:GITHUB_OUTPUT
+        id: prepare_release
+      
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: carrydock-windows
+          path: ${{ steps.prepare_release.outputs.zip_file }}
+      
+      - name: Create GitHub Release and Upload Asset
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}+${{ steps.get_version.outputs.build }}
+          name: v${{ steps.get_version.outputs.version }}+${{ steps.get_version.outputs.build }}
+          body: |
+            CarryDock Windows Release
+            - Version: ${{ steps.get_version.outputs.version }}+${{ steps.get_version.outputs.build }}
+            - Build Time: ${{ steps.build_info.outputs.build_time }}
+          draft: false
+          prerelease: false
+          files: ${{ steps.prepare_release.outputs.zip_file }}

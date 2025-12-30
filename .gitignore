@@ -47,3 +47,4 @@ app.*.map.json
 # FVM Version Cache
 .fvm/
 /devtools_options.yaml
+/build_info.txt
