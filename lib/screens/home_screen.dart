@@ -783,7 +783,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (validPaths.isEmpty) {
       await _showMessageDialog(
         '无法识别的文件',
-        '请拖放支持的压缩包（ZIP/TAR）或已在设置中允许的可执行文件类型。',
+        '请拖放支持的压缩包（ZIP/TAR/RAR/7Z）或已在设置中允许的可执行文件类型。',
       );
       return;
     }
@@ -1247,7 +1247,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         Text('松开以添加软件', style: overlayTitleStyle),
                         const SizedBox(height: 4),
                         Text(
-                          '支持 ZIP/TAR 压缩包或已配置的可执行文件',
+                          '支持 ZIP/TAR/RAR/7Z 压缩包或已配置的可执行文件',
                           style: overlayHintStyle,
                         ),
                       ],

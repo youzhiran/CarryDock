@@ -9,7 +9,7 @@ import 'package:path/path.dart' as p;
 import '../utils/logger.dart';
 
 /// 支持的归档格式枚举，便于后续扩展。
-enum ArchiveFormat { zip, tar, tarGz, tarBz2, tarXz, gz }
+enum ArchiveFormat { zip, tar, tarGz, tarBz2, tarXz, gz, rar, sevenZip }
 
 /// 负责将各类归档文件解压到指定目录，并处理编码兼容问题的工具类。
 class ArchiveExtractor {
@@ -26,6 +26,8 @@ class ArchiveExtractor {
     'gz',
     'bz2',
     'xz',
+    'rar',
+    '7z',
   };
 
   /// 根据文件后缀推断归档类型，无法识别时返回 null。
@@ -51,6 +53,12 @@ class ArchiveExtractor {
     if (lowerPath.endsWith('.gz')) {
       return ArchiveFormat.gz;
     }
+    if (lowerPath.endsWith('.rar')) {
+      return ArchiveFormat.rar;
+    }
+    if (lowerPath.endsWith('.7z')) {
+      return ArchiveFormat.sevenZip;
+    }
     return null;
   }
 
@@ -72,6 +80,12 @@ class ArchiveExtractor {
         break;
       case ArchiveFormat.gz:
         await _extractGz(archiveFile, destination);
+        break;
+      case ArchiveFormat.rar:
+        await _extractRar(archiveFile, destination);
+        break;
+      case ArchiveFormat.sevenZip:
+        await _extractSevenZip(archiveFile, destination);
         break;
     }
   }
@@ -292,5 +306,157 @@ class ArchiveExtractor {
     } catch (_) {
       return null;
     }
+  }
+
+  /// 使用系统7z命令解压RAR文件
+  static Future<void> _extractRar(
+    File archiveFile,
+    Directory destination,
+  ) async {
+    await _extractWith7z(archiveFile, destination, 'rar');
+  }
+
+  /// 使用系统7z命令解压7Z文件
+  static Future<void> _extractSevenZip(
+    File archiveFile,
+    Directory destination,
+  ) async {
+    await _extractWith7z(archiveFile, destination, '7z');
+  }
+
+  /// 使用系统7z命令解压文件的通用方法
+  static Future<void> _extractWith7z(
+    File archiveFile,
+    Directory destination,
+    String format,
+  ) async {
+    try {
+      await destination.create(recursive: true);
+
+      // 自动寻找7z.exe路径
+      final sevenZipPath = await find7ZipPath();
+      if (sevenZipPath == null) {
+        throw UnsupportedError(
+          '无法解压${format.toUpperCase()}文件，未找到7-Zip安装。\n'
+          '请先安装7-Zip软件（https://www.7-zip.org/）。'
+        );
+      }
+
+      logger.i('找到7z.exe路径: $sevenZipPath');
+
+      // 构建7z命令：7z x <archiveFile> -o<destination> -y
+      final result = await Process.run(
+        sevenZipPath,
+        [
+          'x',
+          archiveFile.path,
+          '-o${destination.path}',
+          '-y', // 自动确认所有提示
+        ],
+        runInShell: false,
+      );
+
+      if (result.exitCode != 0) {
+        logger.e('7z解压失败: ${result.stderr}');
+        throw Exception('7z解压失败: ${result.stderr}');
+      }
+
+      logger.i('7z解压成功: ${archiveFile.path} -> ${destination.path}');
+    } catch (e) {
+      logger.e('解压${format.toUpperCase()}文件失败: ${archiveFile.path}', error: e);
+      rethrow;
+    }
+  }
+
+  /// 自动寻找7z.exe的路径
+  static Future<String?> find7ZipPath() async {
+    // 常见的7-Zip安装路径
+    final commonPaths = [
+      r'C:\Program Files\7-Zip\7z.exe',
+      r'C:\Program Files (x86)\7-Zip\7z.exe',
+      r'C:\Apps\7-Zip\7z.exe',
+      r'D:\Program Files\7-Zip\7z.exe',
+      r'D:\Program Files (x86)\7-Zip\7z.exe',
+    ];
+
+    // 检查常见路径
+    for (final path in commonPaths) {
+      if (await File(path).exists()) {
+        return path;
+      }
+    }
+
+    // 检查系统PATH中的7z命令
+    try {
+      final result = await Process.run(
+        'where',
+        ['7z'],
+        runInShell: true,
+      );
+      if (result.exitCode == 0 && result.stdout.toString().trim().isNotEmpty) {
+        final paths = result.stdout.toString().trim().split('\r\n');
+        for (final path in paths) {
+          if (await File(path).exists()) {
+            return path;
+          }
+        }
+      }
+    } catch (e) {
+      logger.d('通过where命令查找7z失败: $e');
+    }
+
+    // 检查注册表中的安装路径（Windows系统）
+    try {
+      // 尝试从注册表获取7-Zip安装路径
+      final result = await Process.run(
+        'reg',
+        [
+          'query',
+          r'HKLM\SOFTWARE\7-Zip',
+          '/v',
+          'Path',
+        ],
+        runInShell: true,
+      );
+      if (result.exitCode == 0) {
+        final output = result.stdout.toString();
+        final match = RegExp(r'Path\s+REG_SZ\s+([^\r\n]+)').firstMatch(output);
+        if (match != null) {
+          final path = match.group(1)!.trim();
+          final exePath = path.endsWith('\\') ? '${path}7z.exe' : '$path\\7z.exe';
+          if (await File(exePath).exists()) {
+            return exePath;
+          }
+        }
+      }
+
+      // 检查32位注册表项
+      final result32 = await Process.run(
+        'reg',
+        [
+          'query',
+          r'HKLM\SOFTWARE\WOW6432Node\7-Zip',
+          '/v',
+          'Path',
+        ],
+        runInShell: true,
+      );
+      if (result32.exitCode == 0) {
+        final output = result32.stdout.toString();
+        final match = RegExp(r'Path\s+REG_SZ\s+([^\r\n]+)').firstMatch(output);
+        if (match != null) {
+          final path = match.group(1)!.trim();
+          final exePath = path.endsWith('\\') ? '${path}7z.exe' : '${path}\\7z.exe';
+          if (await File(exePath).exists()) {
+            return exePath;
+          }
+        }
+      }
+    } catch (e) {
+      logger.d('通过注册表查找7z失败: $e');
+    }
+
+    logger.d('未找到7z.exe');
+    return null;
   }
 }

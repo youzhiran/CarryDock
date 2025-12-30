@@ -1144,7 +1144,7 @@ class SoftwareService {
   }) async {
     String? archivedPath;
     Directory? destinationDir;
-    bool _sameSourceAsDest = false;
+    bool sameSourceAsDest = false;
 
     try {
       final baseName = p.basenameWithoutExtension(archiveFile.path);
@@ -1194,17 +1194,17 @@ class SoftwareService {
       }
 
       int? preferredSortOrder;
-      _sameSourceAsDest = p.equals(archiveFile.path, archivedPath);
+      sameSourceAsDest = p.equals(archiveFile.path, archivedPath);
       if (allowOverride) {
         preferredSortOrder = await _prepareForOverride(
           installPath: destinationDir.path,
           // 当源文件即目标文件时，避免在覆盖准备阶段删除源文件
-          archivePath: _sameSourceAsDest ? '' : archivedPath,
+          archivePath: sameSourceAsDest ? '' : archivedPath,
         );
       }
 
       final File storedArchiveFile;
-      if (_sameSourceAsDest) {
+      if (sameSourceAsDest) {
         storedArchiveFile = archiveFile;
       } else {
         storedArchiveFile = await archiveFile.copy(archivedPath);
@@ -1257,7 +1257,7 @@ class SoftwareService {
     } catch (e) {
       await cleanupTemporaryFiles(
         installPath: destinationDir?.path,
-        archivePath: _sameSourceAsDest ? null : archivedPath,
+        archivePath: sameSourceAsDest ? null : archivedPath,
       );
       rethrow;
     }
@@ -1271,7 +1271,7 @@ class SoftwareService {
   }) async {
     String? archivedPath;
     Directory? destinationDir;
-    bool _sameSourceAsDest = false;
+    bool sameSourceAsDest = false;
 
     try {
       final baseName = p.basenameWithoutExtension(executableFile.path);
@@ -1317,15 +1317,15 @@ class SoftwareService {
       }
 
       int? preferredSortOrder;
-      _sameSourceAsDest = p.equals(executableFile.path, archivedPath);
+      sameSourceAsDest = p.equals(executableFile.path, archivedPath);
       if (allowOverride) {
         preferredSortOrder = await _prepareForOverride(
           installPath: destinationDir.path,
-          archivePath: _sameSourceAsDest ? '' : archivedPath,
+          archivePath: sameSourceAsDest ? '' : archivedPath,
         );
       }
 
-      if (!_sameSourceAsDest) {
+      if (!sameSourceAsDest) {
         await executableFile.copy(archivedPath);
       }
       await destinationDir.create(recursive: true);
@@ -1347,7 +1347,7 @@ class SoftwareService {
     } catch (e) {
       await cleanupTemporaryFiles(
         installPath: destinationDir?.path,
-        archivePath: _sameSourceAsDest ? null : archivedPath,
+        archivePath: sameSourceAsDest ? null : archivedPath,
       );
       rethrow;
     }

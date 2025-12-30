@@ -4,7 +4,6 @@ import 'package:carrydock/models/software.dart';
 import 'package:carrydock/services/executable_info_service.dart';
 import 'package:carrydock/services/software_service.dart';
 import 'package:carrydock/utils/logger.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -70,11 +69,7 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
           color: accent.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(6),
         ),
-        child: Icon(
-          FluentIcons.archive,
-          size: 14,
-          color: accent,
-        ),
+        child: Icon(FluentIcons.archive, size: 14, color: accent),
       ),
     );
     if (tooltip != null && tooltip.isNotEmpty) {
@@ -114,17 +109,21 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
     // 按最新约定：仅根据服务层扫描结果判断“备份存在”
     final hasBackup = s.isBackupArchive;
     final widgets = <Widget>[];
-    widgets.add(_buildStatusBadge(
-      icon: FluentIcons.archive,
-      color: hasArchive ? Colors.green : Colors.red,
-      tooltip: hasArchive ? '归档文件存在' : '归档文件不存在',
-    ));
+    widgets.add(
+      _buildStatusBadge(
+        icon: FluentIcons.archive,
+        color: hasArchive ? Colors.green : Colors.red,
+        tooltip: hasArchive ? '归档文件存在' : '归档文件不存在',
+      ),
+    );
     widgets.add(const SizedBox(width: 6));
-    widgets.add(_buildStatusBadge(
-      icon: FluentIcons.update_restore,
-      color: hasBackup ? Colors.blue : Colors.grey,
-      tooltip: hasBackup ? '检测到备份' : '未检测到备份',
-    ));
+    widgets.add(
+      _buildStatusBadge(
+        icon: FluentIcons.update_restore,
+        color: hasBackup ? Colors.blue : Colors.grey,
+        tooltip: hasBackup ? '检测到备份' : '未检测到备份',
+      ),
+    );
     return Row(mainAxisSize: MainAxisSize.min, children: widgets);
   }
 
@@ -317,13 +316,15 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
       // 获取当前软件名称作为默认新目录名
       final currentDirName = p.basename(widget.software.installPath);
       final parentDir = p.dirname(widget.software.installPath);
-      
+
       // 弹出对话框让用户输入新路径
       final newPathResult = await showDialog<String>(
         context: context,
         builder: (context) {
-          TextEditingController controller = TextEditingController(text: currentDirName);
-          
+          TextEditingController controller = TextEditingController(
+            text: currentDirName,
+          );
+
           return ContentDialog(
             title: const Text('修改软件文件夹'),
             content: Column(
@@ -356,52 +357,54 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
                 onPressed: () => Navigator.pop(context, null),
               ),
               Button(
-                child: const Text('确定'),
                 onPressed: () => Navigator.pop(context, controller.text.trim()),
                 style: ButtonStyle(
                   backgroundColor: WidgetStateProperty.resolveWith((states) {
                     if (states.contains(WidgetState.pressed)) {
-                      return FluentTheme.of(context).accentColor.withOpacity(0.8);
+                      return FluentTheme.of(
+                        context,
+                      ).accentColor.withValues(alpha: 0.8);
                     }
                     return FluentTheme.of(context).accentColor;
                   }),
                   foregroundColor: WidgetStateProperty.all(Colors.white),
                 ),
+                child: const Text('确定'),
               ),
             ],
           );
         },
       );
-      
+
       if (newPathResult == null || newPathResult.isEmpty) {
         // 用户取消或输入为空
         return;
       }
-      
+
       // 构建新的完整路径
       final newInstallPath = p.join(parentDir, newPathResult);
       final oldInstallPath = widget.software.installPath;
-      
+
       // 如果路径相同，不需要更新
       if (p.equals(newInstallPath, oldInstallPath)) {
         _showInfoBar('提示', '新路径与当前路径相同，无需更新。');
         return;
       }
-      
+
       // 检查旧目录是否存在
       final oldDir = Directory(oldInstallPath);
       if (!await oldDir.exists()) {
         _showInfoBar('错误', '当前软件文件夹不存在，无法迁移。', severity: InfoBarSeverity.error);
         return;
       }
-      
+
       // 检查新目录是否已存在
       final newDir = Directory(newInstallPath);
       if (await newDir.exists()) {
         _showInfoBar('错误', '新文件夹已存在，请选择其他名称。', severity: InfoBarSeverity.error);
         return;
       }
-      
+
       // 显示迁移进度对话框
       showDialog(
         context: context,
@@ -409,70 +412,71 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
         builder: (dialogContext) => const ContentDialog(
           content: Row(
             mainAxisSize: MainAxisSize.min,
-            children: [
-              ProgressRing(),
-              SizedBox(width: 12),
-              Text('正在迁移文件...'),
-            ],
+            children: [ProgressRing(), SizedBox(width: 12), Text('正在迁移文件...')],
           ),
         ),
       );
-      
+
       // 创建新目录
       await newDir.create(recursive: true);
-      
+
       // 迁移文件：复制旧目录所有内容到新目录
       await _copyDirectory(oldDir, newDir);
-      
+
       // 更新可执行文件路径
       String? newExecutablePath;
       if (widget.software.executablePath.isNotEmpty) {
-        final relativeExecPath = p.relative(widget.software.executablePath, from: oldInstallPath);
+        final relativeExecPath = p.relative(
+          widget.software.executablePath,
+          from: oldInstallPath,
+        );
         newExecutablePath = p.join(newInstallPath, relativeExecPath);
       }
-      
+
       // 调用服务更新软件路径
       await _softwareService.updateSoftwarePath(
         softwareId: widget.software.id,
         newInstallPath: newInstallPath,
         newExecutablePath: newExecutablePath,
       );
-      
+
       // 删除旧目录
       await oldDir.delete(recursive: true);
-      
+
       // 关闭进度对话框
       if (mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       }
-      
+
       _showInfoBar('成功', '软件文件夹已成功迁移。', severity: InfoBarSeverity.success);
-      
+
       // 刷新界面：重新加载软件信息
       await _loadExeInfo();
       await _loadExecutableOptions();
-      
+
       // 通知父组件重新加载软件列表
       if (widget.onRefresh != null) {
         widget.onRefresh!();
       }
     } catch (e, s) {
       logger.e('修改软件文件夹失败', error: e, stackTrace: s);
-      
+
       // 关闭可能存在的进度对话框
       if (mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       }
-      
+
       _showInfoBar('错误', '修改软件文件夹失败：$e', severity: InfoBarSeverity.error);
     }
   }
-  
+
   /// 复制目录及其所有内容
   Future<void> _copyDirectory(Directory source, Directory destination) async {
     await for (final entity in source.list(recursive: false)) {
       if (entity is Directory) {
-        final newDir = Directory(p.join(destination.path, p.basename(entity.path)));
+        final newDir = Directory(
+          p.join(destination.path, p.basename(entity.path)),
+        );
         await newDir.create();
         await _copyDirectory(entity, newDir);
       } else if (entity is File) {
@@ -557,46 +561,52 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
                 text: const Text('创建备份'),
                 onPressed: widget.software.installPath.isNotEmpty
                     ? () async {
-                          final dir = Directory(widget.software.installPath);
-                          if (!await dir.exists()) {
-                            _showInfoBar('提示', '安装目录不存在，无法创建备份。');
-                            return;
-                          }
-                          // 显示进度（非阻塞等待）
-                          // 注意：不要 await showDialog，以免阻塞后续逻辑。
-                          // 由后续逻辑中关闭对话框。
-                          // ignore: use_build_context_synchronously
-                          showDialog(
-                            context: context,
-                            barrierDismissible: false,
-                            builder: (dialogContext) => const ContentDialog(
-                              content: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  ProgressRing(),
-                                  SizedBox(width: 12),
-                                  Text('正在创建备份...'),
-                                ],
-                              ),
-                            ),
-                          );
-                          try {
-                            final created = await _softwareService
-                                .createBackupForSoftware(widget.software);
-                            if (mounted && Navigator.of(this.context).canPop()) {
-                              Navigator.of(this.context).pop();
-                            }
-                            _showInfoBar('成功', '已创建备份：${p.basename(created)}',
-                                severity: InfoBarSeverity.success);
-                          } catch (e, s) {
-                            logger.e('创建备份失败', error: e, stackTrace: s);
-                            if (mounted && Navigator.of(this.context).canPop()) {
-                              Navigator.of(this.context).pop();
-                            }
-                            _showInfoBar('错误', '创建备份失败，请稍后重试。',
-                                severity: InfoBarSeverity.error);
-                          }
+                        final dir = Directory(widget.software.installPath);
+                        if (!await dir.exists()) {
+                          _showInfoBar('提示', '安装目录不存在，无法创建备份。');
+                          return;
                         }
+                        // 显示进度（非阻塞等待）
+                        // 注意：不要 await showDialog，以免阻塞后续逻辑。
+                        // 由后续逻辑中关闭对话框。
+                        // ignore: use_build_context_synchronously
+                        showDialog(
+                          context: context,
+                          barrierDismissible: false,
+                          builder: (dialogContext) => const ContentDialog(
+                            content: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ProgressRing(),
+                                SizedBox(width: 12),
+                                Text('正在创建备份...'),
+                              ],
+                            ),
+                          ),
+                        );
+                        try {
+                          final created = await _softwareService
+                              .createBackupForSoftware(widget.software);
+                          if (mounted && Navigator.of(this.context).canPop()) {
+                            Navigator.of(this.context).pop();
+                          }
+                          _showInfoBar(
+                            '成功',
+                            '已创建备份：${p.basename(created)}',
+                            severity: InfoBarSeverity.success,
+                          );
+                        } catch (e, s) {
+                          logger.e('创建备份失败', error: e, stackTrace: s);
+                          if (mounted && Navigator.of(this.context).canPop()) {
+                            Navigator.of(this.context).pop();
+                          }
+                          _showInfoBar(
+                            '错误',
+                            '创建备份失败，请稍后重试。',
+                            severity: InfoBarSeverity.error,
+                          );
+                        }
+                      }
                     : null,
               ),
               MenuFlyoutItem(
@@ -837,12 +847,10 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
           : Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (widget.software.status == SoftwareStatus.unknownInstall) ...[
+                if (widget.software.status ==
+                    SoftwareStatus.unknownInstall) ...[
                   if (widget.software.archiveExists) ...[
-                    _buildArchiveStatusPill(
-                      exists: true,
-                      tooltip: '归档文件存在',
-                    ),
+                    _buildArchiveStatusPill(exists: true, tooltip: '归档文件存在'),
                     const SizedBox(width: controlSpacing),
                   ],
                   if (widget.onRehost != null)
@@ -851,12 +859,15 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
                       child: IconButton(
                         icon: const Icon(FluentIcons.refresh),
                         style: ButtonStyle(
-                          foregroundColor: WidgetStateProperty.all(Colors.green),
+                          foregroundColor: WidgetStateProperty.all(
+                            Colors.green,
+                          ),
                         ),
                         onPressed: widget.onRehost,
                       ),
                     ),
-                  if (widget.onRehost != null) const SizedBox(width: controlSpacing),
+                  if (widget.onRehost != null)
+                    const SizedBox(width: controlSpacing),
                 ],
                 if (widget.software.status == SoftwareStatus.managed) ...[
                   _buildArchiveAndBackupBadges(widget.software),
@@ -884,7 +895,8 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
                     ),
                   const SizedBox(width: controlSpacing),
                 ],
-                if (widget.software.status == SoftwareStatus.unknownArchive) ...[
+                if (widget.software.status ==
+                    SoftwareStatus.unknownArchive) ...[
                   _buildArchiveStatusPill(
                     exists: true,
                     tooltip: widget.software.isBackupArchive ? '备份归档' : '归档文件',
@@ -954,15 +966,15 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
               Tooltip(
                 message: '归档文件存在',
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.green.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: Icon(
-                    FluentIcons.archive,
-                    color: Colors.green,
-                  ),
+                  child: Icon(FluentIcons.archive, color: Colors.green),
                 ),
               ),
             ],
