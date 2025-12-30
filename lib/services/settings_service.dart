@@ -11,10 +11,12 @@ class SettingsService {
   static const String _executableExtensionsKey = 'executable_extensions';
   static const String _developerOptionsEnabledKey = 'developer_options_enabled';
   static const String _removeNestedFoldersKey = 'remove_nested_folders';
+  static const String _useGridLayoutKey = 'use_grid_layout';
 
   static const int defaultExecutableSearchMaxDepth = 3;
   static const List<String> defaultExecutableExtensions = ['exe', 'bat'];
   static const bool defaultRemoveNestedFoldersEnabled = true;
+  static const bool defaultUseGridLayout = false;
 
   Future<void> saveInstallPath(String path) async {
     await _storageService.setValue(_installPathKey, path);
@@ -95,6 +97,15 @@ class SettingsService {
   Future<bool> getRemoveNestedFoldersEnabled() async {
     return await _storageService.getValue<bool>(_removeNestedFoldersKey) ??
         defaultRemoveNestedFoldersEnabled;
+  }
+
+  Future<void> saveUseGridLayout(bool useGridLayout) async {
+    await _storageService.setValue(_useGridLayoutKey, useGridLayout);
+  }
+
+  Future<bool> getUseGridLayout() async {
+    return await _storageService.getValue<bool>(_useGridLayoutKey) ??
+        defaultUseGridLayout;
   }
 
   /// 获取配置文件的绝对路径。

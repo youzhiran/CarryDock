@@ -138,7 +138,21 @@ class _HomeScreenState extends State<HomeScreen> {
     _softwareService = SoftwareService(
       errorHandler: Provider.of<ErrorHandler>(context, listen: false),
     );
+    _loadLayoutPreference();
     _loadSoftware();
+  }
+
+  Future<void> _loadLayoutPreference() async {
+    try {
+      final useGridLayout = await _settingsService.getUseGridLayout();
+      if (mounted) {
+        setState(() {
+          _useGridLayout = useGridLayout;
+        });
+      }
+    } catch (e, s) {
+      logger.e('加载布局偏好设置时发生异常', error: e, stackTrace: s);
+    }
   }
 
   @override
@@ -994,10 +1008,16 @@ class _HomeScreenState extends State<HomeScreen> {
                                 : FluentIcons.grid_view_small,
                           ),
                           label: Text(_useGridLayout ? '列表视图' : '网格视图'),
-                          onPressed: () {
+                          onPressed: () async {
+                            final newLayout = !_useGridLayout;
                             setState(() {
-                              _useGridLayout = !_useGridLayout;
+                              _useGridLayout = newLayout;
                             });
+                            try {
+                              await _settingsService.saveUseGridLayout(newLayout);
+                            } catch (e, s) {
+                              logger.e('保存布局偏好设置时发生异常', error: e, stackTrace: s);
+                            }
                           },
                         ),
                         CommandBarButton(
@@ -1075,6 +1095,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         software.archiveExists)
                     ? () => _performRehostAction(software)
                     : null,
+                onRefresh: _loadSoftware,
                 displayStyle: SoftwareTileDisplay.grid,
               );
             },
@@ -1118,6 +1139,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             software.archiveExists)
                         ? () => _performRehostAction(software)
                         : null,
+                    onRefresh: _loadSoftware,
                     displayStyle: SoftwareTileDisplay.list,
                     isReorderMode: _isReorderModeEnabled,
                   );
@@ -1163,6 +1185,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             software.archiveExists)
                         ? () => _performRehostAction(software)
                         : null,
+                    onRefresh: _loadSoftware,
                     displayStyle: SoftwareTileDisplay.list,
                   );
                 },

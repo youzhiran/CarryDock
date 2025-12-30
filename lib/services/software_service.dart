@@ -1353,6 +1353,39 @@ class SoftwareService {
     }
   }
 
+  /// 更新软件的安装路径和可执行文件路径
+  Future<void> updateSoftwarePath({required String softwareId, required String newInstallPath, String? newExecutablePath}) async {
+    try {
+      final list = await _loadManagedSoftware();
+      final idx = list.indexWhere((s) => s.id == softwareId);
+      if (idx < 0) {
+        throw Exception('未找到指定软件');
+      }
+      
+      final existing = list[idx];
+      final updated = Software(
+        id: existing.id,
+        name: existing.name,
+        installPath: newInstallPath,
+        executablePath: newExecutablePath ?? existing.executablePath,
+        archivePath: existing.archivePath,
+        backupPath: existing.backupPath,
+        iconPath: existing.iconPath,
+        archiveExists: existing.archiveExists,
+        installExists: true, // 更新后目录应该存在
+        status: existing.status,
+        sortOrder: existing.sortOrder,
+      );
+      
+      list[idx] = updated;
+      await _saveSoftwareList(list);
+    } catch (e, s) {
+      logger.e('更新软件路径失败', error: e, stackTrace: s);
+      errorHandler?.handleError(e, s);
+      rethrow;
+    }
+  }
+
   /// 重新托管：当安装目录丢失但归档仍存在时，根据归档重新解压并恢复托管状态。
   ///
   /// - 若找到多个可执行程序，返回 needsSelection 并携带可选路径与上下文；

@@ -4,6 +4,7 @@ import 'package:carrydock/models/software.dart';
 import 'package:carrydock/services/executable_info_service.dart';
 import 'package:carrydock/services/software_service.dart';
 import 'package:carrydock/utils/logger.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -19,6 +20,7 @@ class SoftwareListTile extends StatefulWidget {
   final VoidCallback onLaunch;
   final ValueChanged<String> onLaunchAlternative;
   final VoidCallback? onRehost;
+  final VoidCallback? onRefresh;
   final SoftwareTileDisplay displayStyle;
   final bool isReorderMode;
 
@@ -30,6 +32,7 @@ class SoftwareListTile extends StatefulWidget {
     required this.onLaunch,
     required this.onLaunchAlternative,
     this.onRehost,
+    this.onRefresh,
     this.displayStyle = SoftwareTileDisplay.list,
     this.isReorderMode = false,
   });
@@ -308,6 +311,176 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
     }
   }
 
+  /// 修改软件文件夹：允许用户直接输入新的安装目录路径
+  Future<void> _changeSoftwareFolder() async {
+    try {
+      // 获取当前软件名称作为默认新目录名
+      final currentDirName = p.basename(widget.software.installPath);
+      final parentDir = p.dirname(widget.software.installPath);
+      
+      // 弹出对话框让用户输入新路径
+      final newPathResult = await showDialog<String>(
+        context: context,
+        builder: (context) {
+          TextEditingController controller = TextEditingController(text: currentDirName);
+          
+          return ContentDialog(
+            title: const Text('修改软件文件夹'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('当前路径：'),
+                Text(
+                  widget.software.installPath,
+                  style: FluentTheme.of(context).typography.caption,
+                ),
+                const SizedBox(height: 16),
+                const Text('新文件夹名称：'),
+                const SizedBox(height: 8),
+                TextBox(
+                  controller: controller,
+                  placeholder: '输入新的文件夹名称',
+                  autofocus: true,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '新路径将是：${p.join(parentDir, '')}\\[您输入的名称]',
+                  style: FluentTheme.of(context).typography.caption,
+                ),
+              ],
+            ),
+            actions: [
+              Button(
+                child: const Text('取消'),
+                onPressed: () => Navigator.pop(context, null),
+              ),
+              Button(
+                child: const Text('确定'),
+                onPressed: () => Navigator.pop(context, controller.text.trim()),
+                style: ButtonStyle(
+                  backgroundColor: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.pressed)) {
+                      return FluentTheme.of(context).accentColor.withOpacity(0.8);
+                    }
+                    return FluentTheme.of(context).accentColor;
+                  }),
+                  foregroundColor: WidgetStateProperty.all(Colors.white),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+      
+      if (newPathResult == null || newPathResult.isEmpty) {
+        // 用户取消或输入为空
+        return;
+      }
+      
+      // 构建新的完整路径
+      final newInstallPath = p.join(parentDir, newPathResult);
+      final oldInstallPath = widget.software.installPath;
+      
+      // 如果路径相同，不需要更新
+      if (p.equals(newInstallPath, oldInstallPath)) {
+        _showInfoBar('提示', '新路径与当前路径相同，无需更新。');
+        return;
+      }
+      
+      // 检查旧目录是否存在
+      final oldDir = Directory(oldInstallPath);
+      if (!await oldDir.exists()) {
+        _showInfoBar('错误', '当前软件文件夹不存在，无法迁移。', severity: InfoBarSeverity.error);
+        return;
+      }
+      
+      // 检查新目录是否已存在
+      final newDir = Directory(newInstallPath);
+      if (await newDir.exists()) {
+        _showInfoBar('错误', '新文件夹已存在，请选择其他名称。', severity: InfoBarSeverity.error);
+        return;
+      }
+      
+      // 显示迁移进度对话框
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => const ContentDialog(
+          content: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ProgressRing(),
+              SizedBox(width: 12),
+              Text('正在迁移文件...'),
+            ],
+          ),
+        ),
+      );
+      
+      // 创建新目录
+      await newDir.create(recursive: true);
+      
+      // 迁移文件：复制旧目录所有内容到新目录
+      await _copyDirectory(oldDir, newDir);
+      
+      // 更新可执行文件路径
+      String? newExecutablePath;
+      if (widget.software.executablePath.isNotEmpty) {
+        final relativeExecPath = p.relative(widget.software.executablePath, from: oldInstallPath);
+        newExecutablePath = p.join(newInstallPath, relativeExecPath);
+      }
+      
+      // 调用服务更新软件路径
+      await _softwareService.updateSoftwarePath(
+        softwareId: widget.software.id,
+        newInstallPath: newInstallPath,
+        newExecutablePath: newExecutablePath,
+      );
+      
+      // 删除旧目录
+      await oldDir.delete(recursive: true);
+      
+      // 关闭进度对话框
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      
+      _showInfoBar('成功', '软件文件夹已成功迁移。', severity: InfoBarSeverity.success);
+      
+      // 刷新界面：重新加载软件信息
+      await _loadExeInfo();
+      await _loadExecutableOptions();
+      
+      // 通知父组件重新加载软件列表
+      if (widget.onRefresh != null) {
+        widget.onRefresh!();
+      }
+    } catch (e, s) {
+      logger.e('修改软件文件夹失败', error: e, stackTrace: s);
+      
+      // 关闭可能存在的进度对话框
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      
+      _showInfoBar('错误', '修改软件文件夹失败：$e', severity: InfoBarSeverity.error);
+    }
+  }
+  
+  /// 复制目录及其所有内容
+  Future<void> _copyDirectory(Directory source, Directory destination) async {
+    await for (final entity in source.list(recursive: false)) {
+      if (entity is Directory) {
+        final newDir = Directory(p.join(destination.path, p.basename(entity.path)));
+        await newDir.create();
+        await _copyDirectory(entity, newDir);
+      } else if (entity is File) {
+        await entity.copy(p.join(destination.path, p.basename(entity.path)));
+      }
+    }
+  }
+
   /// 打开归档文件所在目录，优先高亮具体文件。
   Future<void> _openArchiveDirectory() async {
     final archivePath = widget.software.archivePath;
@@ -370,6 +543,13 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
                 text: const Text('打开软件文件夹'),
                 onPressed: widget.software.installPath.isNotEmpty
                     ? _openInstallDirectory
+                    : null,
+              ),
+              MenuFlyoutItem(
+                leading: const Icon(FluentIcons.edit),
+                text: const Text('修改软件文件夹'),
+                onPressed: widget.software.installPath.isNotEmpty
+                    ? _changeSoftwareFolder
                     : null,
               ),
               MenuFlyoutItem(
