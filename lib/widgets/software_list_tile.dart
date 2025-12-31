@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:carrydock/models/software.dart';
 import 'package:carrydock/services/executable_info_service.dart';
 import 'package:carrydock/services/software_service.dart';
+import 'package:carrydock/utils/file_utils.dart';
 import 'package:carrydock/utils/logger.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/gestures.dart';
@@ -524,6 +525,77 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
     }
   }
 
+  /// 获取软件的显示名称，与列表显示保持一致
+  String _getSoftwareDisplayName() {
+    switch (widget.software.status) {
+      case SoftwareStatus.managed:
+        return _fileDescription ?? widget.software.name;
+      case SoftwareStatus.unknownInstall:
+      case SoftwareStatus.unknownArchive:
+        return widget.software.name;
+    }
+  }
+  
+  /// 检查并添加绿驿管家自身的快捷方式
+  Future<void> _checkAndAddCarryDockShortcut(Directory startMenuDir) async {
+    try {
+      // 获取绿驿管家自身的可执行文件路径
+      final appExePath = Platform.resolvedExecutable;
+      final appName = '绿驿管家';
+      final appShortcutPath = p.join(startMenuDir.path, '$appName.lnk');
+      
+      // 检查快捷方式是否已存在
+      final appShortcutFile = File(appShortcutPath);
+      if (!await appShortcutFile.exists()) {
+        logger.i('开始菜单中不存在绿驿管家快捷方式，正在添加...');
+        await FileUtils.createShortcut(appExePath, appShortcutPath, appName);
+        logger.i('绿驿管家快捷方式已添加到开始菜单');
+      }
+    } catch (e, s) {
+      logger.e('添加绿驿管家快捷方式失败', error: e, stackTrace: s);
+      // 不影响主流程，继续执行
+    }
+  }
+
+  /// 将软件添加到开始菜单。
+  Future<void> _addToStartMenu() async {
+    final exePath = widget.software.executablePath;
+    if (exePath.isEmpty) {
+      _showInfoBar('提示', '该软件未配置可执行文件路径。');
+      return;
+    }
+
+    try {
+      // 获取 CarryDock 开始菜单目录
+      final startMenuDir = await FileUtils.getCarryDockStartMenuDir();
+      
+      // 检查并添加绿驿管家自身的快捷方式
+      await _checkAndAddCarryDockShortcut(startMenuDir);
+      
+      // 获取统一的名称
+      final displayName = _getSoftwareDisplayName();
+      // 使用显示名称作为快捷方式文件名称（去除空格和特殊字符）
+      final sanitizedName = displayName.replaceAll(RegExp(r'[\/:*?"<>|]'), '_').trim();
+      final shortcutPath = p.join(startMenuDir.path, '$sanitizedName.lnk');
+      
+      // 创建快捷方式
+      await FileUtils.createShortcut(exePath, shortcutPath, displayName);
+      
+      _showInfoBar(
+        '成功',
+        '已将 "$displayName" 添加到开始菜单。',
+        severity: InfoBarSeverity.success,
+      );
+    } catch (e, s) {
+      logger.e('添加到开始菜单失败', error: e, stackTrace: s);
+      _showInfoBar(
+        '错误',
+        '添加到开始菜单失败：$e',
+        severity: InfoBarSeverity.error,
+      );
+    }
+  }
+
   /// 弹出右键菜单，提供常用目录的快捷入口。
   void _showContextMenu({Offset? position}) {
     if (_contextMenuController.isAttached && _contextMenuController.isOpen) {
@@ -607,6 +679,13 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
                           );
                         }
                       }
+                    : null,
+              ),
+              MenuFlyoutItem(
+                leading: const Icon(FluentIcons.pin),
+                text: const Text('添加到开始菜单'),
+                onPressed: widget.software.executablePath.isNotEmpty
+                    ? _addToStartMenu
                     : null,
               ),
               MenuFlyoutItem(
@@ -926,9 +1005,11 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
     Color? titleColor;
     String? gridSupplementaryText;
 
+    // 使用统一的显示名称逻辑
+    listTitle = _getSoftwareDisplayName();
+    
     switch (widget.software.status) {
       case SoftwareStatus.managed:
-        listTitle = _fileDescription ?? widget.software.name;
         if (!widget.software.installExists) {
           subtitleText = '软件目录已删除';
           titleColor = Colors.orange;
@@ -939,13 +1020,11 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
         }
         break;
       case SoftwareStatus.unknownInstall:
-        listTitle = widget.software.name;
         subtitleText = '未知文件夹';
         gridSupplementaryText = subtitleText;
         titleColor = Colors.orange;
         break;
       case SoftwareStatus.unknownArchive:
-        listTitle = widget.software.name;
         subtitleText = '未知归档文件';
         gridSupplementaryText = subtitleText;
         titleColor = Colors.orange;
