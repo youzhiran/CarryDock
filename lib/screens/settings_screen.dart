@@ -2,9 +2,11 @@ import 'dart:io';
 
 import 'package:carrydock/providers/developer_options_provider.dart';
 import 'package:carrydock/providers/theme_provider.dart';
+import 'package:carrydock/providers/update_provider.dart';
 import 'package:carrydock/services/settings_service.dart';
 import 'package:carrydock/utils/error_handler.dart';
 import 'package:carrydock/utils/logger.dart';
+import 'package:carrydock/widgets/update_dialog.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/foundation.dart';
@@ -751,6 +753,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   ) {
     final typography = FluentTheme.of(context).typography;
     final resources = FluentTheme.of(context).resources;
+    final updateProvider = context.watch<UpdateProvider>();
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -787,7 +791,141 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         ),
+        const SizedBox(height: 12),
+        Button(
+          onPressed: () async {
+            await updateProvider.checkForUpdates();
+            if (updateProvider.hasUpdate && updateProvider.latestVersionInfo != null) {
+              await showDialog(
+                context: context,
+                builder: (dialogContext) => UpdateDialog(
+                  updateProvider: updateProvider,
+                ),
+              );
+            } else {
+              displayInfoBar(
+                context,
+                builder: (context, close) {
+                  return InfoBar(
+                    title: const Text('成功'),
+                    content: Text(updateProvider.updateStatus),
+                    action: IconButton(
+                      icon: const Icon(FluentIcons.clear),
+                      onPressed: close,
+                    ),
+                    severity: InfoBarSeverity.success,
+                  );
+                },
+              );
+            }
+          },
+          style: ButtonStyle(
+            padding: const WidgetStatePropertyAll(
+              EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+            ),
+            backgroundColor: WidgetStatePropertyAll(
+              resources.controlFillColorSecondary,
+            ),
+          ),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('检查更新'),
+              Icon(FluentIcons.refresh),
+            ],
+          ),
+        ),
         const SizedBox(height: 8),
+      ],
+    );
+  }
+  
+  // 开发者选项部分
+  Widget _buildDeveloperOptionsSection() {
+    final typography = FluentTheme.of(context).typography;
+    final resources = FluentTheme.of(context).resources;
+    final updateProvider = context.watch<UpdateProvider>();
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Button(
+          onPressed: () async {
+            // 确认重装操作
+            final result = await showDialog<bool>(
+              context: context,
+              builder: (dialogContext) => ContentDialog(
+                title: const Text('确认重装'),
+                content: const Text('确定要重装最新版本吗？这将覆盖当前安装的版本，但会保留配置文件。'),
+                actions: [
+                  Button(
+                    child: const Text('取消'),
+                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                  ),
+                  FilledButton(
+                    child: const Text('确认'),
+                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                  ),
+                ],
+              ),
+            );
+            
+            if (result == true) {
+              // 执行重装操作
+              // 调用checkForUpdates并设置本地版本为1，确保能检测到更新
+              final hasUpdate = await updateProvider.checkForUpdates(customLocalBuildNumber: 1);
+              
+              if (hasUpdate && updateProvider.latestVersionInfo != null) {
+                // 发现新版本后，直接显示更新对话框，使用现有的更新流程
+                await showDialog(
+                  context: context,
+                  builder: (dialogContext) => UpdateDialog(
+                    updateProvider: updateProvider,
+                  ),
+                );
+              } else {
+                // 显示获取版本信息失败提示
+                displayInfoBar(
+                  context,
+                  builder: (context, close) {
+                    return InfoBar(
+                      title: const Text('失败'),
+                      content: Text('获取最新版本信息失败：${updateProvider.updateStatus}'),
+                      action: IconButton(
+                        icon: const Icon(FluentIcons.clear),
+                        onPressed: close,
+                      ),
+                      severity: InfoBarSeverity.error,
+                    );
+                  },
+                );
+              }
+            }
+          },
+          style: ButtonStyle(
+            padding: const WidgetStatePropertyAll(
+              EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+            ),
+            backgroundColor: WidgetStatePropertyAll(
+              resources.controlFillColorSecondary,
+            ),
+          ),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('重装最新版本'),
+              Icon(FluentIcons.download),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        // 显示当前更新状态
+        if (updateProvider.isReinstalling || updateProvider.isCheckingUpdate || updateProvider.isDownloading || updateProvider.isInstalling) ...[
+          const SizedBox(height: 8),
+          Text(updateProvider.updateStatus, style: typography.caption),
+          const SizedBox(height: 8),
+          ProgressBar(value: updateProvider.downloadProgress),
+        ],
       ],
     );
   }
@@ -950,7 +1088,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           label: '绿色软件安装目录',
           child: TextBox(
             controller: _installPathController,
-            placeholder: r'例如 C\\GreenSoftware',
+            placeholder: r'例如 C\GreenSoftware',
           ),
         ),
         const SizedBox(height: 12),
@@ -1121,6 +1259,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _buildSectionHeader(context, '关于'),
         const SizedBox(height: 12),
         _buildAboutSection(context, developerOptionsEnabled),
+        
+        // 开发者选项部分
+        if (developerOptionsEnabled) ...[
+          _buildSectionDivider(),
+          _buildSectionHeader(context, '开发者选项'),
+          const SizedBox(height: 12),
+          _buildDeveloperOptionsSection(),
+        ],
+        
         if (_hasUnsavedChanges) const SizedBox(height: 96),
       ],
     );
