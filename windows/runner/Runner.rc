@@ -15,10 +15,10 @@
 #undef APSTUDIO_READONLY_SYMBOLS
 
 /////////////////////////////////////////////////////////////////////////////
-// English (United States) resources
+// Chinese (Simplified, China) resources
 
-#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
-LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)
+LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
 
 #ifdef APSTUDIO_INVOKED
 /////////////////////////////////////////////////////////////////////////////
@@ -91,27 +91,27 @@ BEGIN
 "StringFileInfo"
 BEGIN
         BLOCK
-"040904e4"
+"080404e4"
 BEGIN
         VALUE
-"CompanyName", "com.devyi" "\0"
-VALUE "FileDescription", "carrydock" "\0"
+"CompanyName", "devyi.com" "\0"
+VALUE "FileDescription", "绿驿管家" "\0"
 VALUE "FileVersion", VERSION_AS_STRING "\0"
-VALUE "InternalName", "carrydock" "\0"
-VALUE "LegalCopyright", "Copyright (C) 2025 com.devyi. All rights reserved." "\0"
+VALUE "InternalName", "绿驿管家" "\0"
+VALUE "LegalCopyright", "Copyright (C) 2026 devyi.com All rights reserved." "\0"
 VALUE "OriginalFilename", "carrydock.exe" "\0"
-VALUE "ProductName", "carrydock" "\0"
+VALUE "ProductName", "绿驿管家" "\0"
 VALUE "ProductVersion", VERSION_AS_STRING "\0"
 END
         END
 BLOCK "VarFileInfo"
 BEGIN
         VALUE
-"Translation", 0x409, 1252
+"Translation", 0x0804, 0x04e4
 END
         END
 
-#endif    // English (United States) resources
+#endif    // Chinese (Simplified, China) resources
 /////////////////////////////////////////////////////////////////////////////
 
 
