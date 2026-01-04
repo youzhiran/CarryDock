@@ -9,7 +9,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 class UpdateDialog extends StatefulWidget {
   final UpdateProvider updateProvider;
   
-  const UpdateDialog({required this.updateProvider});
+  const UpdateDialog({super.key, required this.updateProvider});
   
   @override
   State<UpdateDialog> createState() => _UpdateDialogState();

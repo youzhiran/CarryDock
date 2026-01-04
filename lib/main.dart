@@ -12,7 +12,7 @@ import 'providers/update_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/developer_options_screen.dart';
 import 'screens/archive_manager_screen.dart';
-import 'screens/settings_screen.dart';
+import 'screens/settings/settings_screen.dart';
 
 void main() {
   // 使用 GlobalKey 来访问 Navigator 状态

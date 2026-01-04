@@ -446,7 +446,7 @@ class ArchiveExtractor {
         final match = RegExp(r'Path\s+REG_SZ\s+([^\r\n]+)').firstMatch(output);
         if (match != null) {
           final path = match.group(1)!.trim();
-          final exePath = path.endsWith('\\') ? '${path}7z.exe' : '${path}\\7z.exe';
+          final exePath = path.endsWith('\\') ? '${path}7z.exe' : '$path\\7z.exe';
           if (await File(exePath).exists()) {
             return exePath;
           }
