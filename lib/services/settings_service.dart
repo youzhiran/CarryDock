@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:carrydock/services/json_storage_service.dart';
 
 class SettingsService {
@@ -12,11 +13,15 @@ class SettingsService {
   static const String _developerOptionsEnabledKey = 'developer_options_enabled';
   static const String _removeNestedFoldersKey = 'remove_nested_folders';
   static const String _useGridLayoutKey = 'use_grid_layout';
+  static const String _enableFileLoggingKey = 'enable_file_logging';
+  static const String _logFilePathKey = 'log_file_path';
 
   static const int defaultExecutableSearchMaxDepth = 3;
   static const List<String> defaultExecutableExtensions = ['exe', 'bat'];
   static const bool defaultRemoveNestedFoldersEnabled = true;
   static const bool defaultUseGridLayout = false;
+  static const bool defaultEnableFileLogging = false;
+  static const String defaultLogFilePath = '';
 
   Future<void> saveInstallPath(String path) async {
     await _storageService.setValue(_installPathKey, path);
@@ -127,5 +132,30 @@ class SettingsService {
       }
     }
     return normalized.toList();
+  }
+
+  Future<void> saveEnableFileLogging(bool enabled) async {
+    await _storageService.setValue(_enableFileLoggingKey, enabled);
+  }
+
+  Future<bool> getEnableFileLogging() async {
+    return await _storageService.getValue<bool>(_enableFileLoggingKey) ??
+        defaultEnableFileLogging;
+  }
+
+  Future<void> saveLogFilePath(String path) async {
+    await _storageService.setValue(_logFilePathKey, path);
+  }
+
+  Future<String> getLogFilePath() async {
+    final storedPath = await _storageService.getValue<String>(_logFilePathKey);
+    if (storedPath != null && storedPath.isNotEmpty) {
+      return storedPath;
+    }
+    
+    // 默认日志文件路径：与配置文件同一目录下的 carrydock.log
+    final configFilePath = await _storageService.getFilePath();
+    final configDir = Directory(configFilePath).parent.path;
+    return '$configDir/carrydock.log';
   }
 }

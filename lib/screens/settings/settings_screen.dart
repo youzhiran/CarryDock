@@ -51,8 +51,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _archivePathDirty = false;
   bool _executableSettingsDirty = false;
   bool _archiveHandlingSettingsDirty = false;
+  bool _logSettingsDirty = false;
   bool _hasUnsavedChanges = false;
   int _selectedMaxSearchDepth = SettingsService.defaultExecutableSearchMaxDepth;
+  bool _enableFileLogging = SettingsService.defaultEnableFileLogging;
+  bool _savedEnableFileLogging = SettingsService.defaultEnableFileLogging;
+  String _logFilePath = '';
 
   @override
   void initState() {
@@ -66,6 +70,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadArchivePath();
     _loadArchiveHandlingSettings();
     _loadExecutableSettings();
+    _loadLogSettings();
     _loadAppVersion();
     _loadBuildTime();
     _loadConfigFilePath();
@@ -176,6 +181,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _loadLogSettings() async {
+    final enableFileLogging = await _settingsService.getEnableFileLogging();
+    final logFilePath = await _settingsService.getLogFilePath();
+    if (!mounted) return;
+    setState(() {
+      _enableFileLogging = enableFileLogging;
+      _savedEnableFileLogging = enableFileLogging;
+      _logFilePath = logFilePath;
+    });
+    _refreshDirtyStates();
+  }
+
   Future<void> _saveInstallPath() async {
     final value = _installPathController.text.trim();
     await _settingsService.saveInstallPath(value);
@@ -236,6 +253,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _refreshDirtyStates();
   }
 
+  Future<void> _saveLogSettings() async {
+    final enableFileLogging = _enableFileLogging;
+    
+    // 保存日志设置
+    await _settingsService.saveEnableFileLogging(enableFileLogging);
+    
+    // 获取当前日志文件路径
+    final logFilePath = await _settingsService.getLogFilePath();
+    
+    // 立即更新日志管理器配置，无需重启应用
+    await LogManager().updateConfiguration(
+      enableFileLogging: enableFileLogging,
+      logFilePath: logFilePath,
+    );
+    
+    if (!mounted) return;
+    _savedEnableFileLogging = enableFileLogging;
+    _showSuccessMessage('日志设置已保存');
+    _refreshDirtyStates();
+  }
+
   Future<void> _saveAllChanges() async {
     if (_installPathDirty) {
       await _saveInstallPath();
@@ -251,6 +289,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     if (_executableSettingsDirty) {
       await _saveExecutableSettings();
+      if (!mounted) return;
+    }
+    if (_logSettingsDirty) {
+      await _saveLogSettings();
     }
   }
 
@@ -292,21 +334,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final extensionsDirty = !listEquals(extensions, _savedExecutableExtensions);
     final removeNestedDirty =
         _removeNestedFoldersEnabled != _savedRemoveNestedFoldersEnabled;
+    final enableFileLoggingDirty = _enableFileLogging != _savedEnableFileLogging;
 
     final executableDirty = depthDirty || extensionsDirty;
+    final logDirty = enableFileLoggingDirty;
     final hasChanges =
-        installDirty || archiveDirty || executableDirty || removeNestedDirty;
+        installDirty || archiveDirty || executableDirty || removeNestedDirty || logDirty;
 
     if (installDirty != _installPathDirty ||
         archiveDirty != _archivePathDirty ||
         executableDirty != _executableSettingsDirty ||
         removeNestedDirty != _archiveHandlingSettingsDirty ||
+        logDirty != _logSettingsDirty ||
         hasChanges != _hasUnsavedChanges) {
       setState(() {
         _installPathDirty = installDirty;
         _archivePathDirty = archiveDirty;
         _executableSettingsDirty = executableDirty;
         _archiveHandlingSettingsDirty = removeNestedDirty;
+        _logSettingsDirty = logDirty;
         _hasUnsavedChanges = hasChanges;
       });
     }
@@ -590,6 +636,61 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 themeProvider.updateFontFamily(font);
               }
             },
+          ),
+        ),
+        buildSectionDivider(),
+        buildSectionHeader(context, '日志设置'),
+        const SizedBox(height: 12),
+        InfoLabel(
+          label: '启用文件日志',
+          child: ToggleSwitch(
+            checked: _enableFileLogging,
+            onChanged: (value) async {
+              setState(() {
+                _enableFileLogging = value;
+              });
+              _refreshDirtyStates();
+              
+              // 自动保存日志设置，无需手动点击保存按钮
+              await _saveLogSettings();
+            },
+            content: const Text('将日志同时输出到文件'),
+          ),
+        ),
+        const SizedBox(height: 12),
+        InfoLabel(
+          label: '日志文件路径（只读，即本软件目录下）',
+          child: Row(
+            children: [
+              Expanded(
+                child: SelectableText(
+                  _logFilePath.replaceAll('\\', '/'),
+                  style: FluentTheme.of(context).typography.body,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Button(
+                child: const Text('打开文件所在位置'),
+                onPressed: () async {
+                  if (_logFilePath.isEmpty) {
+                    Provider.of<ErrorHandler>(
+                      context,
+                      listen: false,
+                    ).showHint('设置错误', '日志文件路径无效');
+                    return;
+                  }
+                  try {
+                    final uri = Uri.file(p.dirname(_logFilePath));
+                    await launchUrl(uri);
+                  } catch (e, s) {
+                    Provider.of<ErrorHandler>(
+                      context,
+                      listen: false,
+                    ).handleError(e, s);
+                  }
+                },
+              ),
+            ],
           ),
         ),
         buildSectionDivider(),

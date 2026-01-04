@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bitsdojo_window/bitsdojo_window.dart';
+import 'package:carrydock/services/settings_service.dart';
 import 'package:carrydock/utils/error_handler.dart';
 import 'package:carrydock/utils/logger.dart';
 import 'package:fluent_ui/fluent_ui.dart';
@@ -23,6 +24,17 @@ void main() {
   // 使用 runZonedGuarded 捕获所有未处理的错误
   runZonedGuarded<Future<void>>(
     () async {
+      // 初始化日志管理器
+      final settingsService = SettingsService();
+      final enableFileLogging = await settingsService.getEnableFileLogging();
+      final logFilePath = await settingsService.getLogFilePath();
+      
+      // 初始化日志管理器
+      await LogManager().initialize(
+        enableFileLogging: enableFileLogging,
+        logFilePath: logFilePath,
+      );
+      
       logger.i('应用启动');
       // 初始化错误处理器
       errorHandler.init();
@@ -36,6 +48,7 @@ void main() {
             ),
             ChangeNotifierProvider(create: (context) => UpdateProvider()),
             Provider<ErrorHandler>.value(value: errorHandler),
+            Provider<SettingsService>.value(value: settingsService),
           ],
           child: MyApp(navigatorKey: navigatorKey),
         ),
