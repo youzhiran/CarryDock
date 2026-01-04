@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../services/update_service.dart';
@@ -13,6 +14,9 @@ class UpdateProvider with ChangeNotifier {
   bool _isInstalling = false;
   bool _isReinstalling = false;
   
+  // 用于取消下载的Completer
+  Completer<bool>? _downloadCancelCompleter;
+  
   bool get isCheckingUpdate => _isCheckingUpdate;
   bool get hasUpdate => _hasUpdate;
   Map<String, dynamic>? get latestVersionInfo => _latestVersionInfo;
@@ -27,7 +31,7 @@ class UpdateProvider with ChangeNotifier {
     _isCheckingUpdate = true;
     _updateStatus = '正在检查更新...';
     notifyListeners();
-    
+
     try {
       final isUpdateAvailable = await _updateService.isUpdateAvailable(customLocalBuildNumber: customLocalBuildNumber);
       if (isUpdateAvailable) {
@@ -36,7 +40,12 @@ class UpdateProvider with ChangeNotifier {
         _updateStatus = '发现新版本！';
       } else {
         _hasUpdate = false;
-        _updateStatus = '当前已是最新版本。';
+        // 检查是否有错误信息
+        if (_updateService.lastError.isNotEmpty) {
+          _updateStatus = _updateService.lastError;
+        } else {
+          _updateStatus = '当前已是最新版本。';
+        }
       }
     } catch (e) {
       _hasUpdate = false;
@@ -45,7 +54,7 @@ class UpdateProvider with ChangeNotifier {
       _isCheckingUpdate = false;
       notifyListeners();
     }
-    
+
     return _hasUpdate;
   }
   
@@ -58,25 +67,51 @@ class UpdateProvider with ChangeNotifier {
     _isDownloading = true;
     _downloadProgress = 0.0;
     _updateStatus = '开始下载更新...';
+    _downloadCancelCompleter = Completer<bool>();
     notifyListeners();
     
     try {
       final downloadUrl = _latestVersionInfo!['downloadUrl'] as String;
-      final file = await _updateService.downloadUpdate(downloadUrl, savePath);
+      final file = await _updateService.downloadUpdate(
+        downloadUrl, 
+        savePath, 
+        onProgress: (progress) {
+          // 确保进度值在0-1之间
+          _downloadProgress = progress.clamp(0.0, 1.0);
+          _updateStatus = '正在下载更新...';
+          notifyListeners();
+        },
+        onCancel: () {
+          _downloadCancelCompleter?.complete(true);
+        }
+      );
       
       if (file != null) {
         _updateStatus = '更新包下载完成。';
         _downloadProgress = 1.0;
+        notifyListeners();
         return file;
       } else {
-        _updateStatus = '下载更新包失败。';
+        _updateStatus = _downloadCancelCompleter?.isCompleted == true ? '下载已取消。' : '下载更新包失败。';
+        notifyListeners();
         return null;
       }
     } catch (e) {
-      _updateStatus = '下载更新包失败：$e';
+      _updateStatus = e.toString() == '下载已取消' ? '下载已取消。' : '下载更新包失败：$e';
+      notifyListeners();
       return null;
     } finally {
       _isDownloading = false;
+      _downloadCancelCompleter = null;
+      notifyListeners();
+    }
+  }
+  
+  // 取消下载
+  void cancelDownload() {
+    if (_downloadCancelCompleter != null && !_downloadCancelCompleter!.isCompleted) {
+      _downloadCancelCompleter!.complete(true);
+      _updateStatus = '正在取消下载...';
       notifyListeners();
     }
   }
@@ -111,27 +146,53 @@ class UpdateProvider with ChangeNotifier {
     }
   }
   
-  // 重装最新版本
-  Future<bool> reinstallLatestVersion() async {
+  // 重装最新版本（完整流程：检查更新 -> 下载 -> 安装）
+  Future<bool> reinstallLatestVersion({
+    required String appDirectory,
+    required String configFilePath,
+    Function(String)? onStatusUpdate,
+  }) async {
     _isReinstalling = true;
-    
+
     try {
       // 设置本地版本为1，确保能检测到更新
       final hasUpdate = await checkForUpdates(customLocalBuildNumber: 1);
-      
-      if (hasUpdate && _latestVersionInfo != null) {
-        // 发现新版本后，使用现有的更新流程
-        _updateStatus = '开始下载最新版本...';
-        notifyListeners();
-        return true;
-      } else {
-        _updateStatus = '未获取到最新版本信息或已是最新版本。';
+
+      if (!hasUpdate || _latestVersionInfo == null) {
+        _updateStatus = '未获取到最新版本信息。';
+        onStatusUpdate?.call(_updateStatus);
         return false;
       }
+
+      // 下载更新包
+      _updateStatus = '正在下载最新版本...';
+      onStatusUpdate?.call(_updateStatus);
+      notifyListeners();
+
+      final tempDir = Directory.systemTemp;
+      final assetName = _latestVersionInfo!['assetName'] as String;
+      final tempFilePath = '${tempDir.path}\\$assetName';
+
+      final updateFile = await downloadUpdate(tempFilePath);
+      if (updateFile == null) {
+        _updateStatus = '下载更新包失败。';
+        onStatusUpdate?.call(_updateStatus);
+        return false;
+      }
+
+      // 安装更新
+      _updateStatus = '正在安装更新...';
+      onStatusUpdate?.call(_updateStatus);
+      notifyListeners();
+
+      final success = await installUpdate(updateFile, appDirectory, configFilePath);
+      return success;
     } catch (e) {
       _updateStatus = '重装最新版本失败：$e';
+      onStatusUpdate?.call(_updateStatus);
       return false;
     } finally {
+      _isReinstalling = false;
       notifyListeners();
     }
   }

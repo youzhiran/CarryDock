@@ -18,6 +18,27 @@ class UpdateDialog extends StatefulWidget {
 class _UpdateDialogState extends State<UpdateDialog> {
   final SettingsService _settingsService = SettingsService();
   
+  // 保存监听器函数引用，以便在dispose时正确移除
+  void _updateListener() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+  
+  @override
+  void initState() {
+    super.initState();
+    // 添加监听器，确保对话框能响应updateProvider的状态变化
+    widget.updateProvider.addListener(_updateListener);
+  }
+  
+  @override
+  void dispose() {
+    // 移除监听器
+    widget.updateProvider.removeListener(_updateListener);
+    super.dispose();
+  }
+  
   @override
   Widget build(BuildContext context) {
     final latestVersionInfo = widget.updateProvider.latestVersionInfo;
@@ -64,6 +85,14 @@ class _UpdateDialogState extends State<UpdateDialog> {
               Text(widget.updateProvider.updateStatus),
               const SizedBox(height: 8),
               ProgressBar(value: widget.updateProvider.downloadProgress),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  '${(widget.updateProvider.downloadProgress * 100).toStringAsFixed(2)}%',
+                  style: FluentTheme.of(context).typography.caption,
+                ),
+              ),
             ],
           ],
         ),
@@ -71,54 +100,108 @@ class _UpdateDialogState extends State<UpdateDialog> {
       actions: [
         Button(
           child: const Text('取消'),
-          onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
+          onPressed: () {
+            if (widget.updateProvider.isDownloading) {
+              // 取消下载
+              widget.updateProvider.cancelDownload();
+            }
+            Navigator.of(context, rootNavigator: true).pop();
+          },
         ),
         if (!widget.updateProvider.isDownloading && !widget.updateProvider.isInstalling) ...[
-          FilledButton(
-            child: const Text('下载并更新'),
-            onPressed: () async {
-              // 获取配置文件路径
-              final configFilePath = await _settingsService.getConfigFilePath();
-              // 获取应用目录
-              final appDirectory = configFilePath.substring(0, configFilePath.indexOf('data'));
-              
-              // 生成临时下载路径
-              final tempDir = Directory.systemTemp;
-              final assetName = latestVersionInfo['assetName'] as String;
-              logger.i('下载更新包：$assetName');
-              final tempFilePath = '${tempDir.path}\$assetName';
-              
-              // 下载更新
-              final updateFile = await widget.updateProvider.downloadUpdate(tempFilePath);
-              if (updateFile != null) {
-                // 安装更新
-                final success = await widget.updateProvider.installUpdate(
-                  updateFile,
-                  appDirectory,
-                  configFilePath,
-                );
-                if (success) {
-                  // 显示更新成功提示
-                  await showDialog(
-                    context: context,
-                    builder: (dialogContext) => ContentDialog(
-                      title: const Text('更新成功'),
-                      content: const Text('应用已成功更新，将在下次启动时生效。'),
-                      actions: [
-                        Button(
-                          child: const Text('关闭'),
-                          onPressed: () {
-                            Navigator.of(dialogContext).pop();
-                            Navigator.of(context, rootNavigator: true).pop();
-                          },
-                        ),
-                      ],
-                    ),
+          if (widget.updateProvider.updateStatus.contains('失败')) ...[
+            Button(
+              child: const Text('重试'),
+              onPressed: () async {
+                // 获取配置文件路径
+                final configFilePath = await _settingsService.getConfigFilePath();
+                // 获取应用目录
+                final appDirectory = configFilePath.substring(0, configFilePath.indexOf('data'));
+                
+                // 生成临时下载路径
+                final tempDir = Directory.systemTemp;
+                final assetName = latestVersionInfo['assetName'] as String;
+                logger.i('重新下载更新包：$assetName');
+                final tempFilePath = '${tempDir.path}\\$assetName';
+                
+                // 下载更新
+                final updateFile = await widget.updateProvider.downloadUpdate(tempFilePath);
+                if (updateFile != null) {
+                  // 安装更新
+                  final success = await widget.updateProvider.installUpdate(
+                    updateFile,
+                    appDirectory,
+                    configFilePath,
                   );
+                  if (success) {
+                    // 显示更新成功提示
+                    await showDialog(
+                      context: context,
+                      builder: (dialogContext) => ContentDialog(
+                        title: const Text('更新成功'),
+                        content: const Text('应用已成功更新，将在下次启动时生效。'),
+                        actions: [
+                          Button(
+                            child: const Text('关闭'),
+                            onPressed: () {
+                              Navigator.of(dialogContext).pop();
+                              Navigator.of(context, rootNavigator: true).pop();
+                            },
+                          ),
+                        ],
+                      ),
+                    );
+                  }
                 }
-              }
-            },
-          ),
+              },
+            ),
+          ] else ...[
+            FilledButton(
+              child: const Text('下载并更新'),
+              onPressed: () async {
+                // 获取配置文件路径
+                final configFilePath = await _settingsService.getConfigFilePath();
+                // 获取应用目录
+                final appDirectory = configFilePath.substring(0, configFilePath.indexOf('data'));
+                
+                // 生成临时下载路径
+                final tempDir = Directory.systemTemp;
+                final assetName = latestVersionInfo['assetName'] as String;
+                logger.i('下载更新包：$assetName');
+                final tempFilePath = '${tempDir.path}\\$assetName';
+                
+                // 下载更新
+                final updateFile = await widget.updateProvider.downloadUpdate(tempFilePath);
+                if (updateFile != null) {
+                  // 安装更新
+                  final success = await widget.updateProvider.installUpdate(
+                    updateFile,
+                    appDirectory,
+                    configFilePath,
+                  );
+                  if (success) {
+                    // 显示更新成功提示
+                    await showDialog(
+                      context: context,
+                      builder: (dialogContext) => ContentDialog(
+                        title: const Text('更新成功'),
+                        content: const Text('应用已成功更新，将在下次启动时生效。'),
+                        actions: [
+                          Button(
+                            child: const Text('关闭'),
+                            onPressed: () {
+                              Navigator.of(dialogContext).pop();
+                              Navigator.of(context, rootNavigator: true).pop();
+                            },
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                }
+              },
+            ),
+          ],
         ],
       ],
     );

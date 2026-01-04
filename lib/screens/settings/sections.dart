@@ -1,4 +1,5 @@
 import 'package:carrydock/providers/update_provider.dart';
+import 'package:carrydock/services/settings_service.dart';
 import 'package:carrydock/widgets/update_dialog.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:provider/provider.dart';
@@ -16,6 +17,7 @@ Widget buildAboutSection(
   final typography = FluentTheme.of(context).typography;
   final resources = FluentTheme.of(context).resources;
   final updateProvider = context.watch<UpdateProvider>();
+  final settingsService = SettingsService();
 
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -127,27 +129,28 @@ Widget buildAboutSection(
           );
 
           if (result == true) {
-            // 执行重装操作
-            // 调用checkForUpdates并设置本地版本为1，确保能检测到更新
-            final hasUpdate = await updateProvider.checkForUpdates(
-              customLocalBuildNumber: 1,
+            // 获取配置文件路径和应用目录
+            final configFilePath = await settingsService.getConfigFilePath();
+            final appDirectory = configFilePath.substring(0, configFilePath.indexOf('data'));
+
+            // 执行重装操作（包含完整的检查更新 -> 下载 -> 安装流程）
+            final success = await updateProvider.reinstallLatestVersion(
+              appDirectory: appDirectory,
+              configFilePath: configFilePath,
+              onStatusUpdate: (status) {
+                // 可以在这里添加进度显示
+              },
             );
 
-            if (hasUpdate && updateProvider.latestVersionInfo != null) {
-              // 发现新版本后，直接显示更新对话框，使用现有的更新流程
-              await showDialog(
-                context: context,
-                builder: (dialogContext) =>
-                    UpdateDialog(updateProvider: updateProvider),
-              );
-            } else {
-              // 显示获取版本信息失败提示
+            if (!success) {
+              // 显示重装失败提示
+              if (!context.mounted) return;
               displayInfoBar(
                 context,
                 builder: (context, close) {
                   return InfoBar(
                     title: const Text('失败'),
-                    content: Text('获取最新版本信息失败：${updateProvider.updateStatus}'),
+                    content: Text('重装最新版本失败：${updateProvider.updateStatus}'),
                     action: IconButton(
                       icon: const Icon(FluentIcons.clear),
                       onPressed: close,
@@ -157,6 +160,7 @@ Widget buildAboutSection(
                 },
               );
             }
+            // 如果成功，installUpdate 会自动退出应用并执行更新脚本
           }
         },
         style: ButtonStyle(
