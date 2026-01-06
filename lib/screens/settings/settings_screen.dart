@@ -255,19 +255,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _saveLogSettings() async {
     final enableFileLogging = _enableFileLogging;
-    
+
     // 保存日志设置
     await _settingsService.saveEnableFileLogging(enableFileLogging);
-    
+
     // 获取当前日志文件路径
     final logFilePath = await _settingsService.getLogFilePath();
-    
+
     // 立即更新日志管理器配置，无需重启应用
     await LogManager().updateConfiguration(
       enableFileLogging: enableFileLogging,
       logFilePath: logFilePath,
     );
-    
+
     if (!mounted) return;
     _savedEnableFileLogging = enableFileLogging;
     _showSuccessMessage('日志设置已保存');
@@ -334,12 +334,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final extensionsDirty = !listEquals(extensions, _savedExecutableExtensions);
     final removeNestedDirty =
         _removeNestedFoldersEnabled != _savedRemoveNestedFoldersEnabled;
-    final enableFileLoggingDirty = _enableFileLogging != _savedEnableFileLogging;
+    final enableFileLoggingDirty =
+        _enableFileLogging != _savedEnableFileLogging;
 
     final executableDirty = depthDirty || extensionsDirty;
     final logDirty = enableFileLoggingDirty;
     final hasChanges =
-        installDirty || archiveDirty || executableDirty || removeNestedDirty || logDirty;
+        installDirty ||
+        archiveDirty ||
+        executableDirty ||
+        removeNestedDirty ||
+        logDirty;
 
     if (installDirty != _installPathDirty ||
         archiveDirty != _archivePathDirty ||
@@ -650,7 +655,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _enableFileLogging = value;
               });
               _refreshDirtyStates();
-              
+
               // 自动保存日志设置，无需手动点击保存按钮
               await _saveLogSettings();
             },

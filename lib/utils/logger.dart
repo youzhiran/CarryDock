@@ -77,7 +77,6 @@ class LogManager {
   late Logger _logger;
   bool _isFileLoggingEnabled = false;
   String _logFilePath = '';
-  bool _isInitialized = false;
 
   /// 初始化默认的日志记录器，仅输出到控制台
   void _initializeDefaultLogger() {
@@ -89,7 +88,10 @@ class LogManager {
   }
 
   /// 初始化日志管理器
-  Future<void> initialize({bool enableFileLogging = false, String logFilePath = ''}) async {
+  Future<void> initialize({
+    bool enableFileLogging = false,
+    String logFilePath = '',
+  }) async {
     _isFileLoggingEnabled = enableFileLogging;
     _logFilePath = logFilePath;
 
@@ -105,11 +107,13 @@ class LogManager {
         if (!logDir.existsSync()) {
           logDir.createSync(recursive: true);
         }
-        outputs.add(FileOutput(
-          file: File(logFilePath),
-          overrideExisting: false,
-          encoding: utf8,
-        ));
+        outputs.add(
+          FileOutput(
+            file: File(logFilePath),
+            overrideExisting: false,
+            encoding: utf8,
+          ),
+        );
       } catch (e) {
         print('Failed to initialize file logging: $e');
       }
@@ -120,8 +124,6 @@ class LogManager {
       printer: MinimalLogPrinter(),
       output: MultiOutput(outputs),
     );
-    
-    _isInitialized = true;
   }
 
   /// 获取日志实例
@@ -132,7 +134,10 @@ class LogManager {
   }
 
   /// 更新日志配置
-  Future<void> updateConfiguration({bool? enableFileLogging, String? logFilePath}) async {
+  Future<void> updateConfiguration({
+    bool? enableFileLogging,
+    String? logFilePath,
+  }) async {
     await initialize(
       enableFileLogging: enableFileLogging ?? _isFileLoggingEnabled,
       logFilePath: logFilePath ?? _logFilePath,
