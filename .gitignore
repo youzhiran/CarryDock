@@ -48,3 +48,4 @@ app.*.map.json
 .fvm/
 /devtools_options.yaml
 /build_info.txt
+/.claude/
