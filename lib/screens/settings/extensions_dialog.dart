@@ -1,3 +1,4 @@
+import 'package:carrydock/l10n/app_localizations.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:provider/provider.dart';
 import 'package:carrydock/utils/error_handler.dart';
@@ -10,6 +11,7 @@ Future<void> openExecutableExtensionsDialog(BuildContext context, {
   required List<String> initialExtensions,
   required Function(List<String>) onExtensionsSelected,
 }) async {
+  final l10n = AppLocalizations.of(context)!;
   final customController = TextEditingController();
   List<String>? result;
   try {
@@ -41,14 +43,14 @@ Future<void> openExecutableExtensionsDialog(BuildContext context, {
               ]);
               if (normalized.isEmpty) {
                 setState(() {
-                  errorMessage = '请输入有效的扩展名（示例：exe）';
+                  errorMessage = l10n.dialogInvalidExtension;
                 });
                 return;
               }
               final value = normalized.first;
               if (localSelections.contains(value)) {
                 setState(() {
-                  errorMessage = '该扩展名已存在';
+                  errorMessage = l10n.dialogExtensionExists;
                 });
                 return;
               }
@@ -62,7 +64,7 @@ Future<void> openExecutableExtensionsDialog(BuildContext context, {
             Widget buildSelectedExtensions() {
               if (sortedSelections.isEmpty) {
                 return Text(
-                  '暂未选择任何扩展名',
+                  l10n.dialogNoExtensionsSelected,
                   style: FluentTheme.of(context).typography.caption,
                 );
               }
@@ -85,14 +87,14 @@ Future<void> openExecutableExtensionsDialog(BuildContext context, {
             }
 
             return ContentDialog(
-              title: const Text('选择可执行文件扩展名'),
+              title: Text(l10n.dialogSelectExtensions),
               content: SizedBox(
                 width: 360,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('常用扩展名'),
+                    Text(l10n.dialogCommonExtensions),
                     const SizedBox(height: 12),
                     Wrap(
                       spacing: 8,
@@ -107,21 +109,21 @@ Future<void> openExecutableExtensionsDialog(BuildContext context, {
                       }).toList(),
                     ),
                     const SizedBox(height: 16),
-                    const Text('自定义扩展名'),
+                    Text(l10n.dialogCustomExtensions),
                     const SizedBox(height: 8),
                     Row(
                       children: [
                         Expanded(
                           child: TextBox(
                             controller: customController,
-                            placeholder: '输入扩展名，例如 exe',
+                            placeholder: l10n.dialogExtensionPlaceholder,
                             onSubmitted: (_) => addCustomExtension(),
                           ),
                         ),
                         const SizedBox(width: 8),
                         FilledButton(
                           onPressed: addCustomExtension,
-                          child: const Text('添加'),
+                          child: Text(l10n.dialogAdd),
                         ),
                       ],
                     ),
@@ -135,7 +137,7 @@ Future<void> openExecutableExtensionsDialog(BuildContext context, {
                       ),
                     ],
                     const SizedBox(height: 16),
-                    const Text('已选择'),
+                    Text(l10n.dialogSelected),
                     const SizedBox(height: 8),
                     buildSelectedExtensions(),
                   ],
@@ -143,17 +145,17 @@ Future<void> openExecutableExtensionsDialog(BuildContext context, {
               ),
               actions: [
                 Button(
-                  child: const Text('取消'),
+                  child: Text(l10n.dialogCancel),
                   onPressed: () => navigator.pop(),
                 ),
                 FilledButton(
-                  child: const Text('确定'),
+                  child: Text(l10n.dialogConfirm),
                   onPressed: () {
                     if (localSelections.isEmpty) {
                       Provider.of<ErrorHandler>(
                         context,
                         listen: false,
-                      ).showHint('设置错误', '请至少选择一个扩展名');
+                      ).showHint(l10n.settingsError, l10n.dialogSelectAtLeastOne);
                       return;
                     }
                     navigator.pop(normalizeExtensionsList(localSelections));

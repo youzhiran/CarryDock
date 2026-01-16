@@ -1,3 +1,4 @@
+import 'package:carrydock/l10n/app_localizations.dart';
 import 'package:carrydock/providers/update_provider.dart';
 import 'package:carrydock/services/settings_service.dart';
 import 'package:carrydock/widgets/update_dialog.dart';
@@ -18,6 +19,7 @@ Widget buildAboutSection(
   final resources = FluentTheme.of(context).resources;
   final updateProvider = context.watch<UpdateProvider>();
   final settingsService = SettingsService();
+  final l10n = AppLocalizations.of(context)!;
 
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -45,7 +47,7 @@ Widget buildAboutSection(
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text('版本'),
+            Text(l10n.settingsVersion),
             Text(appVersion, style: typography.bodyStrong),
           ],
         ),
@@ -60,7 +62,7 @@ Widget buildAboutSection(
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text('编译时间'),
+            Text(l10n.settingsBuildTime),
             Text(buildTime, style: typography.bodyStrong),
           ],
         ),
@@ -81,7 +83,7 @@ Widget buildAboutSection(
               context,
               builder: (context, close) {
                 return InfoBar(
-                  title: const Text('成功'),
+                  title: Text(l10n.settingsSuccess),
                   content: Text(updateProvider.updateStatus),
                   action: IconButton(
                     icon: const Icon(FluentIcons.clear),
@@ -101,9 +103,9 @@ Widget buildAboutSection(
             resources.controlFillColorSecondary,
           ),
         ),
-        child: const Row(
+        child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [Text('检查更新'), Icon(FluentIcons.refresh)],
+          children: [Text(l10n.settingsCheckUpdate), const Icon(FluentIcons.refresh)],
         ),
       ),
       const SizedBox(height: 12),
@@ -113,15 +115,15 @@ Widget buildAboutSection(
           final result = await showDialog<bool>(
             context: context,
             builder: (dialogContext) => ContentDialog(
-              title: const Text('确认重装'),
-              content: const Text('确定要重装最新版本吗？这将覆盖当前安装的版本，但会保留配置文件。'),
+              title: Text(l10n.settingsReinstallConfirm),
+              content: Text(l10n.settingsReinstallMessage),
               actions: [
                 Button(
-                  child: const Text('取消'),
+                  child: Text(l10n.cancel),
                   onPressed: () => Navigator.of(dialogContext).pop(false),
                 ),
                 FilledButton(
-                  child: const Text('确认'),
+                  child: Text(l10n.settingsReinstallConfirmButton),
                   onPressed: () => Navigator.of(dialogContext).pop(true),
                 ),
               ],
@@ -149,8 +151,8 @@ Widget buildAboutSection(
                 context,
                 builder: (context, close) {
                   return InfoBar(
-                    title: const Text('失败'),
-                    content: Text('重装最新版本失败：${updateProvider.updateStatus}'),
+                    title: Text(l10n.settingsReinstallFailed),
+                    content: Text(l10n.settingsReinstallFailedMessage(updateProvider.updateStatus)),
                     action: IconButton(
                       icon: const Icon(FluentIcons.clear),
                       onPressed: close,
@@ -171,9 +173,9 @@ Widget buildAboutSection(
             resources.controlFillColorSecondary,
           ),
         ),
-        child: const Row(
+        child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [Text('重装最新版本'), Icon(FluentIcons.download)],
+          children: [Text(l10n.settingsReinstallLatest), const Icon(FluentIcons.download)],
         ),
       ),
       const SizedBox(height: 12),
@@ -188,19 +190,20 @@ Widget buildSectionHeader(BuildContext context, String title) {
 }
 
 /// 构建路径操作行
-Widget buildPathActionRow({
+Widget buildPathActionRow(
+  BuildContext context, {
   required bool isDirty,
   required VoidCallback onSave,
   required VoidCallback onSelect,
   required String saveLabel,
 }) {
-  // 使用 Wrap 确保在窄屏幕下按钮可以自动换行
+  final l10n = AppLocalizations.of(context)!;
   return Wrap(
     spacing: 8,
     runSpacing: 8,
     children: [
       Button(onPressed: isDirty ? onSave : null, child: Text(saveLabel)),
-      Button(onPressed: onSelect, child: const Text('选择目录')),
+      Button(onPressed: onSelect, child: Text(l10n.browse)),
     ],
   );
 }

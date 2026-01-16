@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:carrydock/l10n/app_localizations.dart';
 import 'package:carrydock/models/software.dart';
 import 'package:carrydock/services/archive_extractor.dart';
 import 'package:carrydock/services/settings_service.dart';
@@ -34,10 +35,11 @@ class _HomeScreenState extends State<HomeScreen> {
   );
 
   String _suggestAlternativeName(String baseName) {
-    const suffix = '_副本';
+    final l10n = AppLocalizations.of(context)!;
+    final suffix = l10n.homeCopySuffix;
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     if (baseName.isEmpty) {
-      return '新软件$timestamp';
+      return '${l10n.homeNewSoftware}$timestamp';
     }
     if (!baseName.endsWith(suffix)) {
       return '$baseName$suffix';
@@ -49,18 +51,19 @@ class _HomeScreenState extends State<HomeScreen> {
     DuplicateSoftwareInfo info,
   ) async {
     if (!mounted) return null;
+    final l10n = AppLocalizations.of(context)!;
 
     final conflicts = <String>[];
     if (info.existingManagedSoftware != null) {
       conflicts.add(
-        '已托管软件：${info.existingManagedSoftware!.name} (${p.basename(info.existingManagedSoftware!.installPath)})',
+        l10n.homeDuplicateExisting(info.existingManagedSoftware!.name, p.basename(info.existingManagedSoftware!.installPath)),
       );
     }
     if (info.installDirExists) {
-      conflicts.add('安装目录已存在：${info.targetInstallPath}');
+      conflicts.add(l10n.homeDuplicateInstallDir(info.targetInstallPath));
     }
     if (info.archiveExists) {
-      conflicts.add('归档文件已存在：${p.basename(info.targetArchivePath)}');
+      conflicts.add(l10n.homeDuplicateArchive(p.basename(info.targetArchivePath)));
     }
 
     var renameValue = _suggestAlternativeName(info.intendedName);
@@ -76,13 +79,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 ? (screenWidth * 0.6).clamp(420.0, 620.0)
                 : (screenWidth - 32).clamp(280.0, screenWidth);
             return ContentDialog(
-              title: const Text('检测到重复软件'),
+              title: Text(l10n.homeDuplicateDetected),
               constraints: BoxConstraints(maxWidth: maxDialogWidth),
               content: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('系统检测到“${info.intendedName}”可能已经存在，请选择如何处理：'),
+                  Text(l10n.homeDuplicateHelp(info.intendedName)),
                   const SizedBox(height: 12),
                   if (conflicts.isNotEmpty)
                     ...conflicts.map(
@@ -92,7 +95,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   const SizedBox(height: 12),
-                  const Text('如果希望以其他名称保留新软件，请在下方输入新的安装名称：'),
+                  Text(l10n.homeDuplicateRenameHint),
                   const SizedBox(height: 8),
                   TextBox(
                     controller: controller,
@@ -106,7 +109,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               actions: [
                 Button(
-                  child: const Text('取消'),
+                  child: Text(l10n.homeDuplicateCancel),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
                 Button(
@@ -115,10 +118,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           context,
                         ).pop(_DuplicateResolution.rename(renameValue.trim()))
                       : null,
-                  child: const Text('重命名后添加'),
+                  child: Text(l10n.homeDuplicateRenameAdd),
                 ),
                 FilledButton(
-                  child: const Text('覆盖现有软件'),
+                  child: Text(l10n.homeDuplicateOverwrite),
                   onPressed: () => Navigator.of(
                     context,
                   ).pop(_DuplicateResolution.overwrite()),
@@ -197,10 +200,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _handleOpenInstallDirectory() async {
+    final l10n = AppLocalizations.of(context)!;
     try {
       final installPath = await _settingsService.getInstallPath();
       if (installPath == null || installPath.isEmpty) {
-        await _showMessageDialog('安装路径未设置', '请先在设置页面配置绿色软件安装目录。');
+        await _showMessageDialog(l10n.homeInstallDirNotExistNoArchive, '请先在设置页面配置绿色软件安装目录。');
         return;
       }
 
@@ -218,16 +222,17 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// 触发“扫描当前目录软件”：
+  /// 触发"扫描当前目录软件"：
   /// - 询问用户确认；
   /// - 显示进度；
   /// - 调用服务层批量压缩安装目录的子目录至归档目录；
   /// - 展示结果摘要并刷新列表。
   Future<void> _handleScanAndArchive() async {
+    final l10n = AppLocalizations.of(context)!;
     try {
       final installPath = await _settingsService.getInstallPath();
       if (installPath == null || installPath.isEmpty) {
-        await _showMessageDialog('安装路径未设置', '请先在设置页面配置绿色软件安装目录。');
+        await _showMessageDialog(l10n.homeInstallDirNotExistNoArchive, '请先在设置页面配置绿色软件安装目录。');
         return;
       }
 
@@ -247,40 +252,40 @@ class _HomeScreenState extends State<HomeScreen> {
           return StatefulBuilder(
             builder: (context, setState) {
               return ContentDialog(
-                title: const Text('扫描并归档'),
+                title: Text(l10n.homeScanArchiveTitle),
                 content: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '即将扫描安装目录（$installPath）下的所有子目录。',
+                      l10n.homeScanArchiveHint(installPath),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       withArchive
-                          ? '将为每个目录创建带时间的备份 ZIP${backupDirShown != null ? '（保存到：$backupDirShown）' : ''}。'
-                          : '不会创建备份归档，仅识别并加入软件列表。',
+                          ? l10n.homeScanArchiveBackupOn(backupDirShown ?? '')
+                          : l10n.homeScanArchiveBackupOff,
                     ),
                     const SizedBox(height: 12),
                     ToggleSwitch(
-                      content: const Text('创建备份归档'),
+                      content: Text(l10n.homeScanArchiveToggle),
                       checked: withArchive,
                       onChanged: (v) => setState(() => withArchive = v),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '关闭后将不创建 ZIP（归档），仅维护软件列表。',
+                      l10n.homeScanArchiveToggleHint,
                       style: FluentTheme.of(context).typography.caption,
                     ),
                   ],
                 ),
                 actions: [
                   Button(
-                    child: const Text('取消'),
+                    child: Text(l10n.cancel),
                     onPressed: () => Navigator.of(context).pop(false),
                   ),
                   FilledButton(
-                    child: const Text('开始'),
+                    child: Text(l10n.homeScanArchiveStart),
                     onPressed: () => Navigator.of(context).pop(true),
                   ),
                 ],
@@ -307,7 +312,7 @@ class _HomeScreenState extends State<HomeScreen> {
               dialogSetState = setState;
               final percent = (progress * 100).clamp(0, 100).toStringAsFixed(0);
               return ContentDialog(
-                title: const Text('正在扫描并添加'),
+                title: Text(l10n.homeScanScanning),
                 content: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -338,10 +343,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    Text('进度：$done/$total ($percent%)'),
+                    Text(l10n.homeScanProgress('$done', '$total', percent)),
                     const SizedBox(height: 6),
                     if (currentName.isNotEmpty)
-                      Text('当前：$currentName'),
+                      Text(l10n.homeScanCurrent(currentName)),
                   ],
                 ),
               );
@@ -374,22 +379,22 @@ class _HomeScreenState extends State<HomeScreen> {
         );
         if (!mounted) return;
         final sb = StringBuffer()
-          ..writeln('安装目录：${summary.installDirPath}')
-          ..writeln('归档目录：${summary.archiveDirPath}')
-          ..writeln('总计扫描：${summary.total}')
-          ..writeln('成功归档：${summary.archived.length}')
-          ..writeln('已存在跳过：${summary.skippedExisting.length}')
-          ..writeln('失败：${summary.failures.length}');
+          ..writeln('${l10n.homeScanSummaryInstallDir(summary.installDirPath)}')
+          ..writeln('${l10n.homeScanSummaryArchiveDir(summary.archiveDirPath)}')
+          ..writeln('${l10n.homeScanSummaryTotal('${summary.total}')}')
+          ..writeln('${l10n.homeScanSummaryArchived('${summary.archived.length}')}')
+          ..writeln('${l10n.homeScanSummarySkipped('${summary.skippedExisting.length}')}')
+          ..writeln('${l10n.homeScanSummaryFailed('${summary.failures.length}')}');
         if (summary.failures.isNotEmpty) {
           for (final f in summary.failures.take(5)) {
-            sb.writeln('- ${f.name}: ${f.error}');
+            sb.writeln(l10n.homeScanSummaryFailedItem(f.name, f.error));
           }
           if (summary.failures.length > 5) {
-            sb.writeln('... 其余 ${summary.failures.length - 5} 项略');
+            sb.writeln(l10n.homeScanSummaryMore('${summary.failures.length - 5}'));
           }
         }
         _popSafely();
-        // 扫描完成后的“统一关联”对话框
+        // 扫描完成后的"统一关联"对话框
         if (summary.suggestions.isNotEmpty) {
           final suggestions = summary.suggestions;
           // 记录每项是否关联与所选候选
@@ -415,14 +420,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       maxWidth: maxDialogWidth.toDouble(),
                       maxHeight: maxDialogHeight.toDouble(),
                     ),
-                    title: Text('发现可关联归档（${suggestions.length} 项）'),
+                    title: Text(l10n.homeAssocFound('${suggestions.length}')),
                     content: SizedBox(
                       width: double.infinity,
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('请选择需要直接关联到现有归档的项目：'),
+                          Text(l10n.homeAssocHint),
                           const SizedBox(height: 8),
                           ConstrainedBox(
                             constraints: BoxConstraints(
@@ -493,11 +498,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     actions: [
                       Button(
-                        child: const Text('跳过全部'),
+                        child: Text(l10n.homeAssocSkipAll),
                         onPressed: () => Navigator.of(context).pop(false),
                       ),
                       FilledButton(
-                        child: const Text('应用关联'),
+                        child: Text(l10n.homeAssocApply),
                         onPressed: () => Navigator.of(context).pop(true),
                       ),
                     ],
@@ -524,7 +529,7 @@ class _HomeScreenState extends State<HomeScreen> {
           }
         }
 
-        await _showMessageDialog('扫描完成', sb.toString());
+        await _showMessageDialog(l10n.homeScanSummaryTitle, sb.toString());
         await _loadSoftware();
       } catch (e, s) {
         logger.e('扫描并归档失败', error: e, stackTrace: s);
@@ -548,7 +553,7 @@ class _HomeScreenState extends State<HomeScreen> {
         content: Text(content),
         actions: [
           Button(
-            child: const Text('确定'),
+            child: Text(AppLocalizations.of(context)!.ok),
             onPressed: () => Navigator.of(context).pop(),
           ),
         ],
@@ -589,7 +594,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _performAddSoftwareAction(
     Future<AddSoftwareResult> Function() addAction,
   ) async {
-    _showProgressDialog('正在处理文件，请稍候...');
+    final l10n = AppLocalizations.of(context)!;
+    _showProgressDialog(l10n.homeProcessingFiles);
     bool shouldReload = false;
     try {
       final result = await addAction();
@@ -617,7 +623,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
           if (selected != null) {
             if (!mounted) return;
-            _showProgressDialog('正在安装软件...');
+            _showProgressDialog(l10n.homeInstallingSoftware);
             await _softwareService.completeSoftwareAddition(
               installPath: pendingAddition.installPath,
               archivePath: pendingAddition.archivePath,
@@ -627,7 +633,7 @@ class _HomeScreenState extends State<HomeScreen> {
             shouldReload = true;
           } else {
             if (!mounted) return;
-            _showProgressDialog('正在取消操作...');
+            _showProgressDialog(l10n.homeCancellingOperation);
             await _softwareService.cleanupTemporaryFiles(
               installPath: pendingAddition.installPath,
               archivePath: pendingAddition.archivePath,
@@ -876,6 +882,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showDeleteConfirmDialog(Software software) {
+    final l10n = AppLocalizations.of(context)!;
     bool deleteInstallDir = false;
     bool deleteArchive = false;
 
@@ -889,25 +896,28 @@ class _HomeScreenState extends State<HomeScreen> {
     showDialog(
       context: context,
       builder: (context) => ContentDialog(
-        title: Text('删除 ${software.name}'),
+        title: Text(l10n.homeDeleteSoftware(software.name)),
         content: StatefulBuilder(
           builder: (context, setState) {
             if (software.status != SoftwareStatus.managed) {
+              final unmanagedName = software.status == SoftwareStatus.unknownInstall
+                  ? l10n.homeDeleteUnmanagedFolder
+                  : l10n.homeDeleteUnmanagedArchive;
               return Text(
-                '您确定要删除这个${software.status == SoftwareStatus.unknownInstall ? '未知文件夹' : '未知归档文件'}吗？此操作不可恢复。',
+                l10n.homeDeleteUnmanagedHint(unmanagedName),
               );
             }
             return Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('您确定要删除此软件吗？此操作将从列表中移除该软件。'),
+                Text(l10n.homeDeleteManagedHint),
                 const SizedBox(height: 16),
                 Checkbox(
                   checked: deleteInstallDir,
                   onChanged: (v) =>
                       setState(() => deleteInstallDir = v ?? false),
-                  content: const Text('同时删除安装目录'),
+                  content: Text(l10n.homeDeleteInstallDir),
                 ),
                 const SizedBox(height: 8),
                 Checkbox(
@@ -916,7 +926,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ? (v) => setState(() => deleteArchive = v ?? false)
                       : null,
                   content: Text(
-                    '同时删除归档文件',
+                    l10n.homeDeleteArchive,
                     style: TextStyle(
                       color: software.archiveExists
                           ? null
@@ -932,18 +942,17 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         actions: [
           Button(
-            child: const Text('取消'),
+            child: Text(l10n.cancel),
             onPressed: () => Navigator.of(context).pop(),
           ),
           FilledButton(
             style: ButtonStyle(
               backgroundColor: WidgetStateProperty.all(Colors.red),
             ),
-            child: const Text('删除'),
+            child: Text(l10n.delete),
             onPressed: () async {
               Navigator.of(context).pop();
-              // 显示删除进度
-              _showProgressDialog('正在删除，请稍候...');
+              _showProgressDialog(l10n.homeDeleting);
               try {
                 await _softwareService.deleteSoftware(
                   software,
@@ -964,6 +973,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = FluentTheme.of(context);
+    final l10n = AppLocalizations.of(context)!;
     final overlayTitleStyle =
         theme.typography.subtitle ??
         theme.typography.bodyStrong ??
@@ -975,7 +985,7 @@ class _HomeScreenState extends State<HomeScreen> {
       header: PageHeader(
         title: Row(
           children: [
-            Text('已托管软件', style: theme.typography.title),
+            Text(l10n.homeManagedSoftware, style: theme.typography.title),
             const SizedBox(width: 16),
             Expanded(
               child: CommandBar(
@@ -985,7 +995,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ? [
                         CommandBarButton(
                           icon: const Icon(FluentIcons.check_mark),
-                          label: const Text('完成'),
+                          label: Text(l10n.finish),
                           onPressed: () async {
                             final orderedIds = _managedSoftware
                                 .map((s) => s.id)
@@ -1007,7 +1017,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ? FluentIcons.bulleted_list
                                 : FluentIcons.grid_view_small,
                           ),
-                          label: Text(_useGridLayout ? '列表视图' : '网格视图'),
+                          label: Text(_useGridLayout ? l10n.homeListView : l10n.homeGridView),
                           onPressed: () async {
                             final newLayout = !_useGridLayout;
                             setState(() {
@@ -1022,18 +1032,18 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         CommandBarButton(
                           icon: const Icon(FluentIcons.add),
-                          label: const Text('添加'),
+                          label: Text(l10n.add),
                           onPressed: _handleAddSoftware,
                         ),
                         CommandBarButton(
                           icon: const Icon(FluentIcons.refresh),
-                          label: const Text('刷新'),
+                          label: Text(l10n.refresh),
                           onPressed: _loadSoftware,
                         ),
                         if (!_useGridLayout)
                           CommandBarButton(
                             icon: const Icon(FluentIcons.sort_lines),
-                            label: const Text('调整排序'),
+                            label: Text(l10n.homeReorder),
                             onPressed: () {
                               setState(() {
                                 _isReorderModeEnabled = true;
@@ -1042,7 +1052,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         CommandBarButton(
                           icon: const Icon(FluentIcons.folder_open),
-                          label: const Text('打开安装目录'),
+                          label: Text(l10n.homeOpenInstallDir),
                           onPressed: () {
                             _handleOpenInstallDirectory();
                           },
@@ -1052,7 +1062,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 secondaryItems: [
                   CommandBarButton(
                     icon: const Icon(FluentIcons.search),
-                    label: const Text('扫描当前目录软件'),
+                    label: Text(l10n.homeScanCurrentDir),
                     onPressed: _handleScanAndArchive,
                   ),
                 ],
@@ -1065,7 +1075,7 @@ class _HomeScreenState extends State<HomeScreen> {
         if (_isLoading)
           const Center(child: ProgressRing())
         else if (_managedSoftware.isEmpty && _unmanagedSoftware.isEmpty)
-          const Center(child: Text('尚未添加任何软件。'))
+          Center(child: Text(l10n.homeNoSoftware))
         else if (_useGridLayout)
           GridView.builder(
             padding: EdgeInsets.zero,
@@ -1244,10 +1254,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           color: theme.accentColor,
                         ),
                         const SizedBox(height: 12),
-                        Text('松开以添加软件', style: overlayTitleStyle),
+                        Text(l10n.homeDropToAdd, style: overlayTitleStyle),
                         const SizedBox(height: 4),
                         Text(
-                          '支持 ZIP/TAR/RAR/7Z 压缩包或已配置的可执行文件',
+                          l10n.homeDropHint,
                           style: overlayHintStyle,
                         ),
                       ],
@@ -1305,13 +1315,14 @@ class _SoftwareOrderDialogState extends State<_SoftwareOrderDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = FluentTheme.of(context);
+    final l10n = AppLocalizations.of(context)!;
     final resources = theme.resources;
     final double listHeight = (_orderedList.length * 56.0)
         .clamp(140.0, 320.0)
         .toDouble();
 
     return ContentDialog(
-      title: const Text('调整软件顺序'),
+      title: Text(l10n.homeReorderTitle),
       constraints: const BoxConstraints(maxWidth: 440),
       content: SizedBox(
         width: double.infinity,
@@ -1351,7 +1362,7 @@ class _SoftwareOrderDialogState extends State<_SoftwareOrderDialog> {
                         ),
                         const SizedBox(width: 12),
                         Tooltip(
-                          message: '向上移动',
+                          message: l10n.homeMoveUp,
                           child: IconButton(
                             icon: const Icon(FluentIcons.up),
                             onPressed: canMoveUp
@@ -1360,7 +1371,7 @@ class _SoftwareOrderDialogState extends State<_SoftwareOrderDialog> {
                           ),
                         ),
                         Tooltip(
-                          message: '向下移动',
+                          message: l10n.homeMoveDown,
                           child: IconButton(
                             icon: const Icon(FluentIcons.down),
                             onPressed: canMoveDown
@@ -1376,7 +1387,7 @@ class _SoftwareOrderDialogState extends State<_SoftwareOrderDialog> {
             ),
             const SizedBox(height: 12),
             Text(
-              '通过点击右侧箭头可调整展示顺序，保存后将在主页生效。',
+              l10n.homeReorderHint,
               style: theme.typography.caption ?? theme.typography.body,
             ),
           ],
@@ -1384,11 +1395,11 @@ class _SoftwareOrderDialogState extends State<_SoftwareOrderDialog> {
       ),
       actions: [
         Button(
-          child: const Text('取消'),
+          child: Text(l10n.cancel),
           onPressed: () => Navigator.of(context).pop(),
         ),
         FilledButton(
-          child: const Text('保存顺序'),
+          child: Text(l10n.homeSaveOrder),
           onPressed: () =>
               Navigator.of(context).pop(List<Software>.from(_orderedList)),
         ),

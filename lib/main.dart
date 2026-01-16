@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:bitsdojo_window/bitsdojo_window.dart';
+import 'package:carrydock/l10n/app_localizations.dart';
+import 'package:carrydock/providers/language_provider.dart';
 import 'package:carrydock/services/settings_service.dart';
 import 'package:carrydock/utils/error_handler.dart';
 import 'package:carrydock/utils/logger.dart';
@@ -39,6 +41,10 @@ void main() {
       // 初始化错误处理器
       errorHandler.init();
 
+      // 创建语言 Provider 并初始化
+      final languageProvider = LanguageProvider();
+      await languageProvider.initialize();
+
       runApp(
         MultiProvider(
           providers: [
@@ -47,6 +53,7 @@ void main() {
               create: (context) => DeveloperOptionsProvider(),
             ),
             ChangeNotifierProvider(create: (context) => UpdateProvider()),
+            ChangeNotifierProvider.value(value: languageProvider),
             Provider<ErrorHandler>.value(value: errorHandler),
             Provider<SettingsService>.value(value: settingsService),
           ],
@@ -60,7 +67,7 @@ void main() {
         win.minSize = const Size(640, 480);
         win.size = initialSize;
         win.alignment = Alignment.center;
-        win.title = "绿驿管家";
+        win.title = "CarryDock";
         win.show();
       });
     },
@@ -78,12 +85,12 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeProvider = Provider.of<ThemeProvider>(context);
+    final themeProvider = context.watch<ThemeProvider>();
+    final languageProvider = context.watch<LanguageProvider>();
 
     return FluentApp(
       navigatorKey: navigatorKey,
-      // 设置 navigatorKey
-      title: '绿驿管家',
+      onGenerateTitle: (context) => AppLocalizations.of(context)!.appName,
       theme: FluentThemeData(
         fontFamily: themeProvider.fontFamily,
         brightness: Brightness.light,
@@ -102,6 +109,9 @@ class MyApp extends StatelessWidget {
           glowFactor: is10footScreen(context) ? 2.0 : 0.0,
         ),
       ),
+      locale: languageProvider.currentLocale,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: const MyHomePage(),
     );
   }
@@ -121,17 +131,25 @@ class _MyHomePageState extends State<MyHomePage> {
   bool _isPaneOpen = true;
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final l10n = AppLocalizations.of(context)!;
+    appWindow.title = l10n.appName;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final developerOptionsEnabled = context
         .watch<DeveloperOptionsProvider>()
         .enabled;
+    final l10n = AppLocalizations.of(context)!;
 
     final footerItems = <NavigationPaneItem>[];
     if (developerOptionsEnabled) {
       footerItems.add(
         PaneItem(
           icon: const Icon(FluentIcons.developer_tools),
-          title: const Text('开发者选项'),
+          title: Text(l10n.navDeveloperOptions),
           body: const DeveloperOptionsScreen(),
         ),
       );
@@ -139,7 +157,7 @@ class _MyHomePageState extends State<MyHomePage> {
     footerItems.add(
       PaneItem(
         icon: const Icon(FluentIcons.settings),
-        title: const Text('设置'),
+        title: Text(l10n.navSettings),
         body: const SettingsScreen(),
       ),
     );
@@ -170,7 +188,7 @@ class _MyHomePageState extends State<MyHomePage> {
                   : PaneDisplayMode.compact,
               toggleable: false,
               menuButton: Tooltip(
-                message: _isPaneOpen ? '折叠导航栏' : '展开导航栏',
+                message: _isPaneOpen ? l10n.navToggleTooltip : l10n.navExpandTooltip,
                 child: IconButton(
                   icon: const Icon(FluentIcons.global_nav_button),
                   onPressed: () => setState(() {
@@ -179,12 +197,12 @@ class _MyHomePageState extends State<MyHomePage> {
                 ),
               ),
               header: _isPaneOpen
-                  ? const Text('绿驿管家', style: TextStyle(fontSize: 20))
+                  ? Text(l10n.appName, style: const TextStyle(fontSize: 20))
                   : null,
               items: [
                 PaneItem(
                   icon: const Icon(FluentIcons.home),
-                  title: const Text('主页'),
+                  title: Text(l10n.navHome),
                   body: ValueListenableBuilder(
                     valueListenable: _homeScreenNotifier,
                     builder: (context, _, __) => const HomeScreen(),
@@ -192,7 +210,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 ),
                 PaneItem(
                   icon: const Icon(FluentIcons.archive),
-                  title: const Text('归档管理'),
+                  title: Text(l10n.navArchive),
                   body: const ArchiveManagerScreen(),
                 ),
               ],

@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:carrydock/l10n/app_localizations.dart';
 import 'package:carrydock/services/executable_info_service.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:path/path.dart' as p;
@@ -26,8 +27,9 @@ class _SelectExecutableDialogState extends State<SelectExecutableDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return ContentDialog(
-      title: const Text('选择主程序'),
+      title: Text(l10n.dialogSelectExecutable),
       content: SizedBox(
         height: 300,
         width: 500,
@@ -56,14 +58,14 @@ class _SelectExecutableDialogState extends State<SelectExecutableDialog> {
       ),
       actions: [
         Button(
-          child: const Text('取消'),
+          child: Text(l10n.dialogCancel),
           onPressed: () => Navigator.of(context).pop(),
         ),
         FilledButton(
           onPressed: _selectedPath == null
               ? null
               : () => Navigator.of(context).pop(_selectedPath),
-          child: const Text('确定'),
+          child: Text(l10n.dialogConfirm),
         ),
       ],
     );

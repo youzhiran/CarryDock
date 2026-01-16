@@ -1,10 +1,12 @@
 import 'dart:io';
+import 'package:carrydock/l10n/app_localizations.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 /// 7z.exe 路径测试功能
 
 /// 测试7z.exe路径
 Future<void> test7ZipPathFinding(BuildContext context) async {
+  final l10n = AppLocalizations.of(context)!;
   final results = <String>[];
   String? foundPath;
 
@@ -138,13 +140,13 @@ Future<void> test7ZipPathFinding(BuildContext context) async {
     await showDialog(
       context: context,
       builder: (dialogContext) => ContentDialog(
-        title: const Text('7z.exe 路径测试结果'),
+        title: Text(l10n.test7ZipTitle),
         content: SingleChildScrollView(
           child: SelectableText(results.join('\n')),
         ),
         actions: [
           Button(
-            child: const Text('关闭'),
+            child: Text(l10n.test7ZipClose),
             onPressed: () => Navigator.of(dialogContext).pop(),
           ),
         ],
@@ -154,11 +156,11 @@ Future<void> test7ZipPathFinding(BuildContext context) async {
     await showDialog(
       context: context,
       builder: (dialogContext) => ContentDialog(
-        title: const Text('7z.exe 路径测试失败'),
-        content: Text('测试过程中发生错误：\n${e.toString()}'),
+        title: Text('${l10n.test7ZipTitle} (${l10n.error})'),
+        content: Text(l10n.test7ZipError(e.toString())),
         actions: [
           Button(
-            child: const Text('关闭'),
+            child: Text(l10n.test7ZipClose),
             onPressed: () => Navigator.of(dialogContext).pop(),
           ),
         ],

@@ -1,3 +1,4 @@
+import 'package:carrydock/l10n/app_localizations.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/foundation.dart';
 
@@ -58,6 +59,7 @@ class ErrorHandler {
           logger.w('无法显示提示对话框，因为 navigator 未初始化或已卸载');
           return;
         }
+        final l10n = AppLocalizations.of(navigator.context);
         await showDialog(
           context: navigator.context,
           builder: (context) => ContentDialog(
@@ -65,7 +67,7 @@ class ErrorHandler {
             content: SingleChildScrollView(child: SelectableText(message)),
             actions: [
               FilledButton(
-                child: const Text('好的'),
+                child: Text(l10n?.errorOk ?? 'OK'),
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ],
@@ -79,10 +81,6 @@ class ErrorHandler {
 
   /// 显示一个统一的错误对话框
   void _showErrorDialog(String title, Object error, [StackTrace? stackTrace]) {
-    // if (_isLayoutOverflowError(error)) {
-    //   logger.w('布局溢出警告', error: error);
-    //   return;
-    // }
     logger.e(error, stackTrace: stackTrace);
     if (_isShowingDialog) {
       return;
@@ -96,18 +94,20 @@ class ErrorHandler {
           logger.w('无法显示错误对话框，因为 navigator 未初始化或已卸载');
           return;
         }
+        final l10n = AppLocalizations.of(navigator.context);
         await showDialog(
           context: navigator.context,
           builder: (context) => ContentDialog(
             title: Text(title),
             content: SingleChildScrollView(
               child: SelectableText(
-                '发生了一个未处理的错误:\n\n$error\n\n堆栈跟踪:\n$stackTrace',
+                l10n?.errorUnhandled(error.toString(), stackTrace?.toString() ?? '') 
+                    ?? 'An unhandled error occurred:\n\n$error\n\nStack trace:\n$stackTrace',
               ),
             ),
             actions: [
               FilledButton(
-                child: const Text('好的'),
+                child: Text(l10n?.errorOk ?? 'OK'),
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ],

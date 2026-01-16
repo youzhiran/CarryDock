@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:carrydock/l10n/app_localizations.dart';
 import 'package:carrydock/providers/developer_options_provider.dart';
 import 'package:carrydock/services/executable_info_service.dart';
 import 'package:carrydock/utils/logger.dart';
@@ -19,6 +20,7 @@ class _DeveloperOptionsScreenState extends State<DeveloperOptionsScreen> {
   final ExecutableInfoService _executableInfoService = ExecutableInfoService();
 
   Future<void> _showIconTestDialog() async {
+    final l10n = AppLocalizations.of(context)!;
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['exe', 'lnk', 'ico'],
@@ -44,7 +46,7 @@ class _DeveloperOptionsScreenState extends State<DeveloperOptionsScreen> {
 
     final resolvedBytes = iconBytes;
     if (resolvedBytes == null || resolvedBytes.isEmpty) {
-      await _showMessageDialog('提取失败', '未能从所选文件中提取图标，请尝试其他程序。');
+      await _showMessageDialog(l10n.devExtractFailed, l10n.devExtractFailedMessage);
       return;
     }
 
@@ -56,20 +58,20 @@ class _DeveloperOptionsScreenState extends State<DeveloperOptionsScreen> {
       builder: (dialogContext) {
         final typography = FluentTheme.of(dialogContext).typography;
         return ContentDialog(
-          title: const Text('软件图标测试'),
+          title: Text(l10n.devIconTest),
           content: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('文件名称：$fileName'),
+                Text('${l10n.devFileName}$fileName'),
                 const SizedBox(height: 4),
                 SelectableText(path),
                 const SizedBox(height: 16),
                 _buildIconPreviewTile(
                   dialogContext,
-                  title: '方法一：Image.memory (32×32)',
-                  description: '直接渲染 PNG 数据，适合在列表或按钮中展示标准尺寸图标。',
+                  title: l10n.devMethod1,
+                  description: l10n.devMethod1Desc,
                   child: Image.memory(
                     resolvedBytes,
                     width: 32,
@@ -79,8 +81,8 @@ class _DeveloperOptionsScreenState extends State<DeveloperOptionsScreen> {
                 ),
                 _buildIconPreviewTile(
                   dialogContext,
-                  title: '方法二：Image.memory (64×64)',
-                  description: '放大查看细节，便于检查透明度和边缘处理是否正常。',
+                  title: l10n.devMethod2,
+                  description: l10n.devMethod2Desc,
                   child: Image.memory(
                     resolvedBytes,
                     width: 64,
@@ -90,8 +92,8 @@ class _DeveloperOptionsScreenState extends State<DeveloperOptionsScreen> {
                 ),
                 _buildIconPreviewTile(
                   dialogContext,
-                  title: '方法三：ImageIcon 与 Fluent 按钮',
-                  description: '作为按钮图标或工具栏图标使用，体验交互态效果。',
+                  title: l10n.devMethod3,
+                  description: l10n.devMethod3Desc,
                   child: Wrap(
                     spacing: 12,
                     runSpacing: 12,
@@ -112,7 +114,7 @@ class _DeveloperOptionsScreenState extends State<DeveloperOptionsScreen> {
                               filterQuality: FilterQuality.high,
                             ),
                             const SizedBox(width: 8),
-                            const Text('带图标按钮示例'),
+                            Text(l10n.devButtonWithIcon),
                           ],
                         ),
                       ),
@@ -122,7 +124,7 @@ class _DeveloperOptionsScreenState extends State<DeveloperOptionsScreen> {
                 if (typography.caption != null) ...[
                   const SizedBox(height: 12),
                   Text(
-                    '提示：如果图标显示异常，请检查源文件是否包含标准的主图标资源。',
+                    l10n.devIconHint,
                     style: typography.caption,
                   ),
                 ],
@@ -131,7 +133,7 @@ class _DeveloperOptionsScreenState extends State<DeveloperOptionsScreen> {
           ),
           actions: [
             Button(
-              child: const Text('关闭'),
+              child: Text(l10n.devClose),
               onPressed: () => Navigator.of(dialogContext).pop(),
             ),
           ],
@@ -142,6 +144,7 @@ class _DeveloperOptionsScreenState extends State<DeveloperOptionsScreen> {
 
   Future<void> _showMessageDialog(String title, String content) async {
     if (!mounted) return;
+    final l10n = AppLocalizations.of(context)!;
     await showDialog(
       context: context,
       builder: (dialogContext) => ContentDialog(
@@ -149,7 +152,7 @@ class _DeveloperOptionsScreenState extends State<DeveloperOptionsScreen> {
         content: Text(content),
         actions: [
           Button(
-            child: const Text('确定'),
+            child: Text(l10n.ok),
             onPressed: () => Navigator.of(dialogContext).pop(),
           ),
         ],
@@ -195,21 +198,22 @@ class _DeveloperOptionsScreenState extends State<DeveloperOptionsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final typography = FluentTheme.of(context).typography;
     final developerProvider = context.read<DeveloperOptionsProvider>();
     return NavigationView(
       content: ScaffoldPage.scrollable(
         children: [
-          Text('开发者选项', style: typography.title),
+          Text(l10n.devTitle, style: typography.title),
           const SizedBox(height: 12),
-          Text('这里包含一些实验性功能，用于验证桌面端实现效果。请谨慎操作。', style: typography.body),
+          Text(l10n.devHint, style: typography.body),
           const SizedBox(height: 24),
           FilledButton(
             onPressed: _showIconTestDialog,
-            child: const Text('软件图标测试'),
+            child: Text(l10n.devIconTest),
           ),
           const SizedBox(height: 8),
-          Text('选择一个 EXE、LNK 或 ICO 文件，以不同方式预览其图标。', style: typography.caption),
+          Text(l10n.devIconTestHint, style: typography.caption),
           const SizedBox(height: 24),
           Button(
             onPressed: () async {
@@ -218,7 +222,7 @@ class _DeveloperOptionsScreenState extends State<DeveloperOptionsScreen> {
               if (!mounted) return;
               navigator.maybePop();
             },
-            child: const Text('隐藏开发者选项'),
+            child: Text(l10n.devHide),
           ),
           const SizedBox(height: 12),
           Opacity(
@@ -230,8 +234,8 @@ class _DeveloperOptionsScreenState extends State<DeveloperOptionsScreen> {
                 ),
               ),
               onPressed: () =>
-                  _showMessageDialog('隐藏功能', '恭喜发现隐藏按钮！当前没有额外操作，仅用于验证交互。'),
-              child: const Text('隐藏按钮'),
+                  _showMessageDialog(l10n.devHiddenFeature, l10n.devHiddenFeatureMessage),
+              child: Text(l10n.devHiddenButton),
             ),
           ),
         ],

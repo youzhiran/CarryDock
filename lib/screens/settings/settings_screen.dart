@@ -1,4 +1,6 @@
+import 'package:carrydock/l10n/app_localizations.dart';
 import 'package:carrydock/providers/developer_options_provider.dart';
+import 'package:carrydock/providers/language_provider.dart';
 import 'package:carrydock/providers/theme_provider.dart';
 import 'package:carrydock/screens/settings/7zip_test.dart';
 import 'package:carrydock/screens/settings/extensions_dialog.dart';
@@ -44,8 +46,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   int _versionTapCount = 0;
   DateTime? _firstVersionTap;
-  String _appVersion = '加载中...';
-  String _buildTime = '未知';
+  String _appVersion = '';
+  String _buildTime = '';
 
   bool _installPathDirty = false;
   bool _archivePathDirty = false;
@@ -57,6 +59,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _enableFileLogging = SettingsService.defaultEnableFileLogging;
   bool _savedEnableFileLogging = SettingsService.defaultEnableFileLogging;
   String _logFilePath = '';
+
+  // 语言设置
+  String _savedLanguage = 'zh_CN';
+  String _selectedLanguage = 'zh_CN';
+  bool _languageDirty = false;
 
   @override
   void initState() {
@@ -71,8 +78,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadArchiveHandlingSettings();
     _loadExecutableSettings();
     _loadLogSettings();
-    _loadAppVersion();
-    _loadBuildTime();
+    _loadLanguageSetting();
+    // 延迟加载版本信息，等待 context 可用
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
+        setState(() {
+          _appVersion = l10n.loading;
+          _buildTime = l10n.unknown;
+        });
+      }
+      _loadAppVersion();
+      _loadBuildTime();
+    });
     _loadConfigFilePath();
   }
 
@@ -145,6 +163,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadAppVersion() async {
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context)!;
     try {
       final info = await PackageInfo.fromPlatform();
       final buildNumber = info.buildNumber.trim();
@@ -156,15 +176,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _appVersion = versionText;
       });
     } catch (e, s) {
-      logger.w('获取应用版本号失败', error: e, stackTrace: s);
+      logger.w('Failed to get app version', error: e, stackTrace: s);
       if (!mounted) return;
       setState(() {
-        _appVersion = '未知';
+        _appVersion = l10n.unknown;
       });
     }
   }
 
   Future<void> _loadBuildTime() async {
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context)!;
     try {
       // 尝试从生成的构建信息文件中读取
       final buildInfo = await readBuildInfo();
@@ -173,10 +195,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _buildTime = buildInfo;
       });
     } catch (e, s) {
-      logger.w('获取编译时间失败', error: e, stackTrace: s);
+      logger.w('Failed to get build time', error: e, stackTrace: s);
       if (!mounted) return;
       setState(() {
-        _buildTime = '未知';
+        _buildTime = l10n.unknown;
       });
     }
   }
@@ -193,35 +215,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _refreshDirtyStates();
   }
 
+  Future<void> _loadLanguageSetting() async {
+    final language = await _settingsService.getLanguage();
+    if (!mounted) return;
+    setState(() {
+      _savedLanguage = language;
+      _selectedLanguage = language;
+    });
+    _refreshDirtyStates();
+  }
+
+  Future<void> _saveLanguageSetting() async {
+    final l10n = AppLocalizations.of(context)!;
+    final languageProvider = Provider.of<LanguageProvider>(
+      context,
+      listen: false,
+    );
+    await languageProvider.setLanguage(_selectedLanguage);
+    if (!mounted) return;
+    _savedLanguage = _selectedLanguage;
+    _showSuccessMessage(l10n.settingsLanguageSaved);
+    _refreshDirtyStates();
+  }
+
   Future<void> _saveInstallPath() async {
+    final l10n = AppLocalizations.of(context)!;
     final value = _installPathController.text.trim();
     await _settingsService.saveInstallPath(value);
     if (!mounted) return;
     _savedInstallPath = value;
-    _showSuccessMessage('安装路径已成功保存。');
+    _showSuccessMessage(l10n.settingsInstallPathSaved);
     _refreshDirtyStates();
   }
 
   Future<void> _saveArchivePath() async {
+    final l10n = AppLocalizations.of(context)!;
     final value = _archivePathController.text.trim();
     await _settingsService.saveArchivePath(value);
     if (!mounted) return;
     _savedArchivePath = value;
-    _showSuccessMessage('归档路径已成功保存。');
+    _showSuccessMessage(l10n.settingsArchivePathSaved);
     _refreshDirtyStates();
   }
 
   Future<void> _saveArchiveHandlingSettings() async {
+    final l10n = AppLocalizations.of(context)!;
     await _settingsService.saveRemoveNestedFoldersEnabled(
       _removeNestedFoldersEnabled,
     );
     if (!mounted) return;
     _savedRemoveNestedFoldersEnabled = _removeNestedFoldersEnabled;
-    _showSuccessMessage('归档处理设置已保存。');
+    _showSuccessMessage(l10n.settingsArchiveHandlingSaved);
     _refreshDirtyStates();
   }
 
   Future<void> _saveExecutableSettings() async {
+    final l10n = AppLocalizations.of(context)!;
     final depth = _selectedMaxSearchDepth;
     if (depth < maxSearchDepthOptions.first ||
         depth > maxSearchDepthOptions.last) {
@@ -229,7 +278,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       Provider.of<ErrorHandler>(
         context,
         listen: false,
-      ).showHint('设置错误', '请选择 1 到 20 之间的搜索深度');
+      ).showHint(l10n.settingsError, l10n.settingsInvalidSearchDepth);
       return;
     }
 
@@ -239,7 +288,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       Provider.of<ErrorHandler>(
         context,
         listen: false,
-      ).showHint('设置错误', '请至少输入一个扩展名');
+      ).showHint(l10n.settingsError, l10n.settingsInvalidExtensions);
       return;
     }
 
@@ -248,12 +297,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!mounted) return;
     _savedMaxSearchDepth = depth;
     _savedExecutableExtensions = List<String>.from(extensions);
-    _showSuccessMessage('可执行文件搜索设置已保存');
+    _showSuccessMessage(l10n.settingsExecutableSettingsSaved);
     _selectedMaxSearchDepth = depth;
     _refreshDirtyStates();
   }
 
   Future<void> _saveLogSettings() async {
+    final l10n = AppLocalizations.of(context)!;
     final enableFileLogging = _enableFileLogging;
 
     // 保存日志设置
@@ -270,7 +320,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     if (!mounted) return;
     _savedEnableFileLogging = enableFileLogging;
-    _showSuccessMessage('日志设置已保存');
+    _showSuccessMessage(l10n.settingsLogSettingsSaved);
     _refreshDirtyStates();
   }
 
@@ -294,6 +344,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (_logSettingsDirty) {
       await _saveLogSettings();
     }
+    if (_languageDirty) {
+      await _saveLanguageSetting();
+    }
   }
 
   Future<void> _pickDirectory(TextEditingController controller) async {
@@ -304,11 +357,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showSuccessMessage(String message) {
+    final l10n = AppLocalizations.of(context)!;
     displayInfoBar(
       context,
       builder: (context, close) {
         return InfoBar(
-          title: const Text('成功'),
+          title: Text(l10n.success),
           content: Text(message),
           action: IconButton(
             icon: const Icon(FluentIcons.clear),
@@ -336,6 +390,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _removeNestedFoldersEnabled != _savedRemoveNestedFoldersEnabled;
     final enableFileLoggingDirty =
         _enableFileLogging != _savedEnableFileLogging;
+    final languageDirty = _selectedLanguage != _savedLanguage;
 
     final executableDirty = depthDirty || extensionsDirty;
     final logDirty = enableFileLoggingDirty;
@@ -344,13 +399,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
         archiveDirty ||
         executableDirty ||
         removeNestedDirty ||
-        logDirty;
+        logDirty ||
+        languageDirty;
 
     if (installDirty != _installPathDirty ||
         archiveDirty != _archivePathDirty ||
         executableDirty != _executableSettingsDirty ||
         removeNestedDirty != _archiveHandlingSettingsDirty ||
         logDirty != _logSettingsDirty ||
+        languageDirty != _languageDirty ||
         hasChanges != _hasUnsavedChanges) {
       setState(() {
         _installPathDirty = installDirty;
@@ -358,6 +415,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _executableSettingsDirty = executableDirty;
         _archiveHandlingSettingsDirty = removeNestedDirty;
         _logSettingsDirty = logDirty;
+        _languageDirty = languageDirty;
         _hasUnsavedChanges = hasChanges;
       });
     }
@@ -404,24 +462,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return true;
     }
 
+    final l10n = AppLocalizations.of(context)!;
     final result = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
         final navigator = Navigator.of(dialogContext);
         return ContentDialog(
-          title: const Text('存在未保存的更改'),
-          content: const Text('是否在离开前保存这些更改？'),
+          title: Text(l10n.settingsUnsavedChanges),
+          content: Text(l10n.settingsUnsavedChangesMessage),
           actions: [
             Button(
-              child: const Text('取消'),
+              child: Text(l10n.cancel),
               onPressed: () => navigator.pop(false),
             ),
             Button(
-              child: const Text('放弃更改'),
+              child: Text(l10n.settingsDiscardChanges),
               onPressed: () => navigator.pop(true),
             ),
             FilledButton(
-              child: const Text('保存并离开'),
+              child: Text(l10n.settingsSaveAndExit),
               onPressed: () async {
                 await _saveAllChanges();
                 if (!mounted) {
@@ -442,6 +501,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final themeProvider = Provider.of<ThemeProvider>(context);
     final developerOptionsEnabled = context
         .watch<DeveloperOptionsProvider>()
@@ -451,49 +511,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     final page = ScaffoldPage.scrollable(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      header: PageHeader(title: Text('设置', style: typography.title)),
+      header: PageHeader(title: Text(l10n.settingsTitle, style: typography.title)),
       children: [
         // 开发阶段提示：如遇异常请删除配置文件
         InfoBar(
-          title: const Text('开发提示'),
-          content: const Text('应用当前处于开发阶段，更新不考虑旧版兼容性，若出现异常，请删除配置文件后重启应用。'),
+          title: Text(l10n.settingsDevHint),
+          content: Text(l10n.settingsDevHintContent),
           severity: InfoBarSeverity.warning,
         ),
         const SizedBox(height: 12),
-        buildSectionHeader(context, '存储配置'),
+        buildSectionHeader(context, l10n.settingsStorage),
         const SizedBox(height: 12),
         InfoLabel(
-          label: '绿色软件安装目录',
+          label: l10n.settingsInstallPath,
           child: TextBox(
             controller: _installPathController,
-            placeholder: r'例如 C\GreenSoftware',
+            placeholder: l10n.settingsInstallPathPlaceholder,
           ),
         ),
         const SizedBox(height: 12),
         buildPathActionRow(
+          context,
           isDirty: _installPathDirty,
           onSave: _saveInstallPath,
           onSelect: () => _pickDirectory(_installPathController),
-          saveLabel: '保存安装路径',
+          saveLabel: l10n.settingsSaveInstallPath,
         ),
         const SizedBox(height: 32),
         InfoLabel(
-          label: '软件归档目录',
+          label: l10n.settingsArchivePath,
           child: TextBox(
             controller: _archivePathController,
-            placeholder: '默认为安装目录下的 ~archives 文件夹',
+            placeholder: l10n.settingsArchivePathPlaceholder,
           ),
         ),
         const SizedBox(height: 12),
         buildPathActionRow(
+          context,
           isDirty: _archivePathDirty,
           onSave: _saveArchivePath,
           onSelect: () => _pickDirectory(_archivePathController),
-          saveLabel: '保存归档路径',
+          saveLabel: l10n.settingsSaveArchivePath,
         ),
         const SizedBox(height: 32),
         InfoLabel(
-          label: '配置文件路径（只读，即本软件目录下）',
+          label: l10n.settingsConfigFilePath,
           child: Row(
             children: [
               Expanded(
@@ -504,19 +566,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               const SizedBox(width: 8),
               Button(
-                child: const Text('打开文件所在位置'),
+                child: Text(l10n.settingsOpenFileLocation),
                 onPressed: () async {
                   if (_configFilePath.isEmpty) {
+                    if (!context.mounted) return;
                     Provider.of<ErrorHandler>(
                       context,
                       listen: false,
-                    ).showHint('设置错误', '配置文件路径无效');
+                    ).showHint(l10n.settingsError, l10n.settingsInvalidConfigPath);
                     return;
                   }
                   try {
                     final uri = Uri.file(p.dirname(_configFilePath));
                     await launchUrl(uri);
                   } catch (e, s) {
+                    if (!context.mounted) return;
                     Provider.of<ErrorHandler>(
                       context,
                       listen: false,
@@ -528,10 +592,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
         const SizedBox(height: 24),
-        buildSectionHeader(context, '归档处理'),
+        buildSectionHeader(context, l10n.settingsArchiveHandling),
         const SizedBox(height: 12),
         InfoLabel(
-          label: '去除嵌套文件夹',
+          label: l10n.settingsRemoveNestedFolders,
           child: ToggleSwitch(
             checked: _removeNestedFoldersEnabled,
             onChanged: (value) {
@@ -540,7 +604,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               });
               _refreshDirtyStates();
             },
-            content: const Text('若解压后仅存在单层文件夹，则自动将内容上移一层'),
+            content: Text(l10n.settingsRemoveNestedFoldersDesc),
           ),
         ),
         const SizedBox(height: 8),
@@ -548,23 +612,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onPressed: _archiveHandlingSettingsDirty
               ? _saveArchiveHandlingSettings
               : null,
-          child: const Text('保存归档处理设置'),
+          child: Text(l10n.settingsSaveArchiveHandling),
         ),
         const SizedBox(height: 24),
         Button(
           onPressed: () => test7ZipPathFinding(context),
-          child: const Text('测试 7z.exe 路径'),
+          child: Text(l10n.settingsTest7Zip),
         ),
         const SizedBox(height: 4),
         Text(
-          '测试系统中7-Zip软件的安装位置检测功能',
+          l10n.settingsTest7ZipDesc,
           style: FluentTheme.of(context).typography.caption,
         ),
         buildSectionDivider(top: 24, bottom: 32),
-        buildSectionHeader(context, '可执行文件识别'),
+        buildSectionHeader(context, l10n.settingsExecutableRecognition),
         const SizedBox(height: 12),
         InfoLabel(
-          label: '添加软件时最大搜索深度',
+          label: l10n.settingsMaxSearchDepth,
           child: SizedBox(
             width: 120,
             child: ComboBox<int>(
@@ -589,12 +653,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         const SizedBox(height: 16),
         InfoLabel(
-          label: '添加软件时识别的可执行文件扩展名',
+          label: l10n.settingsExecutableExtensions,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (_selectedExecutableExtensions.isEmpty)
-                Text('暂未选择任何扩展名', style: typography.caption)
+                Text(l10n.settingsNoExtensionsSelected, style: typography.caption)
               else
                 Wrap(
                   spacing: 8,
@@ -616,7 +680,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   initialExtensions: _selectedExecutableExtensions,
                   onExtensionsSelected: _applyExecutableExtensions,
                 ),
-                child: const Text('选择扩展名'),
+                child: Text(l10n.settingsSelectExtensions),
               ),
             ],
           ),
@@ -624,13 +688,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SizedBox(height: 12),
         Button(
           onPressed: _executableSettingsDirty ? _saveExecutableSettings : null,
-          child: const Text('保存可执行文件设置'),
+          child: Text(l10n.settingsSaveExecutableSettings),
         ),
         buildSectionDivider(),
-        buildSectionHeader(context, '外观'),
+        buildSectionHeader(context, l10n.settingsAppearance),
         const SizedBox(height: 12),
         InfoLabel(
-          label: '应用字体',
+          label: l10n.settingsAppFont,
           child: ComboBox<String>(
             value: themeProvider.fontFamily,
             items: availableFonts.map((font) {
@@ -643,11 +707,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
         ),
-        buildSectionDivider(),
-        buildSectionHeader(context, '日志设置'),
         const SizedBox(height: 12),
         InfoLabel(
-          label: '启用文件日志',
+          label: l10n.settingsLanguage,
+          child: ComboBox<String>(
+            value: _selectedLanguage,
+            items: [
+              ComboBoxItem(
+                value: 'zh_CN',
+                child: Text(l10n.languageChinese),
+              ),
+              ComboBoxItem(
+                value: 'en_US',
+                child: Text('${l10n.languageEnglish} ${l10n.translationByAI}'),
+              ),
+            ],
+            onChanged: (language) {
+              if (language != null) {
+                setState(() {
+                  _selectedLanguage = language;
+                });
+                _refreshDirtyStates();
+              }
+            },
+          ),
+        ),
+        const SizedBox(height: 8),
+        Button(
+          onPressed: _languageDirty ? _saveLanguageSetting : null,
+          child: Text(l10n.settingsSaveLanguage),
+        ),
+        buildSectionDivider(),
+        buildSectionHeader(context, l10n.settingsLogSettings),
+        const SizedBox(height: 12),
+        InfoLabel(
+          label: l10n.settingsEnableFileLogging,
           child: ToggleSwitch(
             checked: _enableFileLogging,
             onChanged: (value) async {
@@ -659,12 +753,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               // 自动保存日志设置，无需手动点击保存按钮
               await _saveLogSettings();
             },
-            content: const Text('将日志同时输出到文件'),
+            content: Text(l10n.settingsEnableFileLoggingDesc),
           ),
         ),
         const SizedBox(height: 12),
         InfoLabel(
-          label: '日志文件路径（只读，即本软件目录下）',
+          label: l10n.settingsLogFilePath,
           child: Row(
             children: [
               Expanded(
@@ -675,19 +769,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               const SizedBox(width: 8),
               Button(
-                child: const Text('打开文件所在位置'),
+                child: Text(l10n.settingsOpenFileLocation),
                 onPressed: () async {
                   if (_logFilePath.isEmpty) {
+                    if (!context.mounted) return;
                     Provider.of<ErrorHandler>(
                       context,
                       listen: false,
-                    ).showHint('设置错误', '日志文件路径无效');
+                    ).showHint(l10n.settingsError, l10n.settingsInvalidLogPath);
                     return;
                   }
                   try {
                     final uri = Uri.file(p.dirname(_logFilePath));
                     await launchUrl(uri);
                   } catch (e, s) {
+                    if (!context.mounted) return;
                     Provider.of<ErrorHandler>(
                       context,
                       listen: false,
@@ -699,7 +795,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
         buildSectionDivider(),
-        buildSectionHeader(context, '关于'),
+        buildSectionHeader(context, l10n.settingsAbout),
         const SizedBox(height: 12),
         buildAboutSection(
           context,
@@ -745,10 +841,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onPressed: _saveAllChanges,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Icon(FluentIcons.save),
-                        SizedBox(width: 8),
-                        Text('保存全部'),
+                      children: [
+                        const Icon(FluentIcons.save),
+                        const SizedBox(width: 8),
+                        Text(l10n.settingsSaveAll),
                       ],
                     ),
                   ),

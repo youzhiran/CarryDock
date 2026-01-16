@@ -1,0 +1,486 @@
+{
+  "appName": "绿驿管家",
+  "appNameShort": "绿驿",
+  "loading": "加载中...",
+  "unknown": "未知",
+  "success": "成功",
+  "error": "错误",
+  "warning": "警告",
+  "cancel": "取消",
+  "save": "保存",
+  "delete": "删除",
+  "edit": "编辑",
+  "confirm": "确认",
+  "close": "关闭",
+  "ok": "确定",
+  "yes": "是",
+  "no": "否",
+  "retry": "重试",
+  "skip": "跳过",
+  "back": "返回",
+  "next": "下一步",
+  "finish": "完成",
+  "apply": "应用",
+  "reset": "重置",
+  "clear": "清除",
+  "search": "搜索",
+  "refresh": "刷新",
+  "open": "打开",
+  "browse": "浏览",
+  "select": "选择",
+  "add": "添加",
+  "remove": "移除",
+  "navHome": "主页",
+  "navArchive": "归档管理",
+  "navSettings": "设置",
+  "navDeveloperOptions": "开发者选项",
+  "navToggleTooltip": "折叠导航栏",
+  "navExpandTooltip": "展开导航栏",
+  "settingsTitle": "设置",
+  "homeTitle": "主页",
+  "languageChinese": "简体中文",
+  "languageEnglish": "English",
+  "tileOpenFolder": "打开软件文件夹",
+  "tileChangeFolder": "修改软件文件夹",
+  "tileCreateBackup": "创建备份",
+  "tileAddToStartMenu": "添加到开始菜单",
+  "tileOpenArchiveFolder": "打开归档文件夹",
+  "tileLaunchOther": "启动其他程序",
+  "tileArchiveExists": "归档文件存在",
+  "tileArchiveNotExists": "归档文件不存在",
+  "tileBackupDetected": "检测到备份",
+  "tileBackupNotDetected": "未检测到备份",
+  "tileHintNoInstallDir": "提示",
+  "tileHintNoInstallDirMessage": "该软件未配置安装目录。",
+  "tileHintCannotOpenDir": "找不到安装目录：{path}",
+  "tileError": "错误",
+  "tileErrorCannotOpenDirMessage": "无法打开安装目录，请稍后重试。",
+  "tileHintNoArchive": "提示",
+  "tileHintNoArchiveMessage": "该软件未配置归档文件。",
+  "tileHintArchiveNotExists": "归档文件不存在，已打开归档目录。",
+  "tileHintParentOpened": "归档文件不存在，已打开归档所在目录。",
+  "tileHintArchiveNotFound": "找不到归档文件所在位置。",
+  "tileErrorCannotOpenArchive": "无法打开归档目录，请稍后重试。",
+  "tileHintNoExecutable": "提示",
+  "tileHintNoExecutableMessage": "该软件未配置可执行文件路径。",
+  "tileHintInstallDirNotExists": "安装目录不存在，无法创建备份。",
+  "tileCreatingBackup": "正在创建备份...",
+  "tileBackupCreated": "已创建备份：{name}",
+  "tileErrorCreateBackup": "创建备份失败，请稍后重试。",
+  "tileSuccess": "成功",
+  "tileAddedToStartMenu": "已将 \"{name}\" 添加到开始菜单。",
+  "tileErrorAddToStartMenu": "添加到开始菜单失败：{error}",
+  "tileCarryDock": "绿驿管家",
+  "tileCarryDockShortcutAdding": "开始菜单中不存在绿驿管家快捷方式，正在添加...",
+  "tileCarryDockShortcutAdded": "绿驿管家快捷方式已添加到开始菜单",
+  "homeUnknownFolder": "未知文件夹",
+  "homeUnknownArchiveFile": "未知归档文件",
+  "homeSoftwareDirDeleted": "软件目录已删除",
+  "homeRehost": "重新托管",
+  "homeBackupArchive": "备份归档",
+  "homeArchiveFile": "归档文件",
+  "homeChangeExecutable": "更改主程序",
+  "homeScanning": "正在扫描可执行程序...",
+  "homeNoExecutableFound": "未在安装目录中找到可执行程序",
+  "homeOnlyOneExecutableFound": "当前仅发现一个可执行程序，无法更改主程序",
+  "tileNewPathHint": "新路径将是：{path}\\[您输入的名称]",
+  "tileErrorMigrateFailed": "修改软件文件夹失败：{error}",
+  "tileChangeSoftwareFolder": "修改软件文件夹",
+  "tileCurrentPath": "当前路径：",
+  "tileNewFolderName": "新文件夹名称：",
+  "tileNewFolderPlaceholder": "输入新的文件夹名称",
+  "tileRenameConfirm": "确定",
+  "tileRenameCancel": "取消",
+  "tileHintSamePath": "提示",
+  "tileHintSamePathMessage": "新路径与当前路径相同，无需更新。",
+  "tileErrorFolderNotExist": "当前软件文件夹不存在，无法迁移。",
+  "tileErrorFolderExists": "新文件夹已存在，请选择其他名称。",
+  "tileMigrating": "正在迁移文件...",
+  "tileMigrateSuccess": "软件文件夹已成功迁移。",
+  "delete": "删除",
+  "archiveTitle": "归档管理",
+  "archiveFiles": "归档文件",
+  "archiveNoArchiveFiles": "暂无归档文件",
+  "archiveBackupFiles": "备份文件",
+  "archiveNoBackupFiles": "暂无备份文件",
+  "archiveRefresh": "刷新",
+  "archiveOpenArchiveDir": "打开归档目录",
+  "archiveOpenBackupDir": "打开备份目录",
+  "archiveOperationFailed": "操作失败",
+  "archiveCannotOpenDirectory": "无法打开目录。",
+  "archiveCannotOpenExplorer": "无法打开资源管理器。",
+  "archiveInstallingFromArchive": "正在从归档安装...",
+  "archiveCompletingInstallation": "正在完成安装...",
+  "archiveCancellingOperation": "正在取消操作...",
+  "archiveDuplicateDetected": "检测到重复",
+  "archiveDuplicateMessage": "安装目录已存在：\n",
+  "archiveBackupAndRestore": "备份并还原",
+  "archiveRestoring": "正在还原...",
+  "archiveBackupRestoreFailed": "备份和还原失败。",
+  "archiveInstallFailed": "安装失败。",
+  "archiveDeleteArchive": "删除归档",
+  "archiveDeleteBackup": "删除备份",
+  "archiveDeleteArchiveHint": "确定要删除此归档吗？",
+  "archiveDeleteBackupHint": "确定要删除此备份吗？它可能已关联到已托管软件。",
+  "archiveDeletingArchive": "正在删除归档...",
+  "archiveDeletingBackup": "正在删除备份...",
+  "archiveDeleteFailed": "删除失败",
+  "archiveCannotDeleteFile": "无法删除文件。",
+  "archiveNoAvailableSoftware": "无可用软件",
+  "archiveNoAvailableSoftwareHint": "没有已托管的软件。请先添加软件。",
+  "archiveLinkArchive": "关联归档",
+  "archiveLinkBackup": "关联备份",
+  "archiveLink": "关联",
+  "archiveLinkSuccess": "关联成功",
+  "archiveLinkSuccessHint": "归档已关联到软件。",
+  "archiveManualLink": "手动关联",
+  "archiveRestore": "还原",
+  "archiveCreateBackup": "创建备份",
+  "archiveCreatingBackup": "正在创建备份...",
+  "archiveCreateSuccess": "成功",
+  "archiveBackupCreated": "已创建备份：",
+  "archiveCreateFailed": "创建失败",
+  "archiveCreateBackupFailed": "创建备份失败。",
+  "devTitle": "开发者选项",
+  "devHint": "这是一个隐藏菜单，用于调试和测试。",
+  "devIconTest": "图标测试",
+  "devIconTestHint": "测试从可执行文件提取图标",
+  "devExtractFailed": "提取失败",
+  "devExtractFailedMessage": "无法从文件中提取图标。",
+  "devFileName": "文件：",
+  "devMethod1": "方法1：直接内存显示",
+  "devMethod1Desc": "直接从内存字节显示图标（32x32）",
+  "devMethod2": "方法2：高质量显示",
+  "devMethod2Desc": "使用更高质量设置显示图标（64x64）",
+  "devMethod3": "方法3：ImageProvider 集成",
+  "devMethod3Desc": "在组件中测试作为 ImageProvider 的图标",
+  "devButtonWithIcon": "按钮",
+  "devIconHint": "上面的图标是使用从可执行文件中提取的字节渲染的。",
+  "devClose": "关闭",
+  "devHide": "隐藏开发者选项",
+  "devHiddenFeature": "隐藏功能",
+  "devHiddenFeatureMessage": "这是一个用于未来开发的隐藏功能。",
+  "devHiddenButton": "隐藏",
+  "dialogSelectExecutable": "选择可执行文件",
+  "dialogCancel": "取消",
+  "dialogConfirm": "确认",
+  "dialogUpdateInfo": "更新信息",
+  "dialogNoUpdateInfo": "没有可用的更新信息。",
+  "dialogClose": "关闭",
+  "dialogNewVersion": "发现新版本：{version}",
+  "dialogUpdateContent": "更新内容",
+  "dialogRetry": "重试",
+  "dialogUpdateSuccess": "更新成功",
+  "dialogUpdateSuccessMessage": "应用程序已成功更新。",
+  "dialogDownloadAndUpdate": "下载并更新",
+  "dialogInvalidExtension": "扩展名格式无效。必须以'.'开头（例如'.exe'）",
+  "dialogExtensionExists": "此扩展名已存在。",
+  "dialogNoExtensionsSelected": "未选择扩展名",
+  "dialogSelectExtensions": "选择扩展名",
+  "dialogCommonExtensions": "常用扩展名",
+  "dialogCustomExtensions": "自定义扩展名",
+  "dialogExtensionPlaceholder": ".exe",
+  "dialogAdd": "添加",
+  "dialogSelected": "已选择",
+  "dialogSelectAtLeastOne": "请至少选择一个扩展名。",
+  "settingsError": "错误",
+  "settingsSuccess": "成功",
+  "settingsStorage": "存储",
+  "settingsInstallPath": "安装路径",
+  "settingsInstallPathPlaceholder": "输入安装路径",
+  "settingsSaveInstallPath": "保存路径",
+  "settingsInstallPathSaved": "安装路径已保存。",
+  "settingsArchivePath": "归档路径",
+  "settingsArchivePathPlaceholder": "输入归档路径",
+  "settingsSaveArchivePath": "保存路径",
+  "settingsArchivePathSaved": "归档路径已保存。",
+  "settingsConfigFilePath": "配置文件",
+  "settingsOpenFileLocation": "打开位置",
+  "settingsInvalidConfigPath": "配置文件路径无效。",
+  "settingsArchiveHandling": "归档处理",
+  "settingsRemoveNestedFolders": "删除嵌套文件夹",
+  "settingsRemoveNestedFoldersDesc": "解压归档时删除嵌套文件夹",
+  "settingsSaveArchiveHandling": "保存设置",
+  "settingsArchiveHandlingSaved": "归档处理设置已保存。",
+  "settingsTest7Zip": "测试 7-Zip",
+  "settingsTest7ZipDesc": "测试系统中是否能找到 7-Zip",
+  "settingsExecutableRecognition": "可执行文件识别",
+  "settingsMaxSearchDepth": "最大搜索深度",
+  "settingsInvalidSearchDepth": "搜索深度值无效。",
+  "settingsExecutableExtensions": "可执行文件扩展名",
+  "settingsInvalidExtensions": "扩展名列表无效。",
+  "settingsNoExtensionsSelected": "未选择扩展名",
+  "settingsSelectExtensions": "选择扩展名",
+  "settingsSaveExecutableSettings": "保存设置",
+  "settingsExecutableSettingsSaved": "可执行文件识别设置已保存。",
+  "settingsAppearance": "外观",
+  "settingsAppFont": "应用字体",
+  "settingsLanguage": "语言",
+  "settingsSaveLanguage": "保存语言",
+  "settingsLanguageSaved": "语言设置已保存。",
+  "translationByAI": "（AI翻译）",
+  "settingsLogSettings": "日志设置",
+  "settingsEnableFileLogging": "启用文件日志",
+  "settingsEnableFileLoggingDesc": "将日志保存到文件以便调试",
+  "settingsLogFilePath": "日志文件",
+  "settingsInvalidLogPath": "日志文件路径无效。",
+  "settingsLogSettingsSaved": "日志设置已保存。",
+  "settingsAbout": "关于",
+  "settingsVersion": "版本",
+  "settingsBuildTime": "构建时间",
+  "settingsCheckUpdate": "检查更新",
+  "settingsReinstallConfirm": "重新安装应用",
+  "settingsReinstallMessage": "这将下载并重新安装最新版本。确定吗？",
+  "settingsReinstallConfirmButton": "重新安装",
+  "settingsReinstallFailed": "重新安装失败",
+  "settingsReinstallFailedMessage": "重新安装失败：{message}",
+  "settingsReinstallLatest": "重新安装最新版本",
+  "settingsDevHint": "开发阶段",
+  "settingsDevHintContent": "如果遇到任何问题，请尝试删除配置文件并重启。",
+  "settingsUnsavedChanges": "未保存的更改",
+  "settingsUnsavedChangesMessage": "您有未保存的更改。是否在退出前保存？",
+  "settingsDiscardChanges": "放弃",
+  "settingsSaveAndExit": "保存并退出",
+  "settingsSaveAll": "全部保存",
+  "test7ZipTitle": "7-Zip 测试",
+  "test7ZipClose": "关闭",
+  "homeCopySuffix": " - 副本",
+  "homeNewSoftware": "新软件",
+  "homeDuplicateExisting": "已托管软件：{name}（{path}）",
+  "homeDuplicateInstallDir": "安装目录已存在：{path}",
+  "homeDuplicateArchive": "归档文件已存在：{name}",
+  "homeDuplicateDetected": "检测到重复",
+  "homeDuplicateHelp": "软件名称「{name}」与现有项目冲突。请选择如何继续：",
+  "homeDuplicateRenameHint": "输入新名称以重命名并添加：",
+  "homeDuplicateCancel": "取消",
+  "homeDuplicateRenameAdd": "重命名并添加",
+  "homeDuplicateOverwrite": "覆盖",
+  "homeInstallDirNotExistNoArchive": "安装目录未配置",
+  "homeScanArchiveTitle": "扫描并归档",
+  "homeScanArchiveHint": "扫描「{path}」中的所有子目录并将其归档为单独的软件？",
+  "homeScanArchiveBackupOn": "归档将保存到：{path}",
+  "homeScanArchiveBackupOff": "将不会创建备份。",
+  "homeScanArchiveToggle": "为原始软件创建备份",
+  "homeScanArchiveToggleHint": "如果启用，将在归档前在备份文件夹中创建备份。",
+  "homeScanArchiveStart": "开始扫描",
+  "homeScanScanning": "正在扫描...",
+  "homeScanProgress": "{done}/{total}（{percent}%）",
+  "homeScanCurrent": "当前：{name}",
+  "homeScanSummaryTitle": "扫描完成",
+  "homeScanSummaryInstallDir": "安装目录：{path}",
+  "homeScanSummaryArchiveDir": "归档目录：{path}",
+  "homeScanSummaryTotal": "共扫描：{count}",
+  "homeScanSummaryArchived": "成功归档：{count}",
+  "homeScanSummarySkipped": "已跳过（已存在）：{count}",
+  "homeScanSummaryFailed": "失败：{count}",
+  "homeScanSummaryFailedItem": "- {name}：{error}",
+  "homeScanSummaryMore": "还有 {count} 个失败项...",
+  "homeAssocFound": "发现 {count} 个归档关联",
+  "homeAssocHint": "以下安装可能存在对应的归档文件。请选择要关联的项目：",
+  "homeAssocSkipAll": "全部跳过",
+  "homeAssocApply": "应用关联",
+  "homeProcessingFiles": "正在处理文件，请稍候...",
+  "homeInstallingSoftware": "正在安装软件...",
+  "homeCancellingOperation": "正在取消操作...",
+  "homeDeleteSoftware": "删除 {name}",
+  "homeDeleteUnmanagedHint": "您确定要删除这个{name}吗？此操作不可恢复。",
+  "homeDeleteUnmanagedFolder": "未知文件夹",
+  "homeDeleteUnmanagedArchive": "未知归档文件",
+  "homeDeleteManagedHint": "您确定要删除此软件吗？此操作将从列表中移除该软件。",
+  "homeDeleteInstallDir": "同时删除安装目录",
+  "homeDeleteArchive": "同时删除归档文件",
+  "homeDeleting": "正在删除，请稍候...",
+  "homeManagedSoftware": "已托管软件",
+  "homeListView": "列表视图",
+  "homeGridView": "网格视图",
+  "homeReorder": "调整排序",
+  "homeOpenInstallDir": "打开安装目录",
+  "homeScanCurrentDir": "扫描当前目录软件",
+  "homeNoSoftware": "尚未添加任何软件。",
+  "homeDropToAdd": "松开以添加软件",
+  "homeDropHint": "支持 ZIP/TAR/RAR/7Z 压缩包或已配置的可执行文件",
+  "homeReorderTitle": "调整软件顺序",
+  "homeMoveUp": "向上移动",
+  "homeMoveDown": "向下移动",
+  "homeReorderHint": "通过点击右侧箭头可调整展示顺序，保存后将在主页生效。",
+  "homeSaveOrder": "保存顺序",
+  "test7ZipError": "测试过程中发生错误：\n{error}",
+  "errorUnhandled": "发生了一个未处理的错误:\n\n{error}\n\n堆栈跟踪:\n{stackTrace}",
+  "errorOk": "好的",
+  "@homeDeleteSoftware": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeDeleteUnmanagedHint": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@test7ZipError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@errorUnhandled": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      },
+      "stackTrace": {
+        "type": "String"
+      }
+    }
+  },
+  "@dialogNewVersion": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "@settingsReinstallFailedMessage": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeDuplicateExisting": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeDuplicateInstallDir": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeDuplicateArchive": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeDuplicateHelp": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanArchiveHint": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanArchiveBackupOn": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanProgress": {
+    "placeholders": {
+      "done": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanCurrent": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanSummaryInstallDir": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanSummaryArchiveDir": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanSummaryTotal": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanSummaryArchived": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanSummarySkipped": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanSummaryFailed": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanSummaryFailedItem": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanSummaryMore": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeAssocFound": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  }
+}

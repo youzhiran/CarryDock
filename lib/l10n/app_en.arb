@@ -1,0 +1,486 @@
+{
+  "appName": "CarryDock",
+  "appNameShort": "CarryDock",
+  "loading": "Loading...",
+  "unknown": "Unknown",
+  "success": "Success",
+  "error": "Error",
+  "warning": "Warning",
+  "cancel": "Cancel",
+  "save": "Save",
+  "delete": "Delete",
+  "edit": "Edit",
+  "confirm": "Confirm",
+  "close": "Close",
+  "ok": "OK",
+  "yes": "Yes",
+  "no": "No",
+  "retry": "Retry",
+  "skip": "Skip",
+  "back": "Back",
+  "next": "Next",
+  "finish": "Finish",
+  "apply": "Apply",
+  "reset": "Reset",
+  "clear": "Clear",
+  "search": "Search",
+  "refresh": "Refresh",
+  "open": "Open",
+  "browse": "Browse",
+  "select": "Select",
+  "add": "Add",
+  "remove": "Remove",
+  "navHome": "Home",
+  "navArchive": "Archive Manager",
+  "navSettings": "Settings",
+  "navDeveloperOptions": "Developer Options",
+  "navToggleTooltip": "Collapse navigation pane",
+  "navExpandTooltip": "Expand navigation pane",
+  "settingsTitle": "Settings",
+  "homeTitle": "Home",
+  "languageChinese": "简体中文",
+  "languageEnglish": "English",
+  "tileOpenFolder": "Open Software Folder",
+  "tileChangeFolder": "Change Software Folder",
+  "tileCreateBackup": "Create Backup",
+  "tileAddToStartMenu": "Add to Start Menu",
+  "tileOpenArchiveFolder": "Open Archive Folder",
+  "tileLaunchOther": "Launch Other Program",
+  "tileArchiveExists": "Archive file exists",
+  "tileArchiveNotExists": "Archive file does not exist",
+  "tileBackupDetected": "Backup detected",
+  "tileBackupNotDetected": "No backup detected",
+  "tileHintNoInstallDir": "Hint",
+  "tileHintNoInstallDirMessage": "This software has no installation directory configured.",
+  "tileHintCannotOpenDir": "Cannot find installation directory: {path}",
+  "tileError": "Error",
+  "tileErrorCannotOpenDirMessage": "Cannot open installation directory, please try again later.",
+  "tileHintNoArchive": "Hint",
+  "tileHintNoArchiveMessage": "This software has no archive file configured.",
+  "tileHintArchiveNotExists": "Archive file does not exist, opened archive directory.",
+  "tileHintParentOpened": "Archive file does not exist, opened archive parent directory.",
+  "tileHintArchiveNotFound": "Cannot find archive file location.",
+  "tileErrorCannotOpenArchive": "Cannot open archive directory, please try again later.",
+  "tileHintNoExecutable": "Hint",
+  "tileHintNoExecutableMessage": "This software has no executable file path configured.",
+  "tileHintInstallDirNotExists": "Installation directory does not exist, cannot create backup.",
+  "tileCreatingBackup": "Creating backup...",
+  "tileBackupCreated": "Backup created: {name}",
+  "tileErrorCreateBackup": "Failed to create backup, please try again later.",
+  "tileSuccess": "Success",
+  "tileAddedToStartMenu": "Added \"{name}\" to Start Menu.",
+  "tileErrorAddToStartMenu": "Failed to add to Start Menu: {error}",
+  "tileCarryDock": "CarryDock",
+  "tileCarryDockShortcutAdding": "CarryDock shortcut does not exist in Start Menu, adding...",
+  "tileCarryDockShortcutAdded": "CarryDock shortcut added to Start Menu",
+  "homeUnknownFolder": "Unknown Folder",
+  "homeUnknownArchiveFile": "Unknown Archive File",
+  "homeSoftwareDirDeleted": "Software directory deleted",
+  "homeRehost": "Rehost",
+  "homeBackupArchive": "Backup Archive",
+  "homeArchiveFile": "Archive File",
+  "homeChangeExecutable": "Change Main Program",
+  "homeScanning": "Scanning for executable programs...",
+  "homeNoExecutableFound": "No executable programs found in installation directory",
+  "homeOnlyOneExecutableFound": "Only one executable program found, cannot change main program",
+  "tileNewPathHint": "New path will be: {path}\\[your input name]",
+  "tileErrorMigrateFailed": "Failed to change software folder: {error}",
+  "tileChangeSoftwareFolder": "Change Software Folder",
+  "tileCurrentPath": "Current path:",
+  "tileNewFolderName": "New folder name:",
+  "tileNewFolderPlaceholder": "Enter new folder name",
+  "tileRenameConfirm": "Confirm",
+  "tileRenameCancel": "Cancel",
+  "tileHintSamePath": "Hint",
+  "tileHintSamePathMessage": "New path is the same as current path, no update needed.",
+  "tileErrorFolderNotExist": "Current software folder does not exist, cannot migrate.",
+  "tileErrorFolderExists": "New folder already exists, please choose another name.",
+  "tileMigrating": "Migrating files...",
+  "tileMigrateSuccess": "Software folder migrated successfully.",
+  "delete": "Delete",
+  "archiveTitle": "Archive Manager",
+  "archiveFiles": "Archives",
+  "archiveNoArchiveFiles": "No archive files",
+  "archiveBackupFiles": "Backups",
+  "archiveNoBackupFiles": "No backup files",
+  "archiveRefresh": "Refresh",
+  "archiveOpenArchiveDir": "Open Archive Directory",
+  "archiveOpenBackupDir": "Open Backup Directory",
+  "archiveOperationFailed": "Operation Failed",
+  "archiveCannotOpenDirectory": "Cannot open directory.",
+  "archiveCannotOpenExplorer": "Cannot open Explorer.",
+  "archiveInstallingFromArchive": "Installing from archive...",
+  "archiveCompletingInstallation": "Completing installation...",
+  "archiveCancellingOperation": "Cancelling operation...",
+  "archiveDuplicateDetected": "Duplicate Detected",
+  "archiveDuplicateMessage": "Installation directory already exists:\n",
+  "archiveBackupAndRestore": "Backup and Restore",
+  "archiveRestoring": "Restoring...",
+  "archiveBackupRestoreFailed": "Backup and restore failed.",
+  "archiveInstallFailed": "Installation failed.",
+  "archiveDeleteArchive": "Delete Archive",
+  "archiveDeleteBackup": "Delete Backup",
+  "archiveDeleteArchiveHint": "Are you sure you want to delete this archive?",
+  "archiveDeleteBackupHint": "Are you sure you want to delete this backup? It may be linked to managed software.",
+  "archiveDeletingArchive": "Deleting archive...",
+  "archiveDeletingBackup": "Deleting backup...",
+  "archiveDeleteFailed": "Deletion Failed",
+  "archiveCannotDeleteFile": "Cannot delete file.",
+  "archiveNoAvailableSoftware": "No Available Software",
+  "archiveNoAvailableSoftwareHint": "No managed software available. Please add software first.",
+  "archiveLinkArchive": "Link Archive",
+  "archiveLinkBackup": "Link Backup",
+  "archiveLink": "Link",
+  "archiveLinkSuccess": "Link Successful",
+  "archiveLinkSuccessHint": "Archive has been linked to software.",
+  "archiveManualLink": "Manual Link",
+  "archiveRestore": "Restore",
+  "archiveCreateBackup": "Create Backup",
+  "archiveCreatingBackup": "Creating backup...",
+  "archiveCreateSuccess": "Success",
+  "archiveBackupCreated": "Backup created: ",
+  "archiveCreateFailed": "Creation Failed",
+  "archiveCreateBackupFailed": "Failed to create backup.",
+  "devTitle": "Developer Options",
+  "devHint": "This is a hidden menu for debugging and testing purposes.",
+  "devIconTest": "Icon Test",
+  "devIconTestHint": "Test icon extraction from executable files",
+  "devExtractFailed": "Extraction Failed",
+  "devExtractFailedMessage": "Failed to extract icon from file.",
+  "devFileName": "File: ",
+  "devMethod1": "Method 1: Direct Memory Display",
+  "devMethod1Desc": "Display icon directly from memory bytes (32x32)",
+  "devMethod2": "Method 2: High Quality Display",
+  "devMethod2Desc": "Display icon with higher quality settings (64x64)",
+  "devMethod3": "Method 3: ImageProvider Integration",
+  "devMethod3Desc": "Test icon as ImageProvider in widgets",
+  "devButtonWithIcon": "Button",
+  "devIconHint": "The icon above is rendered using the extracted bytes from the executable file.",
+  "devClose": "Close",
+  "devHide": "Hide Developer Options",
+  "devHiddenFeature": "Hidden Feature",
+  "devHiddenFeatureMessage": "This is a hidden feature for future development.",
+  "devHiddenButton": "Hidden",
+  "dialogSelectExecutable": "Select Executable",
+  "dialogCancel": "Cancel",
+  "dialogConfirm": "Confirm",
+  "dialogUpdateInfo": "Update Info",
+  "dialogNoUpdateInfo": "No update information available.",
+  "dialogClose": "Close",
+  "dialogNewVersion": "New Version Available: {version}",
+  "dialogUpdateContent": "Update content",
+  "dialogRetry": "Retry",
+  "dialogUpdateSuccess": "Update Successful",
+  "dialogUpdateSuccessMessage": "Application has been updated successfully.",
+  "dialogDownloadAndUpdate": "Download and Update",
+  "dialogInvalidExtension": "Invalid extension format. Must start with '.' (e.g. '.exe')",
+  "dialogExtensionExists": "This extension already exists.",
+  "dialogNoExtensionsSelected": "No extensions selected",
+  "dialogSelectExtensions": "Select Extensions",
+  "dialogCommonExtensions": "Common Extensions",
+  "dialogCustomExtensions": "Custom Extensions",
+  "dialogExtensionPlaceholder": ".exe",
+  "dialogAdd": "Add",
+  "dialogSelected": "Selected",
+  "dialogSelectAtLeastOne": "Please select at least one extension.",
+  "settingsError": "Error",
+  "settingsSuccess": "Success",
+  "settingsStorage": "Storage",
+  "settingsInstallPath": "Installation Path",
+  "settingsInstallPathPlaceholder": "Enter installation path",
+  "settingsSaveInstallPath": "Save Path",
+  "settingsInstallPathSaved": "Installation path saved.",
+  "settingsArchivePath": "Archive Path",
+  "settingsArchivePathPlaceholder": "Enter archive path",
+  "settingsSaveArchivePath": "Save Path",
+  "settingsArchivePathSaved": "Archive path saved.",
+  "settingsConfigFilePath": "Configuration File",
+  "settingsOpenFileLocation": "Open Location",
+  "settingsInvalidConfigPath": "Invalid configuration file path.",
+  "settingsArchiveHandling": "Archive Handling",
+  "settingsRemoveNestedFolders": "Remove Nested Folders",
+  "settingsRemoveNestedFoldersDesc": "Remove nested folders when extracting archives",
+  "settingsSaveArchiveHandling": "Save Settings",
+  "settingsArchiveHandlingSaved": "Archive handling settings saved.",
+  "settingsTest7Zip": "Test 7-Zip",
+  "settingsTest7ZipDesc": "Test if 7-Zip can be found in the system",
+  "settingsExecutableRecognition": "Executable Recognition",
+  "settingsMaxSearchDepth": "Max Search Depth",
+  "settingsInvalidSearchDepth": "Invalid search depth value.",
+  "settingsExecutableExtensions": "Executable Extensions",
+  "settingsInvalidExtensions": "Invalid extensions list.",
+  "settingsNoExtensionsSelected": "No extensions selected",
+  "settingsSelectExtensions": "Select Extensions",
+  "settingsSaveExecutableSettings": "Save Settings",
+  "settingsExecutableSettingsSaved": "Executable recognition settings saved.",
+  "settingsAppearance": "Appearance",
+  "settingsAppFont": "Application Font",
+  "settingsLanguage": "Language",
+  "settingsSaveLanguage": "Save Language",
+  "settingsLanguageSaved": "Language setting saved.",
+  "translationByAI": "(AI translated)",
+  "settingsLogSettings": "Log Settings",
+  "settingsEnableFileLogging": "Enable File Logging",
+  "settingsEnableFileLoggingDesc": "Save logs to a file for debugging",
+  "settingsLogFilePath": "Log File",
+  "settingsInvalidLogPath": "Invalid log file path.",
+  "settingsLogSettingsSaved": "Log settings saved.",
+  "settingsAbout": "About",
+  "settingsVersion": "Version",
+  "settingsBuildTime": "Build Time",
+  "settingsCheckUpdate": "Check Update",
+  "settingsReinstallConfirm": "Reinstall Application",
+  "settingsReinstallMessage": "This will download and reinstall the latest version. Are you sure?",
+  "settingsReinstallConfirmButton": "Reinstall",
+  "settingsReinstallFailed": "Reinstall Failed",
+  "settingsReinstallFailedMessage": "Failed to reinstall: {message}",
+  "settingsReinstallLatest": "Reinstall Latest Version",
+  "settingsDevHint": "Development Stage",
+  "settingsDevHintContent": "If you encounter any issues, try deleting the configuration file and restart.",
+  "settingsUnsavedChanges": "Unsaved Changes",
+  "settingsUnsavedChangesMessage": "You have unsaved changes. Do you want to save them before exiting?",
+  "settingsDiscardChanges": "Discard",
+  "settingsSaveAndExit": "Save and Exit",
+  "settingsSaveAll": "Save All",
+  "test7ZipTitle": "7-Zip Test",
+  "test7ZipClose": "Close",
+  "homeCopySuffix": " - Copy",
+  "homeNewSoftware": "New Software ",
+  "homeDuplicateExisting": "Managed software: {name} ({path})",
+  "homeDuplicateInstallDir": "Installation directory already exists: {path}",
+  "homeDuplicateArchive": "Archive file already exists: {name}",
+  "homeDuplicateDetected": "Duplicate Detected",
+  "homeDuplicateHelp": "The software name '{name}' conflicts with existing items. Please choose how to proceed:",
+  "homeDuplicateRenameHint": "Enter a new name to rename and add:",
+  "homeDuplicateCancel": "Cancel",
+  "homeDuplicateRenameAdd": "Rename and Add",
+  "homeDuplicateOverwrite": "Overwrite",
+  "homeInstallDirNotExistNoArchive": "Install Directory Not Configured",
+  "homeScanArchiveTitle": "Scan and Archive",
+  "homeScanArchiveHint": "Scan all subdirectories in '{path}' and archive them as individual software?",
+  "homeScanArchiveBackupOn": "Archives will be saved to: {path}",
+  "homeScanArchiveBackupOff": "Backup will not be created.",
+  "homeScanArchiveToggle": "Create backup for original software",
+  "homeScanArchiveToggleHint": "If enabled, a backup will be created in the backup folder before archiving.",
+  "homeScanArchiveStart": "Start Scan",
+  "homeScanScanning": "Scanning...",
+  "homeScanProgress": "{done} / {total} ({percent}%)",
+  "homeScanCurrent": "Current: {name}",
+  "homeScanSummaryTitle": "Scan Complete",
+  "homeScanSummaryInstallDir": "Installation directory: {path}",
+  "homeScanSummaryArchiveDir": "Archive directory: {path}",
+  "homeScanSummaryTotal": "Total scanned: {count}",
+  "homeScanSummaryArchived": "Successfully archived: {count}",
+  "homeScanSummarySkipped": "Skipped (already exists): {count}",
+  "homeScanSummaryFailed": "Failed: {count}",
+  "homeScanSummaryFailedItem": "- {name}: {error}",
+  "homeScanSummaryMore": "And {count} more failures...",
+  "homeAssocFound": "Found {count} Archive Associations",
+  "homeAssocHint": "The following installations may have corresponding archives. Please select which ones to associate:",
+  "homeAssocSkipAll": "Skip All",
+  "homeAssocApply": "Apply Associations",
+  "homeProcessingFiles": "Processing files, please wait...",
+  "homeInstallingSoftware": "Installing software...",
+  "homeCancellingOperation": "Cancelling operation...",
+  "homeDeleteSoftware": "Delete {name}",
+  "homeDeleteUnmanagedHint": "Are you sure you want to delete this {name}? This action cannot be undone.",
+  "homeDeleteUnmanagedFolder": "unknown folder",
+  "homeDeleteUnmanagedArchive": "unknown archive file",
+  "homeDeleteManagedHint": "Are you sure you want to delete this software? This will remove it from the list.",
+  "homeDeleteInstallDir": "Also delete installation directory",
+  "homeDeleteArchive": "Also delete archive file",
+  "homeDeleting": "Deleting, please wait...",
+  "homeManagedSoftware": "Managed Software",
+  "homeListView": "List View",
+  "homeGridView": "Grid View",
+  "homeReorder": "Reorder",
+  "homeOpenInstallDir": "Open Installation Directory",
+  "homeScanCurrentDir": "Scan Current Directory for Software",
+  "homeNoSoftware": "No software added yet.",
+  "homeDropToAdd": "Release to add software",
+  "homeDropHint": "Supports ZIP/TAR/RAR/7Z archives or configured executable files",
+  "homeReorderTitle": "Adjust Software Order",
+  "homeMoveUp": "Move Up",
+  "homeMoveDown": "Move Down",
+  "homeReorderHint": "Click the arrows on the right to adjust the display order. Changes will take effect on the home page after saving.",
+  "homeSaveOrder": "Save Order",
+  "test7ZipError": "An error occurred during testing:\n{error}",
+  "errorUnhandled": "An unhandled error occurred:\n\n{error}\n\nStack trace:\n{stackTrace}",
+  "errorOk": "OK",
+  "@homeDeleteSoftware": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeDeleteUnmanagedHint": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@test7ZipError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@errorUnhandled": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      },
+      "stackTrace": {
+        "type": "String"
+      }
+    }
+  },
+  "@dialogNewVersion": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "@settingsReinstallFailedMessage": {
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeDuplicateExisting": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeDuplicateInstallDir": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeDuplicateArchive": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeDuplicateHelp": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanArchiveHint": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanArchiveBackupOn": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanProgress": {
+    "placeholders": {
+      "done": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanCurrent": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanSummaryInstallDir": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanSummaryArchiveDir": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanSummaryTotal": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanSummaryArchived": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanSummarySkipped": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanSummaryFailed": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanSummaryFailedItem": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeScanSummaryMore": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "@homeAssocFound": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  }
+}

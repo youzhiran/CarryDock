@@ -15,6 +15,7 @@ class SettingsService {
   static const String _useGridLayoutKey = 'use_grid_layout';
   static const String _enableFileLoggingKey = 'enable_file_logging';
   static const String _logFilePathKey = 'log_file_path';
+  static const String _languageKey = 'language';
 
   static const int defaultExecutableSearchMaxDepth = 3;
   static const List<String> defaultExecutableExtensions = ['exe', 'bat'];
@@ -152,10 +153,18 @@ class SettingsService {
     if (storedPath != null && storedPath.isNotEmpty) {
       return storedPath;
     }
-    
+
     // 默认日志文件路径：与配置文件同一目录下的 carrydock.log
     final configFilePath = await _storageService.getFilePath();
     final configDir = Directory(configFilePath).parent.path;
     return '$configDir/carrydock.log';
+  }
+
+  Future<void> saveLanguage(String languageCode) async {
+    await _storageService.setValue(_languageKey, languageCode);
+  }
+
+  Future<String> getLanguage() async {
+    return await _storageService.getValue<String>(_languageKey) ?? 'zh_CN';
   }
 }

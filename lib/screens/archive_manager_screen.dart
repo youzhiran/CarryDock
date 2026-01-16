@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:carrydock/l10n/app_localizations.dart';
 import 'package:carrydock/models/software.dart';
 import 'package:carrydock/services/software_service.dart';
 import 'package:carrydock/utils/logger.dart';
@@ -66,13 +67,14 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
 
   Future<void> _showMessage(String title, String content) async {
     if (!mounted) return;
+    final l10n = AppLocalizations.of(context)!;
     await showDialog(
       context: context,
       builder: (context) => ContentDialog(
         title: Text(title),
         content: Text(content),
         actions: [
-          Button(child: const Text('确定'), onPressed: () => Navigator.of(context).pop()),
+          Button(child: Text(l10n.ok), onPressed: () => Navigator.of(context).pop()),
         ],
       ),
     );
@@ -83,7 +85,8 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
       await Process.start('explorer.exe', [path], runInShell: true);
     } catch (e, s) {
       logger.e('打开目录失败', error: e, stackTrace: s);
-      await _showMessage('操作失败', '无法打开目录，请稍后重试。');
+      final l10n = AppLocalizations.of(context)!;
+      await _showMessage(l10n.archiveOperationFailed, l10n.archiveCannotOpenDirectory);
     }
   }
 
@@ -97,7 +100,8 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
       }
     } catch (e, s) {
       logger.e('打开资源管理器失败', error: e, stackTrace: s);
-      await _showMessage('操作失败', '无法打开资源管理器，请稍后重试。');
+      final l10n = AppLocalizations.of(context)!;
+      await _showMessage(l10n.archiveOperationFailed, l10n.archiveCannotOpenExplorer);
     }
   }
 
@@ -126,8 +130,9 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
   }
 
   Future<void> _handleRehostFromArchive(Software item) async {
-    // 对于“未知归档”，直接走 addSoftwareFromFile 流程（会复用现有的可执行选择与重复处理）
-    _showProgress('正在从归档/备份安装，请稍候...');
+    final l10n = AppLocalizations.of(context)!;
+    // 对于"未知归档"，直接走 addSoftwareFromFile 流程（会复用现有的可执行选择与重复处理）
+    _showProgress(l10n.archiveInstallingFromArchive);
     bool shouldReload = false;
     try {
       final result = await _softwareService.addSoftwareFromFile(item.archivePath);
@@ -147,7 +152,7 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
             ),
           );
           if (selected != null) {
-            _showProgress('正在完成安装...');
+            _showProgress(l10n.archiveCompletingInstallation);
             await _softwareService.completeSoftwareAddition(
               installPath: pending.installPath,
               archivePath: pending.archivePath,
@@ -156,7 +161,7 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
             );
             shouldReload = true;
           } else {
-            _showProgress('正在取消操作...');
+            _showProgress(l10n.archiveCancellingOperation);
             await _softwareService.cleanupTemporaryFiles(
               installPath: pending.installPath,
               archivePath: pending.archivePath,
@@ -170,16 +175,15 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
           final doBackupRestore = await showDialog<bool>(
             context: context,
             builder: (context) => ContentDialog(
-              title: const Text('检测到重复'),
+              title: Text(l10n.archiveDuplicateDetected),
               content: Text(
-                '发现目标安装目录或归档已存在：\n'
-                '安装目录：${info.targetInstallPath}\n'
-                '归档文件：${p.basename(info.targetArchivePath)}\n\n'
-                '是否先对现有安装进行备份并删除，再进行还原？',
+                '${l10n.archiveDuplicateMessage}'
+                '${info.targetInstallPath}\n'
+                '${p.basename(info.targetArchivePath)}',
               ),
               actions: [
-                Button(child: const Text('取消'), onPressed: () => Navigator.of(context).pop(false)),
-                FilledButton(child: const Text('备份并还原'), onPressed: () => Navigator.of(context).pop(true)),
+                Button(child: Text(l10n.cancel), onPressed: () => Navigator.of(context).pop(false)),
+                FilledButton(child: Text(l10n.archiveBackupAndRestore), onPressed: () => Navigator.of(context).pop(true)),
               ],
             ),
           );
@@ -194,7 +198,7 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
                   );
                 }
               }
-              _showProgress('正在还原...');
+              _showProgress(l10n.archiveRestoring);
               final r = await _softwareService.resolveDuplicateAddition(
                 info: info,
                 overwriteExisting: true,
@@ -204,7 +208,7 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
               }
             } catch (e, s) {
               logger.e('备份并还原失败', error: e, stackTrace: s);
-              await _showMessage('操作失败', '备份或还原过程中出现错误。');
+              await _showMessage(l10n.archiveOperationFailed, l10n.archiveBackupRestoreFailed);
             } finally {
               _popDialog();
             }
@@ -216,7 +220,7 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
       }
     } catch (e, s) {
       logger.e('从归档安装失败', error: e, stackTrace: s);
-      await _showMessage('操作失败', '从归档安装失败，请稍后重试。');
+      await _showMessage(l10n.archiveOperationFailed, l10n.archiveInstallFailed);
     } finally {
       _popDialog();
       if (shouldReload) await _loadData();
@@ -224,33 +228,34 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
   }
 
   Future<void> _handleDeleteArchive(Software item, {required bool isBackup}) async {
+    final l10n = AppLocalizations.of(context)!;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => ContentDialog(
-          title: Text(isBackup ? '删除备份' : '删除归档'),
+          title: Text(isBackup ? l10n.archiveDeleteBackup : l10n.archiveDeleteArchive),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (isBackup)
-                const Text('仅删除备份文件，不影响已安装软件。')
+                Text(l10n.archiveDeleteBackupHint)
               else
-                const Text('确定要删除该归档文件吗？归档文件一般是软件的初始备份，可用于还原。'),
+                Text(l10n.archiveDeleteArchiveHint),
               const SizedBox(height: 8),
               SelectableText(item.name),
             ],
           ),
           actions: [
-            Button(child: const Text('取消'), onPressed: () => Navigator.of(context).pop(false)),
-            FilledButton(child: const Text('删除'), onPressed: () => Navigator.of(context).pop(true)),
+            Button(child: Text(l10n.cancel), onPressed: () => Navigator.of(context).pop(false)),
+            FilledButton(child: Text(l10n.delete), onPressed: () => Navigator.of(context).pop(true)),
           ],
         ),
       ),
     );
     if (confirm != true) return;
     try {
-      _showProgress(isBackup ? '正在删除备份...' : '正在删除归档...');
+      _showProgress(isBackup ? l10n.archiveDeletingBackup : l10n.archiveDeletingArchive);
       final file = File(item.archivePath);
       if (await file.exists()) {
         await file.delete();
@@ -263,18 +268,19 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
     } catch (e, s) {
       logger.e('删除文件失败', error: e, stackTrace: s);
       _popDialog();
-      await _showMessage('删除失败', '无法删除文件，请稍后重试。');
+      await _showMessage(l10n.archiveDeleteFailed, l10n.archiveCannotDeleteFile);
     }
     await _loadData();
   }
 
   Future<void> _handleManualLink(Software item, {required bool isBackup}) async {
+    final l10n = AppLocalizations.of(context)!;
     // 选择一个已托管软件
     final managed = (await _softwareService.getSoftwareList())
         .where((s) => s.status == SoftwareStatus.managed)
         .toList();
     if (managed.isEmpty) {
-      await _showMessage('无可用软件', '请先在主页添加或托管至少一个软件。');
+      await _showMessage(l10n.archiveNoAvailableSoftware, l10n.archiveNoAvailableSoftwareHint);
       return;
     }
     // 默认选中：若该文件已被某个软件关联（归档或备份），则默认选中该软件；否则选中首项
@@ -292,7 +298,7 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => ContentDialog(
-          title: Text(isBackup ? '手动关联备份' : '手动关联归档'),
+          title: Text(isBackup ? l10n.archiveLinkBackup : l10n.archiveLinkArchive),
           content: ComboBox<String>(
             isExpanded: true,
             items: [
@@ -314,8 +320,8 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
             onChanged: (v) => setState(() => selectedId = v),
           ),
           actions: [
-            Button(child: const Text('取消'), onPressed: () => Navigator.of(context).pop(false)),
-            FilledButton(child: const Text('关联'), onPressed: () => Navigator.of(context).pop(true)),
+            Button(child: Text(l10n.cancel), onPressed: () => Navigator.of(context).pop(false)),
+            FilledButton(child: Text(l10n.archiveLink), onPressed: () => Navigator.of(context).pop(true)),
           ],
         ),
       ),
@@ -325,16 +331,17 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
         softwareId: selectedId!,
         archivePath: item.archivePath,
       );
-      await _showMessage('关联成功', '已更新所选软件的归档路径。');
+      await _showMessage(l10n.archiveLinkSuccess, l10n.archiveLinkSuccessHint);
     }
   }
 
   Future<void> _handleCreateBackup() async {
+    final l10n = AppLocalizations.of(context)!;
     final managed = (await _softwareService.getSoftwareList())
         .where((s) => s.status == SoftwareStatus.managed)
         .toList();
     if (managed.isEmpty) {
-      await _showMessage('无可用软件', '请先在主页添加或托管至少一个软件。');
+      await _showMessage(l10n.archiveNoAvailableSoftware, l10n.archiveNoAvailableSoftwareHint);
       return;
     }
     String? selectedId = managed.first.id;
@@ -342,7 +349,7 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => ContentDialog(
-          title: const Text('创建备份'),
+          title: Text(l10n.archiveCreateBackup),
           content: ComboBox<String>(
             isExpanded: true,
             items: [
@@ -364,8 +371,8 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
             onChanged: (v) => setState(() => selectedId = v),
           ),
           actions: [
-            Button(child: const Text('取消'), onPressed: () => Navigator.of(context).pop(false)),
-            FilledButton(child: const Text('创建'), onPressed: () => Navigator.of(context).pop(true)),
+            Button(child: Text(l10n.cancel), onPressed: () => Navigator.of(context).pop(false)),
+            FilledButton(child: Text(l10n.add), onPressed: () => Navigator.of(context).pop(true)),
           ],
         ),
       ),
@@ -373,21 +380,22 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
     if (ok == true && selectedId != null) {
       final s = managed.firstWhere((e) => e.id == selectedId);
       try {
-        _showProgress('正在创建备份...');
+        _showProgress(l10n.archiveCreatingBackup);
         final path = await _softwareService.createBackupForSoftware(s);
         _popDialog();
-        await _showMessage('创建成功', '已生成备份：${p.basename(path)}');
+        await _showMessage(l10n.archiveCreateSuccess, '${l10n.archiveBackupCreated}${p.basename(path)}');
         await _loadData();
       } catch (e, s) {
         logger.e('创建备份失败', error: e, stackTrace: s);
         _popDialog();
-        await _showMessage('创建失败', '无法创建备份，请稍后重试。');
+        await _showMessage(l10n.archiveCreateFailed, l10n.archiveCreateBackupFailed);
       }
     }
   }
 
   Widget _buildFileTile(Software item, {required bool isBackup}) {
     final theme = FluentTheme.of(context);
+    final l10n = AppLocalizations.of(context)!;
     final isLinked = _linkedPaths.contains(item.archivePath);
     return ListTile(
       onPressed: () => _revealInExplorer(item.archivePath),
@@ -404,7 +412,7 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Tooltip(
-            message: '还原',
+            message: l10n.archiveRestore,
             child: IconButton(
               icon: const Icon(FluentIcons.refresh),
               onPressed: () => _handleRehostFromArchive(item),
@@ -413,7 +421,7 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
           const SizedBox(width: 6),
           if (!isBackup)
             Tooltip(
-              message: '手动关联',
+              message: l10n.archiveManualLink,
               child: IconButton(
                 style: isLinked
                     ? ButtonStyle(
@@ -427,7 +435,7 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
             ),
           const SizedBox(width: 6),
           Tooltip(
-            message: '删除',
+            message: l10n.delete,
             child: IconButton(
               icon: const Icon(FluentIcons.delete),
               onPressed: () => _handleDeleteArchive(item, isBackup: isBackup),
@@ -441,28 +449,29 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = FluentTheme.of(context);
+    final l10n = AppLocalizations.of(context)!;
     return NavigationView(
       content: ScaffoldPage.scrollable(
         header: PageHeader(
-          title: Text('归档管理', style: theme.typography.title),
+          title: Text(l10n.archiveTitle, style: theme.typography.title),
           commandBar: CommandBar(
             mainAxisAlignment: MainAxisAlignment.end,
             primaryItems: [
               CommandBarButton(
                 icon: const Icon(FluentIcons.add),
-                label: const Text('创建备份'),
+                label: Text(l10n.archiveCreateBackup),
                 onPressed: _handleCreateBackup,
               ),
               CommandBarButton(
                 icon: const Icon(FluentIcons.refresh),
-                label: const Text('刷新'),
+                label: Text(l10n.archiveRefresh),
                 onPressed: _loadData,
               ),
             ],
             secondaryItems: [
               CommandBarButton(
                 icon: const Icon(FluentIcons.folder_open),
-                label: const Text('打开归档目录'),
+                label: Text(l10n.archiveOpenArchiveDir),
                 onPressed: () async {
                   final root = await _softwareService.resolveArchiveDirectoryPath();
                   await _openDirectory(root);
@@ -470,7 +479,7 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
               ),
               CommandBarButton(
                 icon: const Icon(FluentIcons.open_folder_horizontal),
-                label: const Text('打开备份目录'),
+                label: Text(l10n.archiveOpenBackupDir),
                 onPressed: () async {
                   final root = await _softwareService.resolveArchiveDirectoryPath();
                   await _openDirectory(p.join(root, 'backup'));
@@ -482,10 +491,10 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
         children: [
           if (_isLoading) const Center(child: ProgressRing()),
           if (!_isLoading) ...[
-            Text('归档文件', style: theme.typography.subtitle),
+            Text(l10n.archiveFiles, style: theme.typography.subtitle),
             const SizedBox(height: 8),
             if (_archives.isEmpty)
-              InfoLabel(label: '暂无归档文件', child: SizedBox.shrink())
+              InfoLabel(label: l10n.archiveNoArchiveFiles, child: SizedBox.shrink())
             else
               ListView.builder(
                 shrinkWrap: true,
@@ -497,10 +506,10 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
                 ),
               ),
             const SizedBox(height: 16),
-            Text('备份文件', style: theme.typography.subtitle),
+            Text(l10n.archiveBackupFiles, style: theme.typography.subtitle),
             const SizedBox(height: 8),
             if (_backups.isEmpty)
-              InfoLabel(label: '暂无备份文件', child: SizedBox.shrink())
+              InfoLabel(label: l10n.archiveNoBackupFiles, child: SizedBox.shrink())
             else
               ListView.builder(
                 shrinkWrap: true,

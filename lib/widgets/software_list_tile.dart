@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:carrydock/l10n/app_localizations.dart';
 import 'package:carrydock/models/software.dart';
 import 'package:carrydock/services/executable_info_service.dart';
 import 'package:carrydock/services/software_service.dart';
@@ -104,17 +105,18 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
     return pill;
   }
 
-  /// 同时展示“归档状态（绿/红）”与“备份状态（蓝/灰）”。
+  /// 同时展示"归档状态（绿/红）"与"备份状态（蓝/灰）"。
   Widget _buildArchiveAndBackupBadges(Software s) {
+    final l10n = AppLocalizations.of(context)!;
     final hasArchive = s.archiveExists;
-    // 按最新约定：仅根据服务层扫描结果判断“备份存在”
+    // 按最新约定：仅根据服务层扫描结果判断"备份存在"
     final hasBackup = s.isBackupArchive;
     final widgets = <Widget>[];
     widgets.add(
       _buildStatusBadge(
         icon: FluentIcons.archive,
         color: hasArchive ? Colors.green : Colors.red,
-        tooltip: hasArchive ? '归档文件存在' : '归档文件不存在',
+        tooltip: hasArchive ? l10n.tileArchiveExists : l10n.tileArchiveNotExists,
       ),
     );
     widgets.add(const SizedBox(width: 6));
@@ -122,7 +124,7 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
       _buildStatusBadge(
         icon: FluentIcons.update_restore,
         color: hasBackup ? Colors.blue : Colors.grey,
-        tooltip: hasBackup ? '检测到备份' : '未检测到备份',
+        tooltip: hasBackup ? l10n.tileBackupDetected : l10n.tileBackupNotDetected,
       ),
     );
     return Row(mainAxisSize: MainAxisSize.min, children: widgets);
@@ -293,26 +295,28 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
 
   /// 打开当前软件的安装目录，不存在时提供友好提示。
   Future<void> _openInstallDirectory() async {
+    final l10n = AppLocalizations.of(context)!;
     final installPath = widget.software.installPath;
     if (installPath.isEmpty) {
-      _showInfoBar('提示', '该软件未配置安装目录。');
+      _showInfoBar(l10n.tileHintNoInstallDir, l10n.tileHintNoInstallDirMessage);
       return;
     }
     final directory = Directory(installPath);
     if (!await directory.exists()) {
-      _showInfoBar('提示', '找不到安装目录：$installPath');
+      _showInfoBar(l10n.tileHintNoInstallDir, l10n.tileHintCannotOpenDir(installPath));
       return;
     }
     try {
       await Process.start('explorer.exe', [installPath], runInShell: true);
     } catch (e, s) {
       logger.e('打开安装目录失败', error: e, stackTrace: s);
-      _showInfoBar('错误', '无法打开安装目录，请稍后重试。', severity: InfoBarSeverity.error);
+      _showInfoBar(l10n.tileError, l10n.tileErrorCannotOpenDirMessage, severity: InfoBarSeverity.error);
     }
   }
 
   /// 修改软件文件夹：允许用户直接输入新的安装目录路径
   Future<void> _changeSoftwareFolder() async {
+    final l10n = AppLocalizations.of(context)!;
     try {
       // 获取当前软件名称作为默认新目录名
       final currentDirName = p.basename(widget.software.installPath);
@@ -327,34 +331,34 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
           );
 
           return ContentDialog(
-            title: const Text('修改软件文件夹'),
+            title: Text(l10n.tileChangeSoftwareFolder),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('当前路径：'),
+                Text(l10n.tileCurrentPath),
                 Text(
                   widget.software.installPath,
                   style: FluentTheme.of(context).typography.caption,
                 ),
                 const SizedBox(height: 16),
-                const Text('新文件夹名称：'),
+                Text(l10n.tileNewFolderName),
                 const SizedBox(height: 8),
                 TextBox(
                   controller: controller,
-                  placeholder: '输入新的文件夹名称',
+                  placeholder: l10n.tileNewFolderPlaceholder,
                   autofocus: true,
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '新路径将是：${p.join(parentDir, '')}\\[您输入的名称]',
+                  l10n.tileNewPathHint(p.join(parentDir, '')),
                   style: FluentTheme.of(context).typography.caption,
                 ),
               ],
             ),
             actions: [
               Button(
-                child: const Text('取消'),
+                child: Text(l10n.tileRenameCancel),
                 onPressed: () => Navigator.pop(context, null),
               ),
               Button(
@@ -370,7 +374,7 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
                   }),
                   foregroundColor: WidgetStateProperty.all(Colors.white),
                 ),
-                child: const Text('确定'),
+                child: Text(l10n.tileRenameConfirm),
               ),
             ],
           );
@@ -388,21 +392,21 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
 
       // 如果路径相同，不需要更新
       if (p.equals(newInstallPath, oldInstallPath)) {
-        _showInfoBar('提示', '新路径与当前路径相同，无需更新。');
+        _showInfoBar(l10n.tileHintSamePath, l10n.tileHintSamePathMessage);
         return;
       }
 
       // 检查旧目录是否存在
       final oldDir = Directory(oldInstallPath);
       if (!await oldDir.exists()) {
-        _showInfoBar('错误', '当前软件文件夹不存在，无法迁移。', severity: InfoBarSeverity.error);
+        _showInfoBar(l10n.tileError, l10n.tileErrorFolderNotExist, severity: InfoBarSeverity.error);
         return;
       }
 
       // 检查新目录是否已存在
       final newDir = Directory(newInstallPath);
       if (await newDir.exists()) {
-        _showInfoBar('错误', '新文件夹已存在，请选择其他名称。', severity: InfoBarSeverity.error);
+        _showInfoBar(l10n.tileError, l10n.tileErrorFolderExists, severity: InfoBarSeverity.error);
         return;
       }
 
@@ -410,10 +414,10 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (dialogContext) => const ContentDialog(
+        builder: (dialogContext) => ContentDialog(
           content: Row(
             mainAxisSize: MainAxisSize.min,
-            children: [ProgressRing(), SizedBox(width: 12), Text('正在迁移文件...')],
+            children: [ProgressRing(), SizedBox(width: 12), Text(l10n.tileMigrating)],
           ),
         ),
       );
@@ -449,7 +453,7 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
         Navigator.of(context).pop();
       }
 
-      _showInfoBar('成功', '软件文件夹已成功迁移。', severity: InfoBarSeverity.success);
+      _showInfoBar(l10n.tileSuccess, l10n.tileMigrateSuccess, severity: InfoBarSeverity.success);
 
       // 刷新界面：重新加载软件信息
       await _loadExeInfo();
@@ -467,7 +471,7 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
         Navigator.of(context).pop();
       }
 
-      _showInfoBar('错误', '修改软件文件夹失败：$e', severity: InfoBarSeverity.error);
+      _showInfoBar(l10n.tileError, l10n.tileErrorMigrateFailed('$e'), severity: InfoBarSeverity.error);
     }
   }
 
@@ -488,9 +492,10 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
 
   /// 打开归档文件所在目录，优先高亮具体文件。
   Future<void> _openArchiveDirectory() async {
+    final l10n = AppLocalizations.of(context)!;
     final archivePath = widget.software.archivePath;
     if (archivePath.isEmpty) {
-      _showInfoBar('提示', '该软件未配置归档文件。');
+      _showInfoBar(l10n.tileHintNoArchive, l10n.tileHintNoArchiveMessage);
       return;
     }
     final archiveFile = File(archivePath);
@@ -508,20 +513,20 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
         await Process.start('explorer.exe', [
           archiveDirectory.path,
         ], runInShell: true);
-        _showInfoBar('提示', '归档文件不存在，已打开归档目录。');
+        _showInfoBar(l10n.tileHintNoArchive, l10n.tileHintArchiveNotExists);
         return;
       }
       if (await parentDirectory.exists()) {
         await Process.start('explorer.exe', [
           parentDirectory.path,
         ], runInShell: true);
-        _showInfoBar('提示', '归档文件不存在，已打开归档所在目录。');
+        _showInfoBar(l10n.tileHintNoArchive, l10n.tileHintParentOpened);
         return;
       }
-      _showInfoBar('提示', '找不到归档文件所在位置。');
+      _showInfoBar(l10n.tileHintNoArchive, l10n.tileHintArchiveNotFound);
     } catch (e, s) {
       logger.e('打开归档目录失败', error: e, stackTrace: s);
-      _showInfoBar('错误', '无法打开归档目录，请稍后重试。', severity: InfoBarSeverity.error);
+      _showInfoBar(l10n.tileError, l10n.tileErrorCannotOpenArchive, severity: InfoBarSeverity.error);
     }
   }
 
@@ -538,18 +543,19 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
   
   /// 检查并添加绿驿管家自身的快捷方式
   Future<void> _checkAndAddCarryDockShortcut(Directory startMenuDir) async {
+    final l10n = AppLocalizations.of(context)!;
     try {
       // 获取绿驿管家自身的可执行文件路径
       final appExePath = Platform.resolvedExecutable;
-      final appName = '绿驿管家';
+      final appName = l10n.tileCarryDock;
       final appShortcutPath = p.join(startMenuDir.path, '$appName.lnk');
-      
+
       // 检查快捷方式是否已存在
       final appShortcutFile = File(appShortcutPath);
       if (!await appShortcutFile.exists()) {
-        logger.i('开始菜单中不存在绿驿管家快捷方式，正在添加...');
+        logger.i(l10n.tileCarryDockShortcutAdding);
         await FileUtils.createShortcut(appExePath, appShortcutPath, appName);
-        logger.i('绿驿管家快捷方式已添加到开始菜单');
+        logger.i(l10n.tileCarryDockShortcutAdded);
       }
     } catch (e, s) {
       logger.e('添加绿驿管家快捷方式失败', error: e, stackTrace: s);
@@ -559,38 +565,39 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
 
   /// 将软件添加到开始菜单。
   Future<void> _addToStartMenu() async {
+    final l10n = AppLocalizations.of(context)!;
     final exePath = widget.software.executablePath;
     if (exePath.isEmpty) {
-      _showInfoBar('提示', '该软件未配置可执行文件路径。');
+      _showInfoBar(l10n.tileHintNoExecutable, l10n.tileHintNoExecutableMessage);
       return;
     }
 
     try {
       // 获取 CarryDock 开始菜单目录
       final startMenuDir = await FileUtils.getCarryDockStartMenuDir();
-      
+
       // 检查并添加绿驿管家自身的快捷方式
       await _checkAndAddCarryDockShortcut(startMenuDir);
-      
+
       // 获取统一的名称
       final displayName = _getSoftwareDisplayName();
       // 使用显示名称作为快捷方式文件名称（去除空格和特殊字符）
       final sanitizedName = displayName.replaceAll(RegExp(r'[\/:*?"<>|]'), '_').trim();
       final shortcutPath = p.join(startMenuDir.path, '$sanitizedName.lnk');
-      
+
       // 创建快捷方式
       await FileUtils.createShortcut(exePath, shortcutPath, displayName);
-      
+
       _showInfoBar(
-        '成功',
-        '已将 "$displayName" 添加到开始菜单。',
+        l10n.tileSuccess,
+        l10n.tileAddedToStartMenu(displayName),
         severity: InfoBarSeverity.success,
       );
     } catch (e, s) {
       logger.e('添加到开始菜单失败', error: e, stackTrace: s);
       _showInfoBar(
-        '错误',
-        '添加到开始菜单失败：$e',
+        l10n.tileError,
+        l10n.tileErrorAddToStartMenu('$e'),
         severity: InfoBarSeverity.error,
       );
     }
@@ -598,6 +605,7 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
 
   /// 弹出右键菜单，提供常用目录的快捷入口。
   void _showContextMenu({Offset? position}) {
+    final l10n = AppLocalizations.of(context)!;
     if (_contextMenuController.isAttached && _contextMenuController.isOpen) {
       _contextMenuController.close();
     }
@@ -616,26 +624,26 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
             items: [
               MenuFlyoutItem(
                 leading: const Icon(FluentIcons.folder_open),
-                text: const Text('打开软件文件夹'),
+                text: Text(l10n.tileOpenFolder),
                 onPressed: widget.software.installPath.isNotEmpty
                     ? _openInstallDirectory
                     : null,
               ),
               MenuFlyoutItem(
                 leading: const Icon(FluentIcons.edit),
-                text: const Text('修改软件文件夹'),
+                text: Text(l10n.tileChangeFolder),
                 onPressed: widget.software.installPath.isNotEmpty
                     ? _changeSoftwareFolder
                     : null,
               ),
               MenuFlyoutItem(
                 leading: const Icon(FluentIcons.archive),
-                text: const Text('创建备份'),
+                text: Text(l10n.tileCreateBackup),
                 onPressed: widget.software.installPath.isNotEmpty
                     ? () async {
                         final dir = Directory(widget.software.installPath);
                         if (!await dir.exists()) {
-                          _showInfoBar('提示', '安装目录不存在，无法创建备份。');
+                          _showInfoBar(l10n.tileHintNoInstallDir, l10n.tileHintInstallDirNotExists);
                           return;
                         }
                         // 显示进度（非阻塞等待）
@@ -645,13 +653,13 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
                         showDialog(
                           context: context,
                           barrierDismissible: false,
-                          builder: (dialogContext) => const ContentDialog(
+                          builder: (dialogContext) => ContentDialog(
                             content: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                ProgressRing(),
-                                SizedBox(width: 12),
-                                Text('正在创建备份...'),
+                                const ProgressRing(),
+                                const SizedBox(width: 12),
+                                Text(l10n.tileCreatingBackup),
                               ],
                             ),
                           ),
@@ -663,8 +671,8 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
                             Navigator.of(this.context).pop();
                           }
                           _showInfoBar(
-                            '成功',
-                            '已创建备份：${p.basename(created)}',
+                            l10n.tileSuccess,
+                            l10n.tileBackupCreated(p.basename(created)),
                             severity: InfoBarSeverity.success,
                           );
                         } catch (e, s) {
@@ -673,8 +681,8 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
                             Navigator.of(this.context).pop();
                           }
                           _showInfoBar(
-                            '错误',
-                            '创建备份失败，请稍后重试。',
+                            l10n.tileError,
+                            l10n.tileErrorCreateBackup,
                             severity: InfoBarSeverity.error,
                           );
                         }
@@ -683,14 +691,14 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
               ),
               MenuFlyoutItem(
                 leading: const Icon(FluentIcons.pin),
-                text: const Text('添加到开始菜单'),
+                text: Text(l10n.tileAddToStartMenu),
                 onPressed: widget.software.executablePath.isNotEmpty
                     ? _addToStartMenu
                     : null,
               ),
               MenuFlyoutItem(
                 leading: const Icon(FluentIcons.open_file),
-                text: const Text('打开归档文件夹'),
+                text: Text(l10n.tileOpenArchiveFolder),
                 onPressed: widget.software.archivePath.isNotEmpty
                     ? _openArchiveDirectory
                     : null,
@@ -816,6 +824,7 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
     required bool canChangeExecutable,
     required String changeExecutableTooltip,
   }) {
+    final l10n = AppLocalizations.of(context)!!;
     const double controlSpacing = 8;
     const double alternativeSlotWidth = 36;
 
@@ -842,10 +851,11 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
     }
 
     Widget buildAlternativeLaunchButton(List<String> alternatives) {
+      final l10n = AppLocalizations.of(context)!;
       return FlyoutTarget(
         controller: _alternativeFlyoutController,
         child: Tooltip(
-          message: '启动其他程序',
+          message: l10n.tileLaunchOther,
           child: IconButton(
             icon: const Icon(FluentIcons.custom_activity),
             onPressed: () {
@@ -929,12 +939,12 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
                 if (widget.software.status ==
                     SoftwareStatus.unknownInstall) ...[
                   if (widget.software.archiveExists) ...[
-                    _buildArchiveStatusPill(exists: true, tooltip: '归档文件存在'),
+                    _buildArchiveStatusPill(exists: true, tooltip: l10n.tileArchiveExists),
                     const SizedBox(width: controlSpacing),
                   ],
                   if (widget.onRehost != null)
                     Tooltip(
-                      message: '重新托管',
+                      message: l10n.homeRehost,
                       child: IconButton(
                         icon: const Icon(FluentIcons.refresh),
                         style: ButtonStyle(
@@ -954,13 +964,13 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
                   // 备选程序入口（固定宽度插槽）
                   buildAlternativeSlot(),
                   const SizedBox(width: controlSpacing),
-                  // 仅在“目录已删除且有归档文件”时，用“重新托管”替代“更改主程序”
+                  // 仅在"目录已删除且有归档文件"时，用"重新托管"替代"更改主程序"
                   if (!widget.software.installExists &&
                       widget.software.archiveExists &&
                       widget.onRehost != null)
                     buildActionControl(
                       icon: FluentIcons.refresh,
-                      tooltip: '重新托管',
+                      tooltip: l10n.homeRehost,
                       onPressed: widget.onRehost,
                       color: Colors.green,
                     )
@@ -978,13 +988,13 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
                     SoftwareStatus.unknownArchive) ...[
                   _buildArchiveStatusPill(
                     exists: true,
-                    tooltip: widget.software.isBackupArchive ? '备份归档' : '归档文件',
+                    tooltip: widget.software.isBackupArchive ? l10n.homeBackupArchive : l10n.homeArchiveFile,
                   ),
                   const SizedBox(width: controlSpacing),
                 ],
                 buildActionControl(
                   icon: FluentIcons.delete,
-                  tooltip: '删除',
+                  tooltip: l10n.delete,
                   onPressed: widget.onDelete,
                   isDestructive: true,
                 ),
@@ -995,6 +1005,7 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!!;
     final bool useGrid = widget.displayStyle == SoftwareTileDisplay.grid;
     // 与列表视图保持一致的图标尺寸，避免缩放导致的模糊
     const double iconSize = 32;
@@ -1007,25 +1018,25 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
 
     // 使用统一的显示名称逻辑
     listTitle = _getSoftwareDisplayName();
-    
+
     switch (widget.software.status) {
       case SoftwareStatus.managed:
         if (!widget.software.installExists) {
-          subtitleText = '软件目录已删除';
+          subtitleText = l10n.homeSoftwareDirDeleted;
           titleColor = Colors.orange;
-          gridSupplementaryText = '软件目录已删除';
+          gridSupplementaryText = l10n.homeSoftwareDirDeleted;
         } else {
           subtitleText = p.basename(widget.software.executablePath);
           gridSupplementaryText = null;
         }
         break;
       case SoftwareStatus.unknownInstall:
-        subtitleText = '未知文件夹';
+        subtitleText = l10n.homeUnknownFolder;
         gridSupplementaryText = subtitleText;
         titleColor = Colors.orange;
         break;
       case SoftwareStatus.unknownArchive:
-        subtitleText = '未知归档文件';
+        subtitleText = l10n.homeUnknownArchiveFile;
         gridSupplementaryText = subtitleText;
         titleColor = Colors.orange;
         break;
@@ -1039,11 +1050,11 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
         supplementary = Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('未知文件夹'),
+            Text(l10n.homeUnknownFolder),
             if (widget.software.archiveExists) ...[
               const SizedBox(height: 6),
               Tooltip(
-                message: '归档文件存在',
+                message: l10n.tileArchiveExists,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,
@@ -1060,7 +1071,7 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
             if (widget.onRehost != null) ...[
               const SizedBox(height: 8),
               Tooltip(
-                message: '重新托管',
+                message: l10n.homeRehost,
                 child: IconButton(
                   icon: const Icon(FluentIcons.refresh),
                   style: ButtonStyle(
@@ -1104,13 +1115,13 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
           !_isExecutableLoading && hasAlternativeExecutables;
       final String changeExecutableTooltip;
       if (_isExecutableLoading) {
-        changeExecutableTooltip = '正在扫描可执行程序...';
+        changeExecutableTooltip = l10n.homeScanning;
       } else if (effectiveExecutables.isEmpty) {
-        changeExecutableTooltip = '未在安装目录中找到可执行程序';
+        changeExecutableTooltip = l10n.homeNoExecutableFound;
       } else if (canChangeExecutable) {
-        changeExecutableTooltip = '更改主程序';
+        changeExecutableTooltip = l10n.homeChangeExecutable;
       } else {
-        changeExecutableTooltip = '当前仅发现一个可执行程序，无法更改主程序';
+        changeExecutableTooltip = l10n.homeOnlyOneExecutableFound;
       }
 
       content = _buildListTile(
