@@ -137,6 +137,7 @@ Future<void> test7ZipPathFinding(BuildContext context) async {
     results.add('\n=== 测试完成 ===');
 
     // 显示结果
+    if (!context.mounted) return;
     await showDialog(
       context: context,
       builder: (dialogContext) => ContentDialog(
@@ -153,6 +154,7 @@ Future<void> test7ZipPathFinding(BuildContext context) async {
       ),
     );
   } catch (e) {
+    if (!context.mounted) return;
     await showDialog(
       context: context,
       builder: (dialogContext) => ContentDialog(

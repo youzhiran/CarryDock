@@ -85,6 +85,7 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
       await Process.start('explorer.exe', [path], runInShell: true);
     } catch (e, s) {
       logger.e('打开目录失败', error: e, stackTrace: s);
+      if (!mounted) return;
       final l10n = AppLocalizations.of(context)!;
       await _showMessage(l10n.archiveOperationFailed, l10n.archiveCannotOpenDirectory);
     }
@@ -100,6 +101,7 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
       }
     } catch (e, s) {
       logger.e('打开资源管理器失败', error: e, stackTrace: s);
+      if (!mounted) return;
       final l10n = AppLocalizations.of(context)!;
       await _showMessage(l10n.archiveOperationFailed, l10n.archiveCannotOpenExplorer);
     }
@@ -170,6 +172,7 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
           break;
         case AddSoftwareResultType.duplicate:
           _popDialog();
+          if (!mounted) break;
           final info = result.duplicateInfo;
           if (info == null) break;
           final doBackupRestore = await showDialog<bool>(
@@ -274,11 +277,12 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
   }
 
   Future<void> _handleManualLink(Software item, {required bool isBackup}) async {
-    final l10n = AppLocalizations.of(context)!;
     // 选择一个已托管软件
     final managed = (await _softwareService.getSoftwareList())
         .where((s) => s.status == SoftwareStatus.managed)
         .toList();
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context)!;
     if (managed.isEmpty) {
       await _showMessage(l10n.archiveNoAvailableSoftware, l10n.archiveNoAvailableSoftwareHint);
       return;
@@ -340,6 +344,7 @@ class _ArchiveManagerScreenState extends State<ArchiveManagerScreen> {
     final managed = (await _softwareService.getSoftwareList())
         .where((s) => s.status == SoftwareStatus.managed)
         .toList();
+    if (!mounted) return;
     if (managed.isEmpty) {
       await _showMessage(l10n.archiveNoAvailableSoftware, l10n.archiveNoAvailableSoftwareHint);
       return;

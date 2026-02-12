@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'package:flutter/services.dart';
 
 /// 设置屏幕相关常量和辅助方法
 
@@ -85,23 +85,9 @@ String formatBuildTime(String rawTime) {
 /// 读取构建信息
 Future<String> readBuildInfo() async {
   try {
-    // 这里我们将使用一个在构建时生成的文件
-    // 首先检查是否存在这个文件
-    final buildInfoFile = File('build_info.txt');
-    String buildTime;
-
-    if (await buildInfoFile.exists()) {
-      buildTime = await buildInfoFile.readAsString();
-    } else {
-      // 如果文件不存在，返回当前时间（用于开发环境）
-      buildTime = DateTime.now().toString();
-    }
-
-    // 处理时间格式，只显示到秒
-    final trimmedTime = formatBuildTime(buildTime);
-    return trimmedTime;
+    final buildTime = await rootBundle.loadString('build_info.txt');
+    return formatBuildTime(buildTime);
   } catch (e) {
-    // 如果读取失败，返回当前时间（格式化后）
-    return formatBuildTime(DateTime.now().toString());
+    return '';
   }
 }

@@ -71,6 +71,7 @@ Widget buildAboutSection(
       Button(
         onPressed: () async {
           await updateProvider.checkForUpdates();
+          if (!context.mounted) return;
           if (updateProvider.hasUpdate &&
               updateProvider.latestVersionInfo != null) {
             await showDialog(

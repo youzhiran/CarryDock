@@ -188,11 +188,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!mounted) return;
     final l10n = AppLocalizations.of(context)!;
     try {
-      // 尝试从生成的构建信息文件中读取
       final buildInfo = await readBuildInfo();
       if (!mounted) return;
       setState(() {
-        _buildTime = buildInfo;
+        _buildTime = buildInfo.isEmpty ? l10n.unknown : buildInfo;
       });
     } catch (e, s) {
       logger.w('Failed to get build time', error: e, stackTrace: s);

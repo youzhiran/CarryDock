@@ -295,6 +295,7 @@ class _HomeScreenState extends State<HomeScreen> {
         },
       );
       if (confirmed != true) return;
+      if (!mounted) return;
 
       // 显示带百分比的进度弹窗
       int done = 0;

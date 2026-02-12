@@ -411,6 +411,7 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
       }
 
       // 显示迁移进度对话框
+      if (!mounted) return;
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -649,7 +650,7 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
                         // 显示进度（非阻塞等待）
                         // 注意：不要 await showDialog，以免阻塞后续逻辑。
                         // 由后续逻辑中关闭对话框。
-                        // ignore: use_build_context_synchronously
+                        if (!context.mounted) return;
                         showDialog(
                           context: context,
                           barrierDismissible: false,
@@ -824,7 +825,7 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
     required bool canChangeExecutable,
     required String changeExecutableTooltip,
   }) {
-    final l10n = AppLocalizations.of(context)!!;
+    final l10n = AppLocalizations.of(context)!;
     const double controlSpacing = 8;
     const double alternativeSlotWidth = 36;
 
@@ -1005,7 +1006,7 @@ class _SoftwareListTileState extends State<SoftwareListTile> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!!;
+    final l10n = AppLocalizations.of(context)!;
     final bool useGrid = widget.displayStyle == SoftwareTileDisplay.grid;
     // 与列表视图保持一致的图标尺寸，避免缩放导致的模糊
     const double iconSize = 32;

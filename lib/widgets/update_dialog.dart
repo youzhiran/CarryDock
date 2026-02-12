@@ -128,6 +128,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
 
                 // 下载更新
                 final updateFile = await widget.updateProvider.downloadUpdate(tempFilePath);
+                if (!context.mounted) return;
                 if (updateFile != null) {
                   // 安装更新
                   final success = await widget.updateProvider.installUpdate(
@@ -135,6 +136,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
                     appDirectory,
                     configFilePath,
                   );
+                  if (!context.mounted) return;
                   if (success) {
                     // 显示更新成功提示
                     await showDialog(
@@ -174,6 +176,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
 
                 // 下载更新
                 final updateFile = await widget.updateProvider.downloadUpdate(tempFilePath);
+                if (!context.mounted) return;
                 if (updateFile != null) {
                   // 安装更新
                   final success = await widget.updateProvider.installUpdate(
@@ -181,6 +184,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
                     appDirectory,
                     configFilePath,
                   );
+                  if (!context.mounted) return;
                   if (success) {
                     // 显示更新成功提示
                     await showDialog(
