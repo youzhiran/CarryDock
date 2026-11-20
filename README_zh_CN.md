@@ -2,6 +2,14 @@
 
 CarryDock (绿驿管家) 是一款专为 Windows 平台设计的绿色软件（便携软件）管理器。现已使用 **Go + [MyGo](https://mygo.run/zh/docs/ui) 原生 UI** 全面重写：单文件纯 Go（无需 CGO、无需 WebView2），Direct3D 11 GPU 直接绘制界面，秒开低占用，并与原版配置文件和数据格式完全兼容。
 
+<div style="text-align: center;">
+  <img src="snapshots/home.png" alt="Home Page" style="max-height: 300px; width: auto;"/>
+</div>
+
+<div style="text-align: center;">
+  <img src="snapshots/setting.png" alt="Settings Page" style="max-height: 300px; width: auto;"/>
+</div>
+
 ## 核心功能
 
 - **软件集中管理**：自动扫描并展示安装目录内的绿色软件，支持实时关键词搜索

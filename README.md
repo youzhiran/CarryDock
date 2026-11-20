@@ -8,6 +8,14 @@
 
 CarryDock is a portable software manager built for Windows. It has been rewritten in pure Go with **[MyGo](https://mygo.run/docs/ui) Native UI** — rendered directly on the GPU (Direct3D 11 on Windows) with zero CGO, zero WebView2 dependency, instant startup, tiny memory footprint, and full backward compatibility with existing CarryDock configuration and software list files.
 
+<div style="text-align: center;">
+  <img src="snapshots/home.png" alt="Home Page" style="max-height: 300px; width: auto;"/>
+</div>
+
+<div style="text-align: center;">
+  <img src="snapshots/setting.png" alt="Settings Page" style="max-height: 300px; width: auto;"/>
+</div>
+
 ## Key Features
 
 - **Centralized Portable App Management**: Manage portable apps with instant search, list & grid views, and drag-and-drop reordering
