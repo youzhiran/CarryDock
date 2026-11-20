@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"carrydock/internal/settings"
 	"carrydock/internal/software"
 	"carrydock/internal/updater"
+	"carrydock/internal/version"
 	"carrydock/internal/winutil"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -25,6 +27,22 @@ const (
 	pageArchive  pageID = "archive"
 	pageSettings pageID = "settings"
 	pageDev      pageID = "dev"
+)
+
+type homeFilterMode string
+
+const (
+	homeFilterAll       homeFilterMode = "all"
+	homeFilterManaged   homeFilterMode = "managed"
+	homeFilterUnmanaged homeFilterMode = "unmanaged"
+)
+
+type archiveFilterMode string
+
+const (
+	archiveFilterAll      archiveFilterMode = "all"
+	archiveFilterLinked   archiveFilterMode = "linked"
+	archiveFilterUnlinked archiveFilterMode = "unlinked"
 )
 
 type exeMeta struct {
@@ -68,6 +86,8 @@ type App struct {
 	useGrid           bool
 	reorderMode       bool
 	searchQuery       string
+	homeFilter        homeFilterMode
+	homeFocusSearch   bool
 	homeListState     ui.ListState
 	homeScrollState   ui.ScrollState
 
@@ -81,6 +101,9 @@ type App struct {
 	linkedPaths          map[string]bool
 	archiveLoading       bool
 	archiveNotConfigured bool
+	archiveSearch        string
+	archiveFilter        archiveFilterMode
+	archiveFocusFind     bool
 	archiveScrollState   ui.ScrollState
 
 	// 设置页表单状态
@@ -350,6 +373,25 @@ func (a *App) navigateNow(target pageID) {
 	}
 }
 
+func (a *App) anyModalOpen() bool {
+	return a.unsavedModalOpen ||
+		a.devIconModalOpen ||
+		a.busyOpen ||
+		a.infoModalOpen ||
+		a.selectExeOpen ||
+		a.dupModalOpen ||
+		a.deleteModalOpen ||
+		a.renameModalOpen ||
+		a.scanConfirmOpen ||
+		a.scanProgressOpen ||
+		a.assocModalOpen ||
+		a.linkModalOpen ||
+		a.backupModalOpen ||
+		a.extModalOpen ||
+		a.updateModalOpen ||
+		a.reinstallConfirmOpen
+}
+
 // View 是 MyGo 原生 UI 主视图构建函数。
 func (a *App) View(c *ui.Context) {
 	// 1. 应用主题（跟随系统深浅色与强调色，并应用优先字体回退链）
@@ -367,17 +409,41 @@ func (a *App) View(c *ui.Context) {
 		a.pendingToasts = a.pendingToasts[:0]
 	}
 
-	// 3. 全局快捷键：F5 / Ctrl+R 刷新当前页
-	if c.Shortcut(0, ui.KeyF5) || c.Shortcut(ui.Cmd, ui.KeyR) {
-		switch a.page {
-		case pageHome:
-			a.reloadHome()
-		case pageArchive:
-			a.reloadArchives()
+	// 3. 全局快捷键（仅在无活跃模态弹窗时响应）
+	if !a.anyModalOpen() {
+		if c.Shortcut(0, ui.KeyF5) || c.Shortcut(ui.Cmd, ui.KeyR) {
+			switch a.page {
+			case pageHome:
+				a.reloadHome()
+			case pageArchive:
+				a.reloadArchives()
+			}
+		}
+		if c.Shortcut(ui.Cmd, ui.KeyB) {
+			a.sidebarOpen = !a.sidebarOpen
+		}
+		if c.Shortcut(ui.Cmd, ui.KeyF) {
+			switch a.page {
+			case pageHome:
+				a.homeFocusSearch = true
+			case pageArchive:
+				a.archiveFocusFind = true
+			}
+		}
+		if c.Shortcut(ui.Cmd, ui.Key1) {
+			a.requestNavigate(pageHome)
+		} else if c.Shortcut(ui.Cmd, ui.Key2) {
+			a.requestNavigate(pageArchive)
+		} else if c.Shortcut(ui.Cmd, ui.Key3) {
+			a.requestNavigate(pageSettings)
+		}
+		if c.Shortcut(ui.Cmd, ui.KeyN) && a.page == pageHome && !a.reorderMode {
+			a.startAddSoftwarePicker()
 		}
 	}
 
 	t := c.Theme()
+	p := paletteOf(t)
 	if c.Vibrancy() {
 		c.Root().Background(ui.Transparent)
 	}
@@ -388,9 +454,9 @@ func (a *App) View(c *ui.Context) {
 		ui.Row(c).Grow(1).AlignItems(ui.Stretch).Children(func() {
 			a.sidebarView(c)
 
-			// 主内容卡片容器：在 Mica 材质上呈现 Windows 11 风格圆角工作区
-			content := ui.Column(c).Grow(1).Background(t.Background).
-				BorderWidth(1, 0, 0, 1).BorderColor(t.Border)
+			// 主内容卡片容器：在 Mica 材质上呈现 Windows 11 风格圆角分层工作区
+			content := ui.Column(c).Grow(1).Background(p.canvas).
+				BorderWidth(1, 0, 0, 1).BorderColor(p.cardBorder)
 			if c.Vibrancy() {
 				content.Radius(10)
 			}
@@ -415,14 +481,15 @@ func (a *App) View(c *ui.Context) {
 
 func (a *App) titleBarView(c *ui.Context) {
 	t := c.Theme()
+	p := paletteOf(t)
 	tr := a.tr()
 	bar := c.TitleBar()
-	h := max(bar.Height, 38)
+	h := max(bar.Height, 40)
 
 	row := ui.Row(c).Height(h).Padding(0, bar.Right+12, 0, bar.Left+12).
 		AlignItems(ui.Center).Gap(8).DragWindow()
 	if !c.Vibrancy() {
-		row.Background(t.Surface)
+		row.Background(p.sidebarBg)
 	}
 	row.Children(func() {
 		toggleTooltip := tr.NavToggleTooltip
@@ -449,6 +516,7 @@ func (a *App) titleBarView(c *ui.Context) {
 
 func (a *App) sidebarView(c *ui.Context) {
 	t := c.Theme()
+	p := paletteOf(t)
 	tr := a.tr()
 
 	w := float32(204)
@@ -457,26 +525,33 @@ func (a *App) sidebarView(c *ui.Context) {
 	}
 	side := ui.Column(c).Width(w).Padding(8, 8).Gap(4)
 	if !c.Vibrancy() {
-		side.Background(t.Surface)
+		side.Background(p.sidebarBg)
 	}
 	side.Children(func() {
-		a.navButton(c, pageHome, iconHome, tr.NavHome)
-		a.navButton(c, pageArchive, iconArchive, tr.NavArchive)
+		a.navButton(c, pageHome, iconHome, tr.NavHome, len(a.managed)+len(a.unmanaged), false)
+		a.navButton(c, pageArchive, iconArchive, tr.NavArchive, len(a.archives)+len(a.backups), false)
 
 		ui.Spacer(c)
 
 		if a.devEnabled {
-			a.navButton(c, pageDev, iconCode, tr.NavDeveloperOptions)
+			a.navButton(c, pageDev, iconCode, tr.NavDeveloperOptions, -1, false)
 		}
-		a.navButton(c, pageSettings, iconSettings, tr.NavSettings)
+		a.navButton(c, pageSettings, iconSettings, tr.NavSettings, -1, a.hasUnsavedSettings())
+
+		if a.sidebarOpen {
+			ui.Row(c).Padding(6, 12, 2, 12).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, version.Version).FontSize(11).TextColor(t.TextMuted.Alpha(0.75)).SingleLine()
+			})
+		}
 	})
 }
 
-func (a *App) navButton(c *ui.Context, id pageID, ico *ui.SVG, label string) {
+func (a *App) navButton(c *ui.Context, id pageID, ico *ui.SVG, label string, badgeCount int, showDot bool) {
 	t := c.Theme()
+	p := paletteOf(t)
 	active := a.page == id
 
-	btn := ui.ButtonBase(c.Key("nav-" + string(id))).Height(36).Radius(8).
+	btn := ui.ButtonBase(c.Key("nav-" + string(id))).Height(38).Radius(8).
 		AlignItems(ui.Center).Gap(10).Cursor(ui.CursorPointer).Label(label)
 	if a.sidebarOpen {
 		// ButtonBase 默认设置 Justify(Center)，展开侧边栏时显式重置为左对齐
@@ -487,7 +562,18 @@ func (a *App) navButton(c *ui.Context, id pageID, ico *ui.SVG, label string) {
 
 	switch {
 	case active:
-		btn.Background(t.Accent.Alpha(0.14))
+		btn.Background(p.accentTint)
+		accent := t.Accent
+		btn.DrawOver(func(painter *ui.Painter, r ui.Rect) {
+			// 左侧 3px 圆角指示条，通过叠加绘制保证图标与文字 X 坐标不发生偏移
+			barH := float32(16)
+			painter.Fill(ui.Rect{
+				X: r.X + 2,
+				Y: r.Y + (r.H-barH)/2,
+				W: 3,
+				H: barH,
+			}, accent, 1.5)
+		})
 	case btn.Hovered():
 		btn.Background(t.SurfaceHover)
 	}
@@ -501,9 +587,23 @@ func (a *App) navButton(c *ui.Context, id pageID, ico *ui.SVG, label string) {
 		}
 		ui.Icon(c, ico).FontSize(17).TextColor(iconColor).Shrink(0)
 		if a.sidebarOpen {
-			txt := ui.Text(c, label).FontSize(13).TextColor(textColor).SingleLine().MinWidth(0)
+			txt := ui.Text(c, label).FontSize(13).TextColor(textColor).SingleLine().Grow(1).MinWidth(0)
 			if active {
 				txt.Bold()
+			}
+			switch {
+			case showDot:
+				ui.Box(c).Size(7, 7).Radius(99).Background(t.Warning).Shrink(0)
+			case badgeCount > 0:
+				bg := p.subtleBg
+				fg := t.TextMuted
+				if active {
+					bg = t.Accent.Alpha(0.18)
+					fg = t.Accent
+				}
+				ui.Row(c).Padding(1, 7).Radius(999).Background(bg).Center().Shrink(0).Children(func() {
+					ui.Text(c, strconv.Itoa(badgeCount)).FontSize(11).TextColor(fg).SingleLine()
+				})
 			}
 		}
 	})
@@ -617,52 +717,6 @@ func (a *App) renderSoftwareIcon(c *ui.Context, sw model.Software, size float32)
 	ui.Box(c).Size(size, size).Shrink(0).Center().Children(func() {
 		ui.Icon(c, iconAppDefault).FontSize(size * 0.72).TextColor(t.TextMuted)
 	})
-}
-
-// applyHoverIconStyle 为无背景图标按钮应用悬停/按下高亮与鼠标手型，并返回当前图标前景色。
-func applyHoverIconStyle(btn ui.Element, t *ui.Theme, disabled, danger bool, accent *ui.Color) ui.Color {
-	if !disabled {
-		btn.Cursor(ui.CursorPointer)
-	}
-	hovered := !disabled && btn.Hovered()
-	pressed := !disabled && btn.Pressed()
-	// 使用带透明度的前景色叠加，确保在已悬停行（t.SurfaceHover）上依然具有清晰可见的悬停反馈
-	switch {
-	case pressed && danger:
-		btn.Background(t.Danger.Alpha(0.24))
-	case hovered && danger:
-		btn.Background(t.Danger.Alpha(0.16))
-	case pressed && accent != nil:
-		btn.Background(accent.Alpha(0.24))
-	case hovered && accent != nil:
-		btn.Background(accent.Alpha(0.16))
-	case pressed:
-		btn.Background(t.Text.Alpha(0.16))
-	case hovered:
-		btn.Background(t.Text.Alpha(0.10))
-	}
-	if danger {
-		return t.Danger
-	}
-	if accent != nil {
-		return *accent
-	}
-	if hovered || pressed {
-		return t.Text
-	}
-	return t.TextMuted
-}
-
-// iconButton 渲染紧凑的无背景图标按钮（悬停/按下高亮，支持禁用与危险色）。
-func iconButton(c *ui.Context, key string, ico *ui.SVG, tooltip string, disabled, danger bool, accent *ui.Color) ui.Element {
-	t := c.Theme()
-	btn := ui.ButtonBase(c.Key(key)).Size(30, 30).Radius(6).Center().
-		Disabled(disabled).Label(tooltip).Tooltip(tooltip)
-	color := applyHoverIconStyle(btn, t, disabled, danger, accent)
-	btn.Children(func() {
-		ui.Icon(c, ico).FontSize(15).TextColor(color)
-	})
-	return btn
 }
 
 func (a *App) logAndToastError(title string, err error) {

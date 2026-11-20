@@ -112,6 +112,15 @@ type Strings struct {
 	HomeInstallDirNotConfig    string
 	HomeInstallDirNotConfigMsg string
 	HomeDirNotExistTitle       string
+	HomeCountUnmanagedFmt      string
+	FilterAll                  string
+	FilterManaged              string
+	FilterUnmanaged            string
+	FilterLinked               string
+	FilterUnlinked             string
+	ClearFilter                string
+	NoMatchingResults          string
+	NoMatchingResultsHint      string
 
 	// Tile & Context Menu
 	TileOpenFolder           string
@@ -218,6 +227,7 @@ type Strings struct {
 	ArchiveDuplicateMsg      string
 	ArchiveBackupAndRestore  string
 	ArchiveRevealInExplorer  string
+	ArchiveSearchPlaceholder string
 
 	// Select Executable Dialog
 	DialogSelectExecutable string
@@ -280,6 +290,8 @@ type Strings struct {
 	SettingsAbout                string
 	SettingsVersion              string
 	SettingsBuildTime            string
+	SettingsWebsite              string
+	SettingsGitHub               string
 	SettingsCheckUpdate          string
 	SettingsReinstallLatest      string
 	SettingsReinstallConfirm     string
@@ -291,6 +303,7 @@ type Strings struct {
 	SettingsSaveAndContinue      string
 	SettingsSaveAll              string
 	SettingsDevUnlocked          string
+	SettingsUnsavedBadge         string
 
 	// Update Dialog
 	UpdateChecking      string
@@ -412,6 +425,15 @@ var zhStrings = Strings{
 	HomeInstallDirNotConfig:    "安装目录未配置",
 	HomeInstallDirNotConfigMsg: "请先在设置页面配置绿色软件安装目录。",
 	HomeDirNotExistTitle:       "目录不存在",
+	HomeCountUnmanagedFmt:      "%d 个未托管",
+	FilterAll:                  "全部",
+	FilterManaged:              "已托管",
+	FilterUnmanaged:            "未托管",
+	FilterLinked:               "已关联",
+	FilterUnlinked:             "未关联",
+	ClearFilter:                "清除筛选",
+	NoMatchingResults:          "没有匹配的项目",
+	NoMatchingResultsHint:      "尝试更改搜索关键词或重置当前筛选条件。",
 
 	TileOpenFolder:           "打开软件文件夹",
 	TileChangeFolder:         "修改软件文件夹",
@@ -513,6 +535,7 @@ var zhStrings = Strings{
 	ArchiveDuplicateMsg:      "目标安装目录或归档已存在，是否先备份现有目录后再覆盖还原？",
 	ArchiveBackupAndRestore:  "备份并还原",
 	ArchiveRevealInExplorer:  "在资源管理器中显示",
+	ArchiveSearchPlaceholder: "搜索归档或备份文件名...",
 
 	DialogSelectExecutable: "选择主程序可执行文件",
 	DialogNoExecutable:     "未找到可执行文件",
@@ -573,6 +596,8 @@ var zhStrings = Strings{
 	SettingsAbout:                "关于",
 	SettingsVersion:              "版本",
 	SettingsBuildTime:            "构建时间",
+	SettingsWebsite:              "官方网站",
+	SettingsGitHub:               "GitHub 仓库",
 	SettingsCheckUpdate:          "检查更新",
 	SettingsReinstallLatest:      "重新安装最新版本",
 	SettingsReinstallConfirm:     "重新安装应用",
@@ -584,6 +609,7 @@ var zhStrings = Strings{
 	SettingsSaveAndContinue:      "保存并继续",
 	SettingsSaveAll:              "全部保存",
 	SettingsDevUnlocked:          "已开启开发者选项",
+	SettingsUnsavedBadge:         "未保存",
 
 	UpdateChecking:      "正在检查更新...",
 	UpdateUpToDate:      "当前已是最新版本。",
@@ -703,6 +729,15 @@ var enStrings = Strings{
 	HomeInstallDirNotConfig:    "Install Directory Not Configured",
 	HomeInstallDirNotConfigMsg: "Please configure the portable software installation directory in Settings first.",
 	HomeDirNotExistTitle:       "Directory Does Not Exist",
+	HomeCountUnmanagedFmt:      "%d Unmanaged",
+	FilterAll:                  "All",
+	FilterManaged:              "Managed",
+	FilterUnmanaged:            "Unmanaged",
+	FilterLinked:               "Linked",
+	FilterUnlinked:             "Unlinked",
+	ClearFilter:                "Clear Filter",
+	NoMatchingResults:          "No Matching Items",
+	NoMatchingResultsHint:      "Try adjusting your search query or clearing active filters.",
 
 	TileOpenFolder:           "Open Software Folder",
 	TileChangeFolder:         "Rename Software Folder",
@@ -804,6 +839,7 @@ var enStrings = Strings{
 	ArchiveDuplicateMsg:      "Target install folder or archive already exists. Back up existing folder and restore?",
 	ArchiveBackupAndRestore:  "Backup & Restore",
 	ArchiveRevealInExplorer:  "Show in Explorer",
+	ArchiveSearchPlaceholder: "Search archives or backup files...",
 
 	DialogSelectExecutable: "Select Main Executable",
 	DialogNoExecutable:     "No executables found",
@@ -864,6 +900,8 @@ var enStrings = Strings{
 	SettingsAbout:                "About",
 	SettingsVersion:              "Version",
 	SettingsBuildTime:            "Build Time",
+	SettingsWebsite:              "Official Website",
+	SettingsGitHub:               "GitHub Repository",
 	SettingsCheckUpdate:          "Check for Updates",
 	SettingsReinstallLatest:      "Reinstall Latest Version",
 	SettingsReinstallConfirm:     "Reinstall Application",
@@ -875,6 +913,7 @@ var enStrings = Strings{
 	SettingsSaveAndContinue:      "Save & Continue",
 	SettingsSaveAll:              "Save All",
 	SettingsDevUnlocked:          "Developer Options enabled",
+	SettingsUnsavedBadge:         "Unsaved",
 
 	UpdateChecking:      "Checking for updates...",
 	UpdateUpToDate:      "You are already on the latest version.",

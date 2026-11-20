@@ -72,7 +72,6 @@ func (a *App) filteredSoftware(items []model.Software) []model.Software {
 }
 
 func (a *App) homeView(c *ui.Context) {
-	t := c.Theme()
 	tr := a.tr()
 
 	// 整个主页作为外部文件拖放接收区域
@@ -83,14 +82,22 @@ func (a *App) homeView(c *ui.Context) {
 	isDragOver := root.FileDragOver()
 
 	root.Children(func() {
+		t := c.Theme()
+		p := paletteOf(t)
+
 		ui.Column(c).Fill().Padding(20, 24).Gap(14).Children(func() {
-			// 顶部标题栏 + 工具条
+			// 顶部标题栏 + 主工具条
 			a.homeHeaderBar(c)
+
+			// 搜索与筛选子栏（非排序、有数据时展示）
+			if !a.reorderMode && !a.homeLoading && !a.homeNotConfigured && (len(a.managed) > 0 || len(a.unmanaged) > 0) {
+				a.homeFilterBar(c)
+			}
 
 			// 排序模式提示条
 			if a.reorderMode {
-				ui.Row(c).Padding(8, 12).Radius(8).Background(t.Accent.Alpha(0.1)).
-					Border(1, t.Accent.Alpha(0.35)).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Row(c).Padding(10, 14).Radius(10).Background(p.accentTint).
+					Border(1, t.Accent.Alpha(0.35)).Gap(10).AlignItems(ui.Center).Children(func() {
 					ui.Icon(c, iconSort).FontSize(15).TextColor(t.Accent)
 					ui.Text(c, tr.HomeReorderHint).FontSize(13).TextColor(t.Text).Grow(1).MinWidth(0)
 				})
@@ -99,33 +106,47 @@ func (a *App) homeView(c *ui.Context) {
 			// 主体内容
 			switch {
 			case a.homeLoading:
-				ui.Column(c).Grow(1).Center().Gap(10).Children(func() {
+				ui.Column(c).Grow(1).Center().Gap(12).Children(func() {
 					ui.Spinner(c).Size(28, 28)
-					ui.Text(c, tr.Loading).TextColor(t.TextMuted)
+					ui.Text(c, tr.Loading).FontSize(13).TextColor(t.TextMuted)
 				})
 
 			case a.homeNotConfigured:
-				ui.Column(c).Grow(1).Center().Gap(12).Children(func() {
-					ui.Icon(c, iconFolder).FontSize(40).TextColor(t.TextMuted)
-					ui.Text(c, tr.HomeConfigureInstallFirst).FontSize(16).Bold()
-					ui.Text(c, tr.HomeInstallDirNotConfigMsg).FontSize(13).TextColor(t.TextMuted)
-					if ui.PrimaryButton(c, tr.HomeGoToSettings).Clicked() {
-						a.requestNavigate(pageSettings)
-					}
+				ui.Column(c).Grow(1).Center().Padding(24).Children(func() {
+					ui.Column(c).MaxWidth(440).Padding(32, 36).Gap(12).Radius(14).
+						Background(p.card).Border(1, p.cardBorder).Shadow(0, 2, 12, 0, p.shadow).
+						Center().Children(func() {
+						ui.Box(c).Size(60, 60).Radius(16).Background(p.accentTint).Center().Children(func() {
+							ui.Icon(c, iconFolder).FontSize(28).TextColor(t.Accent)
+						})
+						ui.Text(c, tr.HomeConfigureInstallFirst).FontSize(17).Bold().TextAlign(ui.Center)
+						ui.Text(c, tr.HomeInstallDirNotConfigMsg).FontSize(13).TextColor(t.TextMuted).TextAlign(ui.Center)
+						ui.Row(c).Padding(4, 0, 0, 0).Children(func() {
+							if ui.PrimaryButton(c, tr.HomeGoToSettings).Clicked() {
+								a.requestNavigate(pageSettings)
+							}
+						})
+					})
 				})
 
 			case len(a.managed) == 0 && len(a.unmanaged) == 0:
-				ui.Column(c).Grow(1).Center().Gap(10).Children(func() {
-					ui.Icon(c, iconUpload).FontSize(40).TextColor(t.TextMuted)
-					ui.Text(c, tr.HomeNoSoftware).FontSize(16).Bold()
-					ui.Text(c, tr.HomeNoSoftwareHint).FontSize(13).TextColor(t.TextMuted)
-					ui.Row(c).Gap(8).Padding(6, 0, 0, 0).Children(func() {
-						if ui.PrimaryButton(c, tr.Add).Clicked() {
-							a.startAddSoftwarePicker()
-						}
-						if ui.Button(c, tr.HomeScanCurrentDir).Clicked() {
-							a.openScanConfirmModal()
-						}
+				ui.Column(c).Grow(1).Center().Padding(24).Children(func() {
+					ui.Column(c).MaxWidth(460).Padding(32, 36).Gap(12).Radius(14).
+						Background(p.card).Border(1, p.borderStrong).BorderStyle(ui.BorderDashed).
+						Shadow(0, 2, 12, 0, p.shadow).Center().Children(func() {
+						ui.Box(c).Size(60, 60).Radius(16).Background(p.subtleBg).Center().Children(func() {
+							ui.Icon(c, iconUpload).FontSize(28).TextColor(t.Accent)
+						})
+						ui.Text(c, tr.HomeNoSoftware).FontSize(17).Bold().TextAlign(ui.Center)
+						ui.Text(c, tr.HomeNoSoftwareHint).FontSize(13).TextColor(t.TextMuted).TextAlign(ui.Center)
+						ui.Row(c).Gap(8).Padding(6, 0, 0, 0).Children(func() {
+							if ui.PrimaryButton(c, tr.Add).Clicked() {
+								a.startAddSoftwarePicker()
+							}
+							if ui.Button(c, tr.HomeScanCurrentDir).Clicked() {
+								a.openScanConfirmModal()
+							}
+						})
 					})
 				})
 
@@ -143,9 +164,11 @@ func (a *App) homeView(c *ui.Context) {
 		// 拖放文件悬浮提示遮罩
 		if isDragOver {
 			ui.Column(c).Absolute().Top(12).Right(12).Bottom(12).Left(12).
-				Radius(12).Background(t.Background.Alpha(0.92)).Border(2, t.Accent).
-				Center().Gap(10).PassThrough().Children(func() {
-				ui.Icon(c, iconUpload).FontSize(36).TextColor(t.Accent)
+				Radius(14).Background(p.card.Alpha(0.95)).Border(2, t.Accent).BorderStyle(ui.BorderDashed).
+				Center().Gap(12).PassThrough().Children(func() {
+				ui.Box(c).Size(64, 64).Radius(18).Background(p.accentTint).Center().Children(func() {
+					ui.Icon(c, iconUpload).FontSize(32).TextColor(t.Accent)
+				})
 				ui.Text(c, tr.HomeDropToAdd).FontSize(18).Bold()
 				ui.Text(c, tr.HomeDropHint).FontSize(13).TextColor(t.TextMuted)
 			})
@@ -155,12 +178,16 @@ func (a *App) homeView(c *ui.Context) {
 
 func (a *App) homeHeaderBar(c *ui.Context) {
 	t := c.Theme()
+	p := paletteOf(t)
 	tr := a.tr()
 
 	ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, tr.HomeManagedSoftware).FontSize(22).Bold().SingleLine()
 		if len(a.managed) > 0 {
-			ui.Badge(c, fmt.Sprintf("%d", len(a.managed)))
+			ui.Badge(c, fmt.Sprintf("%d", len(a.managed))).Background(p.subtleBg).TextColor(t.Text)
+		}
+		if len(a.unmanaged) > 0 {
+			pillBadge(c, i18n.Fmt(tr.HomeCountUnmanagedFmt, len(a.unmanaged)), p.warningTint, t.Warning)
 		}
 		ui.Spacer(c)
 
@@ -178,30 +205,52 @@ func (a *App) homeHeaderBar(c *ui.Context) {
 			return
 		}
 
-		// 搜索框
-		ui.SearchField(c.Key("home-search"), &a.searchQuery).
-			Placeholder(tr.HomeSearchPlaceholder).Width(200)
-
-		// 切换列表 / 网格视图
-		viewIcon := iconGrid
-		viewTip := tr.HomeGridView
-		if a.useGrid {
-			viewIcon = iconList
-			viewTip = tr.HomeListView
-		}
-		if iconButton(c, "btn-view-mode", viewIcon, viewTip, false, false, nil).Clicked() {
-			a.useGrid = !a.useGrid
+		// 分段式 列表 / 网格 视图切换器
+		setGrid := func(grid bool) {
+			if a.useGrid == grid {
+				return
+			}
+			a.useGrid = grid
 			go func(v bool) {
 				if err := a.settingsSvc.SaveUseGridLayout(v); err != nil {
 					logger.Warn("保存布局偏好失败: %v", err)
 				}
-			}(a.useGrid)
+			}(grid)
 		}
+		ui.Row(c.Key("view-mode-seg")).Padding(3).Radius(8).
+			Background(p.subtleBg).Border(1, p.cardBorder).Gap(2).AlignItems(ui.Center).Children(func() {
+			segBtn := func(key string, ico *ui.SVG, tip string, active bool) bool {
+				b := ui.ButtonBase(c.Key(key)).Size(28, 24).Radius(6).Center().
+					Cursor(ui.CursorPointer).Label(tip).Tooltip(tip)
+				fg := t.TextMuted
+				switch {
+				case active:
+					b.Background(p.card).Shadow(0, 1, 2, 0, p.shadow)
+					fg = t.Accent
+				case b.Hovered():
+					b.Background(t.Text.Alpha(0.06))
+					fg = t.Text
+				}
+				b.Children(func() {
+					ui.Icon(c, ico).FontSize(14).TextColor(fg)
+				})
+				return b.Clicked()
+			}
+			if segBtn("btn-view-list", iconList, tr.HomeListView, !a.useGrid) {
+				setGrid(false)
+			}
+			if segBtn("btn-view-grid", iconGrid, tr.HomeGridView, a.useGrid) {
+				setGrid(true)
+			}
+		})
+
+		verticalSep(c)
 
 		// 排序模式（仅列表模式且有 >=2 项时可用）
 		if !a.useGrid && len(a.managed) > 1 {
 			if iconButton(c, "btn-reorder", iconSort, tr.HomeReorder, false, false, nil).Clicked() {
 				a.searchQuery = ""
+				a.homeFilter = homeFilterAll
 				a.reorderMode = true
 			}
 		}
@@ -224,10 +273,10 @@ func (a *App) homeHeaderBar(c *ui.Context) {
 			ui.Icon(c, iconMore).FontSize(15).TextColor(moreColor)
 		})
 		moreBtn.PopoverMenuButton(func(m *ui.Menu) {
-			if m.Item(tr.HomeScanCurrentDir).Chosen() {
+			if m.Item(tr.HomeScanCurrentDir).Icon(menuIconSearch).Chosen() {
 				a.openScanConfirmModal()
 			}
-			if m.Item(tr.HomeOpenInstallDir).Chosen() {
+			if m.Item(tr.HomeOpenInstallDir).Icon(menuIconFolder).Chosen() {
 				a.openInstallDirectory()
 			}
 		}, ui.PopoverMenuButtonOptions{
@@ -245,23 +294,68 @@ func (a *App) homeHeaderBar(c *ui.Context) {
 	})
 }
 
-func (a *App) homeListContentView(c *ui.Context) {
-	t := c.Theme()
+func (a *App) homeFilterBar(c *ui.Context) {
 	tr := a.tr()
+	if a.homeFilter == "" {
+		a.homeFilter = homeFilterAll
+	}
+	ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
+		sf := ui.SearchField(c.Key("home-search"), &a.searchQuery).
+			Placeholder(tr.HomeSearchPlaceholder).Label(tr.HomeSearchPlaceholder).Width(240)
+		if a.homeFocusSearch {
+			a.homeFocusSearch = false
+			sf.Focus()
+		}
 
-	managed := a.filteredSoftware(a.managed)
-	unmanaged := a.filteredSoftware(a.unmanaged)
+		ui.Spacer(c)
+
+		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+			if filterChip(c, "home-filter-all", tr.FilterAll, len(a.managed)+len(a.unmanaged), a.homeFilter == homeFilterAll).Clicked() {
+				a.homeFilter = homeFilterAll
+			}
+			if filterChip(c, "home-filter-managed", tr.FilterManaged, len(a.managed), a.homeFilter == homeFilterManaged).Clicked() {
+				a.homeFilter = homeFilterManaged
+			}
+			if len(a.unmanaged) > 0 {
+				if filterChip(c, "home-filter-unmanaged", tr.FilterUnmanaged, len(a.unmanaged), a.homeFilter == homeFilterUnmanaged).Clicked() {
+					a.homeFilter = homeFilterUnmanaged
+				}
+			}
+		})
+	})
+}
+
+func (a *App) visibleHomeItems() (managed, unmanaged []model.Software) {
+	if a.homeFilter != homeFilterUnmanaged {
+		managed = a.filteredSoftware(a.managed)
+	}
+	if a.homeFilter != homeFilterManaged {
+		unmanaged = a.filteredSoftware(a.unmanaged)
+	}
+	return managed, unmanaged
+}
+
+func (a *App) homeListContentView(c *ui.Context) {
+	tr := a.tr()
+	managed, unmanaged := a.visibleHomeItems()
+
+	if len(managed) == 0 && len(unmanaged) == 0 {
+		if emptySearchView(c, tr.NoMatchingResults, tr.NoMatchingResultsHint, tr.ClearFilter) {
+			a.searchQuery = ""
+			a.homeFilter = homeFilterAll
+		}
+		return
+	}
 
 	ui.Scroll(c.Key("home-list-scroll")).TrackScroll(&a.homeScrollState).Grow(1).Children(func() {
-		ui.Column(c).Gap(6).Padding(0, 4, 16, 0).Children(func() {
+		ui.Column(c).Gap(8).Padding(2, 4, 16, 0).Children(func() {
 			for i := range managed {
 				a.softwareListRow(c, managed[i])
 			}
 
 			if len(unmanaged) > 0 {
-				ui.Row(c).Padding(14, 4, 4, 4).Gap(8).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, tr.HomeUnmanagedFolders).FontSize(13).Bold().TextColor(t.TextMuted)
-					ui.Badge(c, fmt.Sprintf("%d", len(unmanaged)))
+				ui.Row(c).Padding(12, 4, 2, 4).Children(func() {
+					sectionTitleRow(c, iconFolder, tr.HomeUnmanagedFolders, len(unmanaged))
 				})
 				for i := range unmanaged {
 					a.softwareListRow(c, unmanaged[i])
@@ -273,6 +367,7 @@ func (a *App) homeListContentView(c *ui.Context) {
 
 func (a *App) homeReorderListView(c *ui.Context) {
 	t := c.Theme()
+	p := paletteOf(t)
 	tr := a.tr()
 
 	a.homeListState.Key = func(i int) any { return a.managed[i].ID }
@@ -286,13 +381,16 @@ func (a *App) homeReorderListView(c *ui.Context) {
 		canUp := i > 0
 		canDown := i < len(a.managed)-1
 
-		ui.Row(c.Key(sw.ID)).Padding(10, 12).Margin(0, 4, 6, 0).Radius(8).
-			Background(t.Surface).Border(1, t.Border).Gap(12).AlignItems(ui.Center).Children(func() {
+		ui.Row(c.Key(sw.ID)).Padding(10, 14).Margin(0, 4, 6, 0).Radius(10).
+			Background(p.card).Border(1, p.cardBorder).Shadow(0, 1, 3, 0, p.shadow).
+			Gap(12).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, iconGrip).FontSize(16).TextColor(t.TextMuted)
-			a.renderSoftwareIcon(c, sw, 28)
+			ui.Box(c).Size(36, 36).Radius(9).Background(p.subtleBg).Center().Shrink(0).Children(func() {
+				a.renderSoftwareIcon(c, sw, 26)
+			})
 			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
 				ui.Text(c, a.displayNameFor(sw)).FontSize(14).Bold().SingleLine()
-				ui.Text(c, sw.InstallPath).FontSize(11).TextColor(t.TextMuted).SingleLine()
+				ui.Text(c, sw.InstallPath).FontSize(11).TextColor(t.TextMuted).TruncateMiddle().SingleLine()
 			})
 			idx := i
 			if iconButton(c, "up-"+sw.ID, iconUp, tr.HomeMoveUp, !canUp, false, nil).Clicked() && idx > 0 {
@@ -306,16 +404,36 @@ func (a *App) homeReorderListView(c *ui.Context) {
 }
 
 func (a *App) homeGridContentView(c *ui.Context) {
-	managed := a.filteredSoftware(a.managed)
-	unmanaged := a.filteredSoftware(a.unmanaged)
-	all := make([]model.Software, 0, len(managed)+len(unmanaged))
-	all = append(all, managed...)
-	all = append(all, unmanaged...)
+	tr := a.tr()
+	managed, unmanaged := a.visibleHomeItems()
+
+	if len(managed) == 0 && len(unmanaged) == 0 {
+		if emptySearchView(c, tr.NoMatchingResults, tr.NoMatchingResultsHint, tr.ClearFilter) {
+			a.searchQuery = ""
+			a.homeFilter = homeFilterAll
+		}
+		return
+	}
 
 	ui.Scroll(c.Key("home-grid-scroll")).TrackScroll(&a.homeScrollState).Grow(1).Children(func() {
-		ui.Row(c).Wrap().Gap(14).Padding(0, 4, 16, 0).Children(func() {
-			for i := range all {
-				a.softwareGridCard(c, all[i])
+		ui.Column(c).Gap(16).Padding(2, 4, 16, 0).Children(func() {
+			if len(managed) > 0 {
+				ui.Row(c).Wrap().Gap(14).Children(func() {
+					for i := range managed {
+						a.softwareGridCard(c, managed[i])
+					}
+				})
+			}
+
+			if len(unmanaged) > 0 {
+				ui.Row(c).Padding(4, 2, 0, 2).Children(func() {
+					sectionTitleRow(c, iconFolder, tr.HomeUnmanagedFolders, len(unmanaged))
+				})
+				ui.Row(c).Wrap().Gap(14).Children(func() {
+					for i := range unmanaged {
+						a.softwareGridCard(c, unmanaged[i])
+					}
+				})
 			}
 		})
 	})
@@ -323,31 +441,42 @@ func (a *App) homeGridContentView(c *ui.Context) {
 
 func (a *App) softwareListRow(c *ui.Context, sw model.Software) {
 	t := c.Theme()
+	p := paletteOf(t)
 	tr := a.tr()
 
 	title := a.displayNameFor(sw)
 	var subtitle string
+	var statusBadge string
 	titleColor := t.Text
+	iconBoxBg := p.subtleBg
+
 	switch sw.Status {
 	case model.StatusManaged:
 		if !sw.InstallExists {
 			subtitle = tr.HomeSoftwareDirDeleted
+			statusBadge = tr.HomeSoftwareDirDeleted
 			titleColor = t.Warning
+			iconBoxBg = p.warningTint
 		} else {
 			subtitle = filepath.Base(sw.ExecutablePath)
 		}
 	case model.StatusUnknownInstall:
 		subtitle = tr.HomeUnknownFolder
+		statusBadge = tr.HomeUnknownFolder
 		titleColor = t.Warning
+		iconBoxBg = p.warningTint
 	case model.StatusUnknownArchive:
 		subtitle = tr.HomeUnknownArchiveFile
+		statusBadge = tr.HomeUnknownArchiveFile
 		titleColor = t.Warning
+		iconBoxBg = p.warningTint
 	}
 
-	row := ui.Row(c.Key("row-"+sw.ID)).Padding(10, 14).Radius(10).
-		Background(t.Surface).Border(1, t.Border).Gap(12).AlignItems(ui.Center)
+	row := ui.Row(c.Key("row-"+sw.ID)).Padding(12, 16).Radius(11).
+		Background(p.card).Border(1, p.cardBorder).Shadow(0, 1, 4, 0, p.shadow).
+		Gap(14).AlignItems(ui.Center)
 	if row.Hovered() {
-		row.Background(t.SurfaceHover)
+		row.Background(p.cardHover).Border(1, p.borderStrong)
 	}
 
 	// 右键菜单
@@ -357,17 +486,24 @@ func (a *App) softwareListRow(c *ui.Context, sw model.Software) {
 
 	row.Children(func() {
 		// 左侧可点击启动区
-		launchArea := ui.Row(c.Key("launch-" + sw.ID)).Grow(1).MinWidth(0).Gap(12).AlignItems(ui.Center).
+		launchArea := ui.Row(c.Key("launch-" + sw.ID)).Grow(1).MinWidth(0).Gap(14).AlignItems(ui.Center).
 			Cursor(ui.CursorPointer)
 		launchArea.Children(func() {
-			a.renderSoftwareIcon(c, sw, 34)
-			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-				ui.Text(c, title).FontSize(14).Bold().TextColor(titleColor).SingleLine()
+			ui.Box(c).Size(42, 42).Radius(10).Background(iconBoxBg).Center().Shrink(0).Children(func() {
+				a.renderSoftwareIcon(c, sw, 30)
+			})
+			ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
 				ui.Row(c).Gap(8).MinWidth(0).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, subtitle).FontSize(12).TextColor(t.TextMuted).SingleLine().MinWidth(0)
+					ui.Text(c, title).FontSize(14).Bold().TextColor(titleColor).SingleLine().MinWidth(0)
+					if statusBadge != "" {
+						pillBadge(c, statusBadge, p.warningTint, t.Warning)
+					}
+				})
+				ui.Row(c).Gap(6).MinWidth(0).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, subtitle).FontSize(12).TextColor(t.TextMuted).SingleLine().Shrink(0)
 					if sw.InstallPath != "" {
 						ui.Text(c, "·").FontSize(12).TextColor(t.TextMuted).Shrink(0)
-						ui.Text(c, sw.InstallPath).FontSize(11).TextColor(t.TextMuted).SingleLine().Grow(1).MinWidth(0)
+						ui.Text(c, sw.InstallPath).FontSize(11).TextColor(t.TextMuted).TruncateMiddle().SingleLine().Grow(1).MinWidth(0)
 					}
 				})
 			})
@@ -429,7 +565,7 @@ func (a *App) softwareListRow(c *ui.Context, sw model.Software) {
 					swCopy := sw
 					altBtn.PopoverMenuButton(func(m *ui.Menu) {
 						for _, altPath := range altsCopy {
-							if m.Item(filepath.Base(altPath)).ID(altPath).Chosen() {
+							if m.Item(filepath.Base(altPath)).Icon(menuIconTerminal).ID(altPath).Chosen() {
 								a.launchSoftware(swCopy, altPath)
 							}
 						}
@@ -468,6 +604,21 @@ func (a *App) softwareListRow(c *ui.Context, sw model.Software) {
 				}
 			}
 
+			// 快捷更多菜单按钮（重命名文件夹 / 创建备份 / 开始菜单快捷方式等）
+			rowMoreBtn := ui.ButtonBase(c.Key("row-more-"+sw.ID)).Size(30, 30).Radius(6).Center().
+				Label(tr.HomeMoreActions).Tooltip(tr.HomeMoreActions)
+			rowMoreColor := applyHoverIconStyle(rowMoreBtn, t, false, false, nil)
+			rowMoreBtn.Children(func() {
+				ui.Icon(c, iconMore).FontSize(15).TextColor(rowMoreColor)
+			})
+			swCopy := sw
+			rowMoreBtn.PopoverMenuButton(func(m *ui.Menu) {
+				a.buildSoftwareContextMenu(m, swCopy)
+			}, ui.PopoverMenuButtonOptions{
+				At:   ui.AnchorBottomEnd,
+				Self: ui.AnchorTopEnd,
+			})
+
 			// 删除按钮
 			if iconButton(c, "del-"+sw.ID, iconTrash, tr.Delete, false, true, nil).Clicked() {
 				a.openDeleteSoftwareModal(sw)
@@ -478,57 +629,97 @@ func (a *App) softwareListRow(c *ui.Context, sw model.Software) {
 
 func (a *App) softwareGridCard(c *ui.Context, sw model.Software) {
 	t := c.Theme()
+	p := paletteOf(t)
 	tr := a.tr()
 
 	title := a.displayNameFor(sw)
 	titleColor := t.Text
+	iconMedBg := p.subtleBg
 	var badgeText string
 	if sw.Status == model.StatusManaged && !sw.InstallExists {
 		titleColor = t.Warning
+		iconMedBg = p.warningTint
 		badgeText = tr.HomeSoftwareDirDeleted
 	} else if sw.Status == model.StatusUnknownInstall {
 		titleColor = t.Warning
+		iconMedBg = p.warningTint
 		badgeText = tr.HomeUnknownFolder
 	}
 
-	card := ui.Column(c.Key("grid-"+sw.ID)).Size(172, 168).Padding(14, 12).Radius(12).
-		Background(t.Surface).Border(1, t.Border).Center().Gap(10).Clip().Cursor(ui.CursorPointer)
-	if card.Hovered() {
-		card.Background(t.SurfaceHover).Border(1, t.Accent.Alpha(0.5))
+	card := ui.Column(c.Key("grid-"+sw.ID)).Size(176, 174).Padding(14, 14).Radius(12).
+		Background(p.card).Border(1, p.cardBorder).Shadow(0, 2, 8, 0, p.shadow).
+		Center().Gap(10).Clip().Cursor(ui.CursorPointer)
+	cardHovered := card.Hovered()
+	if cardHovered {
+		card.Background(p.cardHover).Border(1, t.Accent.Alpha(0.55)).
+			Shadow(0, 6, 16, 0, p.shadowHover)
 	}
 	card.PopoverMenu(func(m *ui.Menu) {
 		a.buildSoftwareContextMenu(m, sw)
 	})
 	card.Children(func() {
-		a.renderSoftwareIcon(c, sw, 48)
+		ui.Box(c).Size(56, 56).Radius(14).Background(iconMedBg).Center().Shrink(0).Children(func() {
+			a.renderSoftwareIcon(c, sw, 40)
+		})
 		ui.Text(c, title).FontSize(13).Bold().TextColor(titleColor).TextAlign(ui.Center).MaxLines(2).FillWidth()
 		if badgeText != "" {
-			ui.Text(c, badgeText).FontSize(11).TextColor(t.Warning).TextAlign(ui.Center).SingleLine().FillWidth()
+			pillBadge(c, badgeText, p.warningTint, t.Warning)
 		} else if sw.Status == model.StatusManaged {
 			ui.Row(c).Gap(6).Center().Children(func() {
 				archColor := t.Danger
+				archTip := tr.TileArchiveNotExists
 				if sw.ArchiveExists {
 					archColor = t.Success
+					archTip = tr.TileArchiveExists
 				}
-				ui.Box(c).Size(8, 8).Radius(4).Background(archColor)
-				bakColor := t.TextMuted.Alpha(0.35)
+				statusMiniPill(c, iconArchive, archColor, archTip)
+
+				bakColor := t.TextMuted
+				bakTip := tr.TileBackupNotDetected
 				if sw.IsBackupArchive {
 					bakColor = t.Accent
+					bakTip = tr.TileBackupDetected
 				}
-				ui.Box(c).Size(8, 8).Radius(4).Background(bakColor)
+				statusMiniPill(c, iconRestore, bakColor, bakTip)
 			})
 		}
+
+		// 右上角快捷更多按钮：常驻于树中以免弹出菜单时卸载锚点，非悬停时隐藏
+		moreBtn := ui.ButtonBase(c.Key("grid-more-"+sw.ID)).Size(24, 24).Radius(6).
+			Absolute().Top(6).Right(6).Center().Label(tr.HomeMoreActions).Tooltip(tr.HomeMoreActions)
+		if !cardHovered && !moreBtn.Hovered() && !moreBtn.Pressed() {
+			moreBtn.Opacity(0)
+		}
+		moreColor := applyHoverIconStyle(moreBtn, t, false, false, nil)
+		moreBtn.Children(func() {
+			ui.Icon(c, iconMore).FontSize(14).TextColor(moreColor)
+		})
+		swCopy := sw
+		moreBtn.PopoverMenuButton(func(m *ui.Menu) {
+			a.buildSoftwareContextMenu(m, swCopy)
+		}, ui.PopoverMenuButtonOptions{
+			At:   ui.AnchorBottomEnd,
+			Self: ui.AnchorTopEnd,
+		})
 	})
 	if card.Clicked() && sw.Status == model.StatusManaged {
 		a.launchSoftware(sw, "")
 	}
 }
 
-func statusPill(c *ui.Context, ico *ui.SVG, color ui.Color, tooltip string) {
-	ui.Box(c).Height(26).Padding(0, 7).Radius(6).
-		Background(color.Alpha(0.12)).Border(1, color.Alpha(0.45)).
+func statusMiniPill(c *ui.Context, ico *ui.SVG, color ui.Color, tooltip string) {
+	ui.Box(c).Size(24, 18).Radius(5).
+		Background(color.Alpha(0.12)).Border(1, color.Alpha(0.32)).
 		Center().Tooltip(tooltip).Children(func() {
-		ui.Icon(c, ico).FontSize(13).TextColor(color)
+		ui.Icon(c, ico).FontSize(11).TextColor(color)
+	})
+}
+
+func statusPill(c *ui.Context, ico *ui.SVG, color ui.Color, tooltip string) {
+	ui.Box(c).Height(24).Padding(0, 7).Radius(6).
+		Background(color.Alpha(0.12)).Border(1, color.Alpha(0.36)).
+		Center().Tooltip(tooltip).Children(func() {
+		ui.Icon(c, ico).FontSize(12).TextColor(color)
 	})
 }
 
@@ -537,40 +728,40 @@ func (a *App) buildSoftwareContextMenu(m *ui.Menu, sw model.Software) {
 	swCopy := sw
 
 	if swCopy.Status == model.StatusManaged && swCopy.InstallExists && swCopy.ExecutablePath != "" {
-		if m.Item(tr.Open).Chosen() {
+		if m.Item(tr.Open).Icon(menuIconPlay).Chosen() {
 			a.launchSoftware(swCopy, "")
 		}
 		m.Separator()
 	}
 
-	if m.Item(tr.TileOpenFolder).Disabled(swCopy.InstallPath == "").Chosen() {
+	if m.Item(tr.TileOpenFolder).Icon(menuIconFolder).Disabled(swCopy.InstallPath == "").Chosen() {
 		a.openSoftwareInstallDir(swCopy)
 	}
 	if swCopy.Status == model.StatusManaged {
-		if m.Item(tr.TileChangeFolder).Disabled(!swCopy.InstallExists).Chosen() {
+		if m.Item(tr.TileChangeFolder).Icon(menuIconEdit).Disabled(!swCopy.InstallExists).Chosen() {
 			a.openRenameFolderModal(swCopy)
 		}
-		if m.Item(tr.TileCreateBackup).Disabled(!swCopy.InstallExists).Chosen() {
+		if m.Item(tr.TileCreateBackup).Icon(menuIconRestore).Disabled(!swCopy.InstallExists).Chosen() {
 			a.runCreateBackupForSoftware(swCopy)
 		}
-		if m.Item(tr.TileAddToStartMenu).Disabled(swCopy.ExecutablePath == "" || !swCopy.InstallExists).Chosen() {
+		if m.Item(tr.TileAddToStartMenu).Icon(menuIconPin).Disabled(swCopy.ExecutablePath == "" || !swCopy.InstallExists).Chosen() {
 			a.runAddToStartMenu(swCopy)
 		}
-		if m.Item(tr.TileOpenArchiveFolder).Disabled(swCopy.ArchivePath == "").Chosen() {
+		if m.Item(tr.TileOpenArchiveFolder).Icon(menuIconArchive).Disabled(swCopy.ArchivePath == "").Chosen() {
 			a.openSoftwareArchiveDir(swCopy)
 		}
 		if !swCopy.InstallExists && (swCopy.ArchiveExists || swCopy.IsBackupArchive) {
-			if m.Item(tr.HomeRehost).Chosen() {
+			if m.Item(tr.HomeRehost).Icon(menuIconRefresh).Chosen() {
 				a.startRehostSoftware(swCopy)
 			}
 		} else if swCopy.InstallExists {
-			if m.Item(tr.HomeChangeExecutable).Chosen() {
+			if m.Item(tr.HomeChangeExecutable).Icon(menuIconTerminal).Chosen() {
 				a.openChangeExecutableModal(swCopy)
 			}
 		}
 	}
 	m.Separator()
-	if m.Item(tr.Delete).Danger().Chosen() {
+	if m.Item(tr.Delete).Icon(menuIconTrash).Danger().Chosen() {
 		a.openDeleteSoftwareModal(swCopy)
 	}
 }

@@ -190,6 +190,7 @@ func (a *App) pickDirectoryInto(target *string) {
 
 func (a *App) settingsView(c *ui.Context) {
 	t := c.Theme()
+	p := paletteOf(t)
 	tr := a.tr()
 	if !a.systemFontsLoaded && !a.systemFontsLoading && a.win != nil {
 		a.loadSystemFontsAsync()
@@ -199,6 +200,9 @@ func (a *App) settingsView(c *ui.Context) {
 		// 顶部标题与「全部保存」按钮
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, tr.SettingsTitle).FontSize(22).Bold().SingleLine()
+			if a.hasUnsavedSettings() {
+				pillBadge(c, tr.SettingsUnsavedBadge, p.warningTint, t.Warning)
+			}
 			ui.Spacer(c)
 			if a.hasUnsavedSettings() {
 				if ui.PrimaryButton(c.Key("set-save-all"), tr.SettingsSaveAll).Clicked() {
@@ -208,10 +212,13 @@ func (a *App) settingsView(c *ui.Context) {
 		})
 
 		ui.Scroll(c.Key("settings-scroll")).TrackScroll(&a.setScrollState).Grow(1).Children(func() {
-			ui.Column(c).Gap(20).Padding(0, 4, 24, 0).MaxWidth(760).Children(func() {
+			ui.Column(c).Gap(16).Padding(2, 4, 24, 0).MaxWidth(760).Children(func() {
 				// 提示条
-				ui.Row(c).Padding(12, 14).Radius(10).Background(t.Accent.Alpha(0.08)).
-					Border(1, t.Accent.Alpha(0.3)).Gap(10).AlignItems(ui.Center).Children(func() {
+				ui.Row(c).Padding(12, 16).Radius(11).Background(p.accentTint).
+					Border(1, t.Accent.Alpha(0.28)).Gap(12).AlignItems(ui.Center).Children(func() {
+					ui.Box(c).Size(28, 28).Radius(8).Background(t.Accent.Alpha(0.14)).Center().Shrink(0).Children(func() {
+						ui.Icon(c, iconInfo).FontSize(15).TextColor(t.Accent)
+					})
 					ui.Column(c).Gap(2).Grow(1).MinWidth(0).Children(func() {
 						ui.Text(c, tr.SettingsDevHint).FontSize(13).Bold()
 						ui.Text(c, tr.SettingsDevHintContent).FontSize(12).TextColor(t.TextMuted)
@@ -219,7 +226,7 @@ func (a *App) settingsView(c *ui.Context) {
 				})
 
 				// 1. 存储设置
-				settingsCard(c, tr.SettingsStorage, func() {
+				settingsCard(c, iconHardDrive, tr.SettingsStorage, func() {
 					// 安装路径
 					ui.Column(c).Gap(6).Children(func() {
 						ui.Text(c, tr.SettingsInstallPath).FontSize(13).Bold()
@@ -236,7 +243,7 @@ func (a *App) settingsView(c *ui.Context) {
 						})
 					})
 
-					ui.Divider(c)
+					ui.Divider(c).Background(p.cardBorder)
 
 					// 归档路径
 					ui.Column(c).Gap(6).Children(func() {
@@ -254,7 +261,7 @@ func (a *App) settingsView(c *ui.Context) {
 						})
 					})
 
-					ui.Divider(c)
+					ui.Divider(c).Background(p.cardBorder)
 
 					// 配置文件路径
 					ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
@@ -269,7 +276,7 @@ func (a *App) settingsView(c *ui.Context) {
 				})
 
 				// 2. 归档处理
-				settingsCard(c, tr.SettingsArchiveHandling, func() {
+				settingsCard(c, iconArchive, tr.SettingsArchiveHandling, func() {
 					ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 						ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
 							ui.Text(c, tr.SettingsRemoveNested).FontSize(13).Bold()
@@ -285,7 +292,7 @@ func (a *App) settingsView(c *ui.Context) {
 						})
 					}
 
-					ui.Divider(c)
+					ui.Divider(c).Background(p.cardBorder)
 
 					ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 						ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
@@ -304,7 +311,7 @@ func (a *App) settingsView(c *ui.Context) {
 				})
 
 				// 3. 可执行文件识别
-				settingsCard(c, tr.SettingsExecRecognition, func() {
+				settingsCard(c, iconTerminal, tr.SettingsExecRecognition, func() {
 					// 最大搜索深度
 					depthOpts := make([]string, settings.MaxSearchDepth)
 					for i := range depthOpts {
@@ -320,7 +327,7 @@ func (a *App) settingsView(c *ui.Context) {
 						}
 					})
 
-					ui.Divider(c)
+					ui.Divider(c).Background(p.cardBorder)
 
 					// 扩展名标签列表
 					ui.Column(c).Gap(8).Children(func() {
@@ -344,7 +351,7 @@ func (a *App) settingsView(c *ui.Context) {
 								for _, ext := range a.setExts {
 									extCopy := ext
 									ui.Row(c.Key("ext-chip-"+ext)).Padding(4, 10).Radius(999).
-										Background(t.Background).Border(1, t.Border).Gap(6).AlignItems(ui.Center).Children(func() {
+										Background(p.subtleBg).Border(1, p.cardBorder).Gap(6).AlignItems(ui.Center).Children(func() {
 										ui.Text(c, "."+ext).FontSize(12)
 										rmBtn := ui.ButtonBase(c.Key("ext-rm-"+ext)).Size(16, 16).Radius(8).Center().
 											Label(tr.Remove)
@@ -380,11 +387,11 @@ func (a *App) settingsView(c *ui.Context) {
 				})
 
 				// 4. 外观与语言
-				settingsCard(c, tr.SettingsAppearance, func() {
+				settingsCard(c, iconPalette, tr.SettingsAppearance, func() {
 					// 字体选择（即时生效并保存）
 					a.fontPickerView(c)
 
-					ui.Divider(c)
+					ui.Divider(c).Background(p.cardBorder)
 
 					// 界面语言
 					zhLabel := tr.LanguageChinese
@@ -416,7 +423,7 @@ func (a *App) settingsView(c *ui.Context) {
 				})
 
 				// 5. 日志设置
-				settingsCard(c, tr.SettingsLogSettings, func() {
+				settingsCard(c, iconFileText, tr.SettingsLogSettings, func() {
 					ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 						ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
 							ui.Text(c, tr.SettingsEnableFileLogging).FontSize(13).Bold()
@@ -435,7 +442,7 @@ func (a *App) settingsView(c *ui.Context) {
 						}
 					})
 
-					ui.Divider(c)
+					ui.Divider(c).Background(p.cardBorder)
 
 					ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 						ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
@@ -450,29 +457,59 @@ func (a *App) settingsView(c *ui.Context) {
 				})
 
 				// 6. 关于与更新
-				settingsCard(c, tr.SettingsAbout, func() {
+				settingsCard(c, iconInfo, tr.SettingsAbout, func() {
 					// 版本（3 秒内连续点击 5 次解锁开发者选项）
-					verRow := ui.ButtonBase(c.Key("set-version-tap")).Padding(6, 8).Radius(6).
-						AlignItems(ui.Center).Label(tr.SettingsVersion)
+					verRow := ui.ButtonBase(c.Key("set-version-tap")).Padding(6, 8).Radius(8).
+						AlignItems(ui.Center).Gap(10).Cursor(ui.CursorPointer).Label(tr.SettingsVersion)
 					if verRow.Hovered() {
 						verRow.Background(t.SurfaceHover)
 					}
 					verRow.Children(func() {
+						if a.appIcon != nil {
+							ui.Image(c, a.appIcon).Size(24, 24).Radius(6).Shrink(0).Fit(ui.Contain)
+						}
 						ui.Text(c, tr.SettingsVersion).FontSize(13).Bold().Grow(1).MinWidth(0)
-						ui.Text(c, version.FullVersion()).FontSize(13).TextColor(t.TextMuted)
+						pillBadge(c, version.FullVersion(), p.subtleBg, t.Text)
 					})
 					if verRow.Clicked() {
 						a.handleVersionTap()
 					}
 
-					ui.Divider(c)
+					ui.Divider(c).Background(p.cardBorder)
 
 					ui.Row(c).Padding(4, 8).AlignItems(ui.Center).Children(func() {
 						ui.Text(c, tr.SettingsBuildTime).FontSize(13).Bold().Grow(1).MinWidth(0)
 						ui.Text(c, version.BuildTime).FontSize(13).TextColor(t.TextMuted)
 					})
 
-					ui.Divider(c)
+					aboutLinkRow := func(key string, ico *ui.SVG, title, displayURL, targetURL string) {
+						ui.Divider(c).Background(p.cardBorder)
+
+						row := ui.ButtonBase(c.Key(key)).Padding(6, 8).Radius(8).
+							Justify(ui.Start).AlignItems(ui.Center).Gap(10).
+							Cursor(ui.CursorPointer).Label(title).Tooltip(targetURL)
+						if row.Hovered() {
+							row.Background(t.SurfaceHover)
+						}
+						row.Children(func() {
+							ui.Icon(c, ico).FontSize(15).TextColor(t.TextMuted).Shrink(0)
+							ui.Text(c, title).FontSize(13).Bold().Grow(1).MinWidth(0).SingleLine()
+							ui.Text(c, displayURL).FontSize(12).TextColor(t.Accent).SingleLine().Shrink(0)
+							ui.Icon(c, iconExternalLink).FontSize(13).TextColor(t.Accent).Shrink(0)
+						})
+						if row.Clicked() {
+							c.OpenURLThen(targetURL, func(err error) {
+								if err != nil {
+									a.logAndToastError(a.tr().Error, err)
+								}
+							})
+						}
+					}
+
+					aboutLinkRow("set-about-website", iconGlobe, tr.SettingsWebsite, "carrydock.devyi.com", version.WebsiteURL)
+					aboutLinkRow("set-about-github", iconGitHub, tr.SettingsGitHub, "github.com/youzhiran/CarryDock", version.GitHubURL)
+
+					ui.Divider(c).Background(p.cardBorder)
 
 					ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 						if ui.Button(c.Key("set-check-update"), "").Disabled(a.updateChecking).Children(func() {
@@ -501,6 +538,7 @@ func (a *App) settingsView(c *ui.Context) {
 
 func (a *App) fontPickerView(c *ui.Context) {
 	t := c.Theme()
+	p := paletteOf(t)
 	tr := a.tr()
 	resolved := a.resolvedDefaultFont()
 
@@ -529,15 +567,15 @@ func (a *App) fontPickerView(c *ui.Context) {
 		sel := ui.SelectBase(c.Key("set-font"), &chosen)
 		trigger := sel.Trigger
 		trigger.Width(240).Padding(6, 12).Gap(8).Radius(t.Radius).
-			Border(1, t.Border).Justify(ui.SpaceBetween).AlignItems(ui.Center).
+			Border(1, p.cardBorder).Justify(ui.SpaceBetween).AlignItems(ui.Center).
 			Cursor(ui.CursorPointer).Label(tr.SettingsAppFont)
 		switch {
 		case trigger.Pressed():
 			trigger.Background(t.SurfacePressed)
 		case trigger.Hovered():
-			trigger.Background(t.SurfaceHover)
+			trigger.Background(t.SurfaceHover).Border(1, p.borderStrong)
 		default:
-			trigger.Background(t.Surface)
+			trigger.Background(p.subtleBg)
 		}
 
 		triggerLabel := tr.SettingsSystemDefaultFont
@@ -558,7 +596,7 @@ func (a *App) fontPickerView(c *ui.Context) {
 
 		sel.Popup(func(panel ui.Element) {
 			panel.Margin(4, 0, 0, 0).Padding(4).Radius(t.Radius+2).
-				Background(t.Background).Border(1, t.Border).
+				Background(p.card).Border(1, p.cardBorder).
 				Shadow(0, 6, 20, 0, ui.RGBA(0, 0, 0, 0.18)).
 				Width(300).MaxHeight(340)
 
@@ -578,7 +616,7 @@ func (a *App) fontPickerView(c *ui.Context) {
 				case highlighted:
 					item.Background(t.Accent)
 				case selected && !disabled:
-					item.Background(t.Surface)
+					item.Background(p.accentTint)
 				}
 
 				fg := t.Text
@@ -589,6 +627,8 @@ func (a *App) fontPickerView(c *ui.Context) {
 				case highlighted:
 					fg = t.AccentText
 					subFg = t.AccentText.Alpha(0.85)
+				case selected:
+					fg = t.Accent
 				}
 
 				item.Children(func() {
@@ -680,12 +720,20 @@ func (a *App) fontPickerView(c *ui.Context) {
 	})
 }
 
-func settingsCard(c *ui.Context, title string, body func()) {
+func settingsCard(c *ui.Context, ico *ui.SVG, title string, body func()) {
 	t := c.Theme()
+	p := paletteOf(t)
 	ui.Column(c).Gap(8).Children(func() {
-		ui.Text(c, title).FontSize(14).Bold().TextColor(t.Text)
-		ui.Column(c).Padding(16).Gap(12).Radius(10).
-			Background(t.Surface).Border(1, t.Border).Children(body)
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			if ico != nil {
+				ui.Box(c).Size(24, 24).Radius(6).Background(p.accentTint).Center().Shrink(0).Children(func() {
+					ui.Icon(c, ico).FontSize(13).TextColor(t.Accent)
+				})
+			}
+			ui.Text(c, title).FontSize(14).Bold().TextColor(t.Text)
+		})
+		ui.Column(c).Padding(14, 16).Gap(12).Radius(12).
+			Background(p.card).Border(1, p.cardBorder).Shadow(0, 1, 4, 0, p.shadow).Children(body)
 	})
 }
 

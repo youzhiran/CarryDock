@@ -94,30 +94,49 @@ func (a *App) selectExecutableModalView(c *ui.Context) {
 	}
 
 	if ui.Modal(c.Key("modal-select-exe"), &a.selectExeOpen, func() {
+		p := paletteOf(t)
 		ui.Column(c).Width(500).Gap(12).Children(func() {
 			ui.Text(c, tr.DialogSelectExecutable).FontSize(16).Bold()
 			ui.Scroll(c.Key("modal-exe-scroll")).MaxHeight(320).Children(func() {
-				ui.RadioGroup(c, func() {
-					for _, path := range a.selectExePaths {
-						pCopy := path
-						meta := a.ensureExeMeta(pCopy)
-						label := filepath.Base(pCopy)
-						if meta != nil && meta.desc != "" {
-							label = fmt.Sprintf("%s  (%s)", meta.desc, filepath.Base(pCopy))
-						}
-						ui.Row(c.Key("exe-opt-"+pCopy)).Padding(6, 8).Radius(6).Gap(8).AlignItems(ui.Center).Children(func() {
-							ui.Radio(c, &a.selectExeChoice, pCopy, "")
-							if meta != nil && meta.icon != nil {
-								ui.Image(c, meta.icon).Size(22, 22).Shrink(0).Fit(ui.Contain)
-							} else {
-								ui.Icon(c, iconAppDefault).FontSize(18).TextColor(t.TextMuted)
+				ui.Column(c).Gap(6).Children(func() {
+					ui.RadioGroup(c, func() {
+						for _, path := range a.selectExePaths {
+							pCopy := path
+							meta := a.ensureExeMeta(pCopy)
+							label := filepath.Base(pCopy)
+							if meta != nil && meta.desc != "" {
+								label = fmt.Sprintf("%s  (%s)", meta.desc, filepath.Base(pCopy))
 							}
-							ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
-								ui.Text(c, label).FontSize(13).SingleLine()
-								ui.Text(c, pCopy).FontSize(11).TextColor(t.TextMuted).SingleLine()
+							selected := a.selectExeChoice == pCopy
+							optRow := ui.Row(c.Key("exe-opt-"+pCopy)).Padding(10, 12).Radius(9).Gap(10).
+								AlignItems(ui.Center).Cursor(ui.CursorPointer)
+							switch {
+							case selected:
+								optRow.Background(p.accentTint).Border(1, t.Accent.Alpha(0.45))
+							case optRow.Hovered():
+								optRow.Background(t.SurfaceHover).Border(1, p.cardBorder)
+							default:
+								optRow.Background(p.subtleBg).Border(1, p.cardBorder)
+							}
+							optRow.Children(func() {
+								ui.Radio(c, &a.selectExeChoice, pCopy, "")
+								ui.Box(c).Size(28, 28).Radius(7).Background(p.card).Center().Shrink(0).Children(func() {
+									if meta != nil && meta.icon != nil {
+										ui.Image(c, meta.icon).Size(20, 20).Fit(ui.Contain)
+									} else {
+										ui.Icon(c, iconAppDefault).FontSize(16).TextColor(t.TextMuted)
+									}
+								})
+								ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+									ui.Text(c, label).FontSize(13).Bold().SingleLine()
+									ui.Text(c, pCopy).FontSize(11).TextColor(t.TextMuted).TruncateMiddle().SingleLine()
+								})
 							})
-						})
-					}
+							if optRow.Clicked() {
+								a.selectExeChoice = pCopy
+							}
+						}
+					})
 				})
 			})
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
@@ -183,7 +202,7 @@ func (a *App) duplicateModalView(c *ui.Context) {
 			ui.Text(c, tr.DupDetected).FontSize(16).Bold()
 			ui.Text(c, i18n.Fmt(tr.DupHelpFmt, info.IntendedName)).FontSize(13)
 
-			ui.Column(c).Padding(10, 12).Radius(8).Background(t.Surface).Border(1, t.Border).Gap(4).Children(func() {
+			ui.Column(c).Padding(12, 14).Radius(10).Background(paletteOf(t).subtleBg).Border(1, paletteOf(t).cardBorder).Gap(4).Children(func() {
 				if info.ExistingManagedSoftware != nil {
 					ui.Text(c, "• "+i18n.Fmt(tr.DupExistingFmt, info.ExistingManagedSoftware.Name, filepath.Base(info.ExistingManagedSoftware.InstallPath))).FontSize(12)
 				}
@@ -787,8 +806,8 @@ func (a *App) updateModalView(c *ui.Context) {
 		ui.Column(c).Width(480).Gap(12).Children(func() {
 			ui.Text(c, i18n.Fmt(tr.UpdateNewVersionFmt, info.Version)).FontSize(16).Bold()
 			ui.Text(c, tr.UpdateContent).FontSize(13).Bold()
-			ui.Scroll(c.Key("update-notes-scroll")).Height(170).Padding(10).Radius(8).
-				Background(t.Surface).Border(1, t.Border).Children(func() {
+			ui.Scroll(c.Key("update-notes-scroll")).Height(170).Padding(12).Radius(10).
+				Background(paletteOf(t).subtleBg).Border(1, paletteOf(t).cardBorder).Children(func() {
 				ui.Text(c, info.Changelog).FontSize(12).Selectable()
 			})
 
@@ -851,6 +870,7 @@ func (a *App) devIconTestModalView(c *ui.Context) {
 	tr := a.tr()
 
 	ui.Modal(c.Key("modal-dev-icon"), &a.devIconModalOpen, func() {
+		p := paletteOf(t)
 		ui.Column(c).Width(460).Gap(12).Children(func() {
 			ui.Text(c, tr.DevIconTest).FontSize(16).Bold()
 			ui.Column(c).Gap(2).Children(func() {
@@ -862,19 +882,19 @@ func (a *App) devIconTestModalView(c *ui.Context) {
 			})
 
 			ui.Row(c).Gap(12).Children(func() {
-				ui.Column(c).Grow(1).Padding(12).Radius(8).Background(t.Surface).Border(1, t.Border).Center().Gap(6).Children(func() {
+				ui.Column(c).Grow(1).Padding(12).Radius(10).Background(p.subtleBg).Border(1, p.cardBorder).Center().Gap(6).Children(func() {
 					ui.Image(c, a.devIconBmp).Size(32, 32).Fit(ui.Contain)
 					ui.Text(c, tr.DevMethod1).FontSize(12).Bold()
 					ui.Text(c, tr.DevMethod1Desc).FontSize(11).TextColor(t.TextMuted)
 				})
-				ui.Column(c).Grow(1).Padding(12).Radius(8).Background(t.Surface).Border(1, t.Border).Center().Gap(6).Children(func() {
+				ui.Column(c).Grow(1).Padding(12).Radius(10).Background(p.subtleBg).Border(1, p.cardBorder).Center().Gap(6).Children(func() {
 					ui.Image(c, a.devIconBmp).Size(64, 64).Fit(ui.Contain)
 					ui.Text(c, tr.DevMethod2).FontSize(12).Bold()
 					ui.Text(c, tr.DevMethod2Desc).FontSize(11).TextColor(t.TextMuted)
 				})
 			})
 
-			ui.Column(c).Padding(12).Radius(8).Background(t.Surface).Border(1, t.Border).Gap(8).Children(func() {
+			ui.Column(c).Padding(12).Radius(10).Background(p.subtleBg).Border(1, p.cardBorder).Gap(8).Children(func() {
 				ui.Text(c, tr.DevMethod3).FontSize(12).Bold()
 				ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 					ui.PrimaryButton(c.Key("dev-preview-btn"), "").Children(func() {

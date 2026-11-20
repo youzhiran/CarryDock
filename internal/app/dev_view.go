@@ -8,6 +8,7 @@ import (
 
 func (a *App) devView(c *ui.Context) {
 	t := c.Theme()
+	p := paletteOf(t)
 	tr := a.tr()
 
 	ui.Column(c).Fill().Padding(20, 24).Gap(16).MaxWidth(680).Children(func() {
@@ -15,7 +16,8 @@ func (a *App) devView(c *ui.Context) {
 		ui.Text(c, tr.DevHint).FontSize(13).TextColor(t.TextMuted)
 
 		// 图标提取测试卡片
-		ui.Column(c).Padding(16).Gap(10).Radius(10).Background(t.Surface).Border(1, t.Border).Children(func() {
+		ui.Column(c).Padding(16).Gap(10).Radius(12).
+			Background(p.card).Border(1, p.cardBorder).Shadow(0, 1, 4, 0, p.shadow).Children(func() {
 			ui.Text(c, tr.DevIconTest).FontSize(14).Bold()
 			ui.Text(c, tr.DevIconTestHint).FontSize(12).TextColor(t.TextMuted)
 			ui.Row(c).Gap(8).Children(func() {
