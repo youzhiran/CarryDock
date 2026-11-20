@@ -802,9 +802,7 @@ func (a *App) openInstallDirectory() {
 		a.showInfo(tr.HomeDirNotExistTitle, installPath)
 		return
 	}
-	if err := winutil.OpenDirectory(installPath); err != nil {
-		a.logAndToastError(tr.Error, err)
-	}
+	a.openDirectoryAsync(installPath)
 }
 
 func (a *App) openSoftwareInstallDir(sw model.Software) {
@@ -817,9 +815,7 @@ func (a *App) openSoftwareInstallDir(sw model.Software) {
 		a.toast(tr.Warning, sw.InstallPath)
 		return
 	}
-	if err := winutil.OpenDirectory(sw.InstallPath); err != nil {
-		a.logAndToastError(tr.Error, err)
-	}
+	a.openDirectoryAsync(sw.InstallPath)
 }
 
 func (a *App) openSoftwareArchiveDir(sw model.Software) {
@@ -828,9 +824,18 @@ func (a *App) openSoftwareArchiveDir(sw model.Software) {
 		a.toast(tr.Warning, tr.TileNoArchive)
 		return
 	}
-	if err := winutil.RevealInExplorer(sw.ArchivePath); err != nil {
-		a.toast(tr.Warning, tr.TileArchiveNotFound)
-	}
+	go func(target string) {
+		if err := winutil.RevealInExplorer(target); err != nil {
+			logger.Warn("在资源管理器中显示归档失败 (%s): %v", target, err)
+			a.update(func() {
+				if errors.Is(err, os.ErrNotExist) {
+					a.toast(a.tr().Warning, a.tr().TileArchiveNotFound)
+					return
+				}
+				a.logAndToastError(a.tr().Error, err)
+			})
+		}
+	}(sw.ArchivePath)
 }
 
 func (a *App) openRenameFolderModal(sw model.Software) {

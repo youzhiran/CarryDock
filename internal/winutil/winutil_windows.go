@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -24,14 +25,21 @@ var (
 	modShell32 = windows.NewLazySystemDLL("shell32.dll")
 	modUser32  = windows.NewLazySystemDLL("user32.dll")
 	modGdi32   = windows.NewLazySystemDLL("gdi32.dll")
+	modOle32   = windows.NewLazySystemDLL("ole32.dll")
 
 	procGetFileVersionInfoSizeW = modVersion.NewProc("GetFileVersionInfoSizeW")
 	procGetFileVersionInfoW     = modVersion.NewProc("GetFileVersionInfoW")
 	procVerQueryValueW          = modVersion.NewProc("VerQueryValueW")
 
-	procExtractIconExW = modShell32.NewProc("ExtractIconExW")
-	procSHGetFileInfoW = modShell32.NewProc("SHGetFileInfoW")
-	procShellExecuteW  = modShell32.NewProc("ShellExecuteW")
+	procExtractIconExW             = modShell32.NewProc("ExtractIconExW")
+	procSHGetFileInfoW             = modShell32.NewProc("SHGetFileInfoW")
+	procShellExecuteW              = modShell32.NewProc("ShellExecuteW")
+	procILCreateFromPathW          = modShell32.NewProc("ILCreateFromPathW")
+	procILFree                     = modShell32.NewProc("ILFree")
+	procSHOpenFolderAndSelectItems = modShell32.NewProc("SHOpenFolderAndSelectItems")
+
+	procCoInitializeEx = modOle32.NewProc("CoInitializeEx")
+	procCoUninitialize = modOle32.NewProc("CoUninitialize")
 
 	procPrivateExtractIconsW = modUser32.NewProc("PrivateExtractIconsW")
 	procGetIconInfo          = modUser32.NewProc("GetIconInfo")
@@ -45,11 +53,15 @@ var (
 )
 
 const (
-	biRGB          = 0
-	dibRGBColors   = 0
-	swShowNormal   = 1
-	shgfiIcon      = 0x000000100
-	shgfiLargeIcon = 0x000000000
+	biRGB                   = 0
+	dibRGBColors            = 0
+	swShowNormal            = 1
+	shgfiIcon               = 0x000000100
+	shgfiLargeIcon          = 0x000000000
+	coinitApartmentThreaded = 0x2
+	sOK                     = 0x00000000
+	sFalse                  = 0x00000001
+	rpcEChangedMode         = 0x80010106
 )
 
 type shFileInfoW struct {
@@ -449,23 +461,41 @@ func LaunchExecutable(exePath, fallbackWorkDir string) error {
 	if workDir == "" || workDir == "." {
 		workDir = fallbackWorkDir
 	}
-	verbPtr, err := windows.UTF16PtrFromString("open")
+	return shellExecuteW("open", exePath, "", workDir)
+}
+
+func shellExecuteW(verb, file, params, workDir string) error {
+	var verbPtr *uint16
+	if verb != "" {
+		var err error
+		verbPtr, err = windows.UTF16PtrFromString(verb)
+		if err != nil {
+			return err
+		}
+	}
+	filePtr, err := windows.UTF16PtrFromString(file)
 	if err != nil {
 		return err
 	}
-	filePtr, err := windows.UTF16PtrFromString(exePath)
-	if err != nil {
-		return err
+	var paramsPtr *uint16
+	if params != "" {
+		paramsPtr, err = windows.UTF16PtrFromString(params)
+		if err != nil {
+			return err
+		}
 	}
-	dirPtr, err := windows.UTF16PtrFromString(workDir)
-	if err != nil {
-		return err
+	var dirPtr *uint16
+	if workDir != "" {
+		dirPtr, err = windows.UTF16PtrFromString(workDir)
+		if err != nil {
+			return err
+		}
 	}
 	ret, _, _ := procShellExecuteW.Call(
 		0,
 		uintptr(unsafe.Pointer(verbPtr)),
 		uintptr(unsafe.Pointer(filePtr)),
-		0,
+		uintptr(unsafe.Pointer(paramsPtr)),
 		uintptr(unsafe.Pointer(dirPtr)),
 		swShowNormal,
 	)
@@ -484,22 +514,168 @@ func HideConsole(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 }
 
-// OpenDirectory 使用资源管理器打开目录。
-func OpenDirectory(dirPath string) error {
-	cmd := exec.Command("explorer.exe", filepath.Clean(dirPath))
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+func resolveDirectoryTarget(dirPath string) (string, error) {
+	trimmed := strings.TrimSpace(dirPath)
+	if trimmed == "" {
+		return "", fmt.Errorf("目录路径为空")
+	}
+	clean := filepath.Clean(trimmed)
+	if abs, err := filepath.Abs(clean); err == nil {
+		clean = abs
+	}
+	st, err := os.Stat(clean)
+	if err != nil {
+		return "", fmt.Errorf("打开目录失败 (%s): %w", clean, err)
+	}
+	if !st.IsDir() {
+		return "", fmt.Errorf("目标路径不是目录: %s", clean)
+	}
+	return clean, nil
+}
+
+func resolveRevealTarget(filePath string) (target string, selectItem bool, err error) {
+	trimmed := strings.TrimSpace(filePath)
+	if trimmed == "" {
+		return "", false, fmt.Errorf("文件路径为空")
+	}
+	clean := filepath.Clean(trimmed)
+	if abs, absErr := filepath.Abs(clean); absErr == nil {
+		clean = abs
+	}
+	st, statErr := os.Stat(clean)
+	if statErr == nil {
+		if !st.IsDir() {
+			return clean, true, nil
+		}
+		return clean, false, nil
+	}
+
+	parent := filepath.Dir(clean)
+	if parent != "" && !SamePath(parent, clean) {
+		if pst, pErr := os.Stat(parent); pErr == nil && pst.IsDir() {
+			return parent, false, nil
+		}
+	}
+	return "", false, fmt.Errorf("文件及所在目录不存在 (%s): %w", clean, statErr)
+}
+
+func ensureTrailingBackslash(dir string) string {
+	if dir == "" || strings.HasSuffix(dir, `\`) {
+		return dir
+	}
+	return dir + `\`
+}
+
+func explorerSelectParams(absPath string) string {
+	return `/select,"` + absPath + `"`
+}
+
+func explorerExePath() string {
+	winDir := os.Getenv("SystemRoot")
+	if winDir == "" {
+		winDir = os.Getenv("WINDIR")
+	}
+	if winDir != "" {
+		candidate := filepath.Join(winDir, "explorer.exe")
+		if st, err := os.Stat(candidate); err == nil && !st.IsDir() {
+			return candidate
+		}
+	}
+	return "explorer.exe"
+}
+
+func withCOMSTA(fn func() error) error {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	hr, _, _ := procCoInitializeEx.Call(0, coinitApartmentThreaded)
+	hr32 := uint32(hr)
+	switch hr32 {
+	case sOK, sFalse:
+		defer procCoUninitialize.Call()
+	case rpcEChangedMode:
+		return fmt.Errorf("COM 已以非 STA 模式初始化 (0x%08x)", hr32)
+	default:
+		return fmt.Errorf("CoInitializeEx 失败 (0x%08x)", hr32)
+	}
+	return fn()
+}
+
+func openDirectoryResolved(absDir string) error {
+	var err error
+	func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
+		hr, _, _ := procCoInitializeEx.Call(0, coinitApartmentThreaded)
+		if uint32(hr) == sOK || uint32(hr) == sFalse {
+			defer procCoUninitialize.Call()
+		}
+		err = shellExecuteW("open", ensureTrailingBackslash(absDir), "", "")
+	}()
+	if err == nil {
+		return nil
+	}
+	cmd := exec.Command(explorerExePath(), absDir)
 	return cmd.Start()
 }
 
-// RevealInExplorer 在资源管理器中选中指定文件；若文件不存在则打开其父目录。
-func RevealInExplorer(filePath string) error {
-	clean := filepath.Clean(filePath)
-	if st, err := os.Stat(clean); err == nil && !st.IsDir() {
-		cmd := exec.Command("explorer.exe", "/select,"+clean)
-		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-		return cmd.Start()
+func shOpenFolderAndSelectItem(absPath string) error {
+	return withCOMSTA(func() error {
+		pathPtr, err := windows.UTF16PtrFromString(absPath)
+		if err != nil {
+			return err
+		}
+		pidl, _, _ := procILCreateFromPathW.Call(uintptr(unsafe.Pointer(pathPtr)))
+		if pidl == 0 {
+			return fmt.Errorf("ILCreateFromPathW 返回空 PIDL: %s", absPath)
+		}
+		defer procILFree.Call(pidl)
+
+		hr, _, _ := procSHOpenFolderAndSelectItems.Call(pidl, 0, 0, 0)
+		if int32(uint32(hr)) < 0 {
+			return fmt.Errorf("SHOpenFolderAndSelectItems 失败 (0x%08x)", uint32(hr))
+		}
+		return nil
+	})
+}
+
+// OpenDirectory 使用资源管理器打开目录。
+func OpenDirectory(dirPath string) error {
+	absDir, err := resolveDirectoryTarget(dirPath)
+	if err != nil {
+		return err
 	}
-	return OpenDirectory(filepath.Dir(clean))
+	return openDirectoryResolved(absDir)
+}
+
+// RevealInExplorer 在资源管理器中选中指定文件；若为目录或文件不存在则打开对应目录。
+func RevealInExplorer(filePath string) error {
+	target, selectItem, err := resolveRevealTarget(filePath)
+	if err != nil {
+		return err
+	}
+	if !selectItem {
+		return openDirectoryResolved(target)
+	}
+	if err := shOpenFolderAndSelectItem(target); err == nil {
+		return nil
+	}
+	var shellErr error
+	func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
+		hr, _, _ := procCoInitializeEx.Call(0, coinitApartmentThreaded)
+		if uint32(hr) == sOK || uint32(hr) == sFalse {
+			defer procCoUninitialize.Call()
+		}
+		shellErr = shellExecuteW("open", explorerExePath(), explorerSelectParams(target), "")
+	}()
+	if shellErr == nil {
+		return nil
+	}
+	return openDirectoryResolved(filepath.Dir(target))
 }
 
 // StartMenuDir 获取并创建绿驿管家在 Windows 开始菜单中的程序目录。

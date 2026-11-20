@@ -95,14 +95,14 @@ func (a *App) archiveView(c *ui.Context) {
 			}
 			if iconButton(c, "arch-open-dir", iconFolder, tr.ArchiveOpenArchiveDir, false, false, nil).Clicked() {
 				if root, err := a.softwareSvc.ResolveArchiveDirectoryPath(); err == nil {
-					_ = winutil.OpenDirectory(root)
+					a.openDirectoryAsync(root)
 				} else {
 					a.showInfo(tr.HomeInstallDirNotConfig, tr.HomeInstallDirNotConfigMsg)
 				}
 			}
 			if ui.Button(c.Key("arch-open-backup"), tr.ArchiveOpenBackupDir).Clicked() {
 				if dir, err := a.softwareSvc.ResolveBackupDirectoryPath(); err == nil {
-					_ = winutil.OpenDirectory(dir)
+					a.openDirectoryAsync(dir)
 				} else {
 					a.showInfo(tr.HomeInstallDirNotConfig, tr.HomeInstallDirNotConfigMsg)
 				}
@@ -207,9 +207,7 @@ func (a *App) archiveFileRow(c *ui.Context, item model.Software, isBackup bool) 
 			})
 		})
 		if left.Clicked() {
-			if err := winutil.RevealInExplorer(item.ArchivePath); err != nil {
-				a.logAndToastError(tr.Error, err)
-			}
+			a.revealInExplorerAsync(item.ArchivePath, false)
 		}
 
 		// 右侧操作：还原 / 手动关联 / 删除

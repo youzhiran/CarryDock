@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -581,4 +582,27 @@ func (a *App) logAndToastError(title string, err error) {
 	}
 	logger.Error("%s: %v", title, err)
 	a.toast(title, err.Error())
+}
+
+func (a *App) openDirectoryAsync(dirPath string) {
+	go func(p string) {
+		if err := winutil.OpenDirectory(p); err != nil {
+			a.update(func() {
+				a.logAndToastError(a.tr().Error, err)
+			})
+		}
+	}(dirPath)
+}
+
+func (a *App) revealInExplorerAsync(filePath string, ensureParentDir bool) {
+	go func(p string, ensureParent bool) {
+		if ensureParent && strings.TrimSpace(p) != "" {
+			_ = os.MkdirAll(filepath.Dir(p), 0o755)
+		}
+		if err := winutil.RevealInExplorer(p); err != nil {
+			a.update(func() {
+				a.logAndToastError(a.tr().Error, err)
+			})
+		}
+	}(filePath, ensureParentDir)
 }

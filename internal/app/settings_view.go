@@ -255,7 +255,7 @@ func (a *App) settingsView(c *ui.Context) {
 							ui.Text(c, a.setConfigFilePath).FontSize(12).TextColor(t.TextMuted).Selectable()
 						})
 						if ui.Button(c.Key("set-open-cfg"), tr.SettingsOpenFileLocation).Clicked() {
-							_ = winutil.RevealInExplorer(a.setConfigFilePath)
+							a.revealInExplorerAsync(a.setConfigFilePath, true)
 						}
 					})
 				})
@@ -464,7 +464,8 @@ func (a *App) settingsView(c *ui.Context) {
 							ui.Text(c, a.setLogFilePath).FontSize(12).TextColor(t.TextMuted).Selectable()
 						})
 						if ui.Button(c.Key("set-open-log"), tr.SettingsOpenFileLocation).Clicked() {
-							_ = winutil.RevealInExplorer(a.setLogFilePath)
+							ensureDir := winutil.SamePath(filepath.Dir(a.setLogFilePath), filepath.Dir(a.setConfigFilePath))
+							a.revealInExplorerAsync(a.setLogFilePath, ensureDir)
 						}
 					})
 				})
