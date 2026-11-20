@@ -1,0 +1,15 @@
+{
+  "name": "CarryDock",
+  "slug": "carrydock",
+  "identifier": "com.devyi.carrydock",
+  "version": "0.9.0",
+  "icon": "resources/icon.png",
+  "out": "build",
+  "windows": {
+    "displayName": "绿驿管家",
+    "installDirName": "CarryDock"
+  },
+  "linux": {
+    "webview": false
+  }
+}

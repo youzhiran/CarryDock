@@ -1,0 +1,1030 @@
+package app
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"time"
+
+	"carrydock/internal/archive"
+	"carrydock/internal/i18n"
+	"carrydock/internal/logger"
+	"carrydock/internal/model"
+	"carrydock/internal/software"
+	"carrydock/internal/winutil"
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
+)
+
+func (a *App) reloadHome() {
+	a.homeLoading = true
+	a.homeNotConfigured = false
+	a.clearSoftwareCaches()
+
+	go func() {
+		list, err := a.softwareSvc.GetSoftwareList()
+		a.update(func() {
+			a.homeLoading = false
+			if errors.Is(err, software.ErrInstallPathNotConfigured) {
+				a.homeNotConfigured = true
+				a.managed = nil
+				a.unmanaged = nil
+				return
+			}
+			if err != nil {
+				a.logAndToastError(a.tr().Error, err)
+				return
+			}
+			var managed, unmanaged []model.Software
+			for _, s := range list {
+				switch s.Status {
+				case model.StatusManaged:
+					managed = append(managed, s)
+				case model.StatusUnknownInstall:
+					unmanaged = append(unmanaged, s)
+				}
+			}
+			a.managed = managed
+			a.unmanaged = unmanaged
+		})
+	}()
+}
+
+func (a *App) filteredSoftware(items []model.Software) []model.Software {
+	q := strings.ToLower(strings.TrimSpace(a.searchQuery))
+	if q == "" {
+		return items
+	}
+	out := make([]model.Software, 0, len(items))
+	for _, s := range items {
+		name := strings.ToLower(a.displayNameFor(s))
+		if strings.Contains(name, q) ||
+			strings.Contains(strings.ToLower(s.Name), q) ||
+			strings.Contains(strings.ToLower(s.InstallPath), q) ||
+			strings.Contains(strings.ToLower(filepath.Base(s.ExecutablePath)), q) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func (a *App) homeView(c *ui.Context) {
+	t := c.Theme()
+	tr := a.tr()
+
+	// 整个主页作为外部文件拖放接收区域
+	root := ui.Box(c).Fill()
+	if dropped := root.DroppedFiles(); len(dropped) > 0 {
+		a.handleDroppedPaths(dropped)
+	}
+	isDragOver := root.FileDragOver()
+
+	root.Children(func() {
+		ui.Column(c).Fill().Padding(20, 24).Gap(14).Children(func() {
+			// 顶部标题栏 + 工具条
+			a.homeHeaderBar(c)
+
+			// 排序模式提示条
+			if a.reorderMode {
+				ui.Row(c).Padding(8, 12).Radius(8).Background(t.Accent.Alpha(0.1)).
+					Border(1, t.Accent.Alpha(0.35)).Gap(8).AlignItems(ui.Center).Children(func() {
+					ui.Icon(c, iconSort).FontSize(15).TextColor(t.Accent)
+					ui.Text(c, tr.HomeReorderHint).FontSize(13).TextColor(t.Text).Grow(1)
+				})
+			}
+
+			// 主体内容
+			switch {
+			case a.homeLoading:
+				ui.Column(c).Grow(1).Center().Gap(10).Children(func() {
+					ui.Spinner(c).Size(28, 28)
+					ui.Text(c, tr.Loading).TextColor(t.TextMuted)
+				})
+
+			case a.homeNotConfigured:
+				ui.Column(c).Grow(1).Center().Gap(12).Children(func() {
+					ui.Icon(c, iconFolder).FontSize(40).TextColor(t.TextMuted)
+					ui.Text(c, tr.HomeConfigureInstallFirst).FontSize(16).Bold()
+					ui.Text(c, tr.HomeInstallDirNotConfigMsg).FontSize(13).TextColor(t.TextMuted)
+					if ui.PrimaryButton(c, tr.HomeGoToSettings).Clicked() {
+						a.requestNavigate(pageSettings)
+					}
+				})
+
+			case len(a.managed) == 0 && len(a.unmanaged) == 0:
+				ui.Column(c).Grow(1).Center().Gap(10).Children(func() {
+					ui.Icon(c, iconUpload).FontSize(40).TextColor(t.TextMuted)
+					ui.Text(c, tr.HomeNoSoftware).FontSize(16).Bold()
+					ui.Text(c, tr.HomeNoSoftwareHint).FontSize(13).TextColor(t.TextMuted)
+					ui.Row(c).Gap(8).Padding(6, 0, 0, 0).Children(func() {
+						if ui.PrimaryButton(c, tr.Add).Clicked() {
+							a.startAddSoftwarePicker()
+						}
+						if ui.Button(c, tr.HomeScanCurrentDir).Clicked() {
+							a.openScanConfirmModal()
+						}
+					})
+				})
+
+			case a.reorderMode:
+				a.homeReorderListView(c)
+
+			case a.useGrid:
+				a.homeGridContentView(c)
+
+			default:
+				a.homeListContentView(c)
+			}
+		})
+
+		// 拖放文件悬浮提示遮罩
+		if isDragOver {
+			ui.Column(c).Absolute().Top(12).Right(12).Bottom(12).Left(12).
+				Radius(12).Background(t.Background.Alpha(0.92)).Border(2, t.Accent).
+				Center().Gap(10).PassThrough().Children(func() {
+				ui.Icon(c, iconUpload).FontSize(36).TextColor(t.Accent)
+				ui.Text(c, tr.HomeDropToAdd).FontSize(18).Bold()
+				ui.Text(c, tr.HomeDropHint).FontSize(13).TextColor(t.TextMuted)
+			})
+		}
+	})
+}
+
+func (a *App) homeHeaderBar(c *ui.Context) {
+	t := c.Theme()
+	tr := a.tr()
+
+	ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, tr.HomeManagedSoftware).FontSize(22).Bold().SingleLine()
+		if len(a.managed) > 0 {
+			ui.Badge(c, fmt.Sprintf("%d", len(a.managed)))
+		}
+		ui.Spacer(c)
+
+		if a.reorderMode {
+			if ui.Button(c.Key("reorder-cancel"), tr.Cancel).Clicked() {
+				a.reorderMode = false
+				a.reloadHome()
+			}
+			if ui.PrimaryButton(c.Key("reorder-finish"), "").Children(func() {
+				ui.Icon(c, iconCheck).FontSize(14)
+				ui.Text(c, tr.Finish).SingleLine()
+			}).Clicked() {
+				a.saveCurrentOrder()
+			}
+			return
+		}
+
+		// 搜索框
+		ui.SearchField(c.Key("home-search"), &a.searchQuery).
+			Placeholder(tr.HomeSearchPlaceholder).Width(200)
+
+		// 切换列表 / 网格视图
+		viewIcon := iconGrid
+		viewTip := tr.HomeGridView
+		if a.useGrid {
+			viewIcon = iconList
+			viewTip = tr.HomeListView
+		}
+		if iconButton(c, "btn-view-mode", viewIcon, viewTip, false, false, nil).Clicked() {
+			a.useGrid = !a.useGrid
+			go func(v bool) {
+				if err := a.settingsSvc.SaveUseGridLayout(v); err != nil {
+					logger.Warn("保存布局偏好失败: %v", err)
+				}
+			}(a.useGrid)
+		}
+
+		// 排序模式（仅列表模式且有 >=2 项时可用）
+		if !a.useGrid && len(a.managed) > 1 {
+			if iconButton(c, "btn-reorder", iconSort, tr.HomeReorder, false, false, nil).Clicked() {
+				a.searchQuery = ""
+				a.reorderMode = true
+			}
+		}
+
+		// 刷新
+		if iconButton(c, "btn-refresh", iconRefresh, tr.Refresh, false, false, nil).Clicked() {
+			a.reloadHome()
+		}
+
+		// 打开安装目录
+		if iconButton(c, "btn-open-install", iconFolder, tr.HomeOpenInstallDir, false, false, nil).Clicked() {
+			a.openInstallDirectory()
+		}
+
+		// 更多菜单（扫描当前目录软件）
+		moreBtn := ui.ButtonBase(c.Key("btn-home-more")).Size(30, 30).Radius(6).Center().
+			Label(tr.HomeMoreActions).Tooltip(tr.HomeMoreActions)
+		if moreBtn.Hovered() {
+			moreBtn.Background(t.SurfaceHover)
+		}
+		moreBtn.Children(func() {
+			ui.Icon(c, iconMore).FontSize(15).TextColor(t.TextMuted)
+		})
+		moreBtn.PopoverMenuButton(func(m *ui.Menu) {
+			if m.Item(tr.HomeScanCurrentDir).Chosen() {
+				a.openScanConfirmModal()
+			}
+			if m.Item(tr.HomeOpenInstallDir).Chosen() {
+				a.openInstallDirectory()
+			}
+		}, ui.PopoverMenuButtonOptions{
+			At:   ui.AnchorBottomEnd,
+			Self: ui.AnchorTopEnd,
+		})
+
+		// 添加软件主按钮
+		if ui.PrimaryButton(c.Key("btn-add-sw"), "").Children(func() {
+			ui.Icon(c, iconPlus).FontSize(14)
+			ui.Text(c, tr.Add).SingleLine()
+		}).Clicked() {
+			a.startAddSoftwarePicker()
+		}
+	})
+}
+
+func (a *App) homeListContentView(c *ui.Context) {
+	t := c.Theme()
+	tr := a.tr()
+
+	managed := a.filteredSoftware(a.managed)
+	unmanaged := a.filteredSoftware(a.unmanaged)
+
+	ui.Scroll(c.Key("home-list-scroll")).TrackScroll(&a.homeScrollState).Grow(1).Children(func() {
+		ui.Column(c).Gap(6).Padding(0, 4, 16, 0).Children(func() {
+			for i := range managed {
+				a.softwareListRow(c, managed[i])
+			}
+
+			if len(unmanaged) > 0 {
+				ui.Row(c).Padding(14, 4, 4, 4).Gap(8).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, tr.HomeUnmanagedFolders).FontSize(13).Bold().TextColor(t.TextMuted)
+					ui.Badge(c, fmt.Sprintf("%d", len(unmanaged)))
+				})
+				for i := range unmanaged {
+					a.softwareListRow(c, unmanaged[i])
+				}
+			}
+		})
+	})
+}
+
+func (a *App) homeReorderListView(c *ui.Context) {
+	t := c.Theme()
+	tr := a.tr()
+
+	a.homeListState.Key = func(i int) any { return a.managed[i].ID }
+	a.homeListState.Label = func(i int) string { return a.displayNameFor(a.managed[i]) }
+	a.homeListState.Reorder = func(rows []int, to int) {
+		a.managed = reorderSlice(a.managed, rows, to)
+	}
+
+	ui.List(c.Key("home-reorder-list"), &a.homeListState, len(a.managed), func(i int) {
+		sw := a.managed[i]
+		canUp := i > 0
+		canDown := i < len(a.managed)-1
+
+		ui.Row(c.Key(sw.ID)).Padding(10, 12).Margin(0, 4, 6, 0).Radius(8).
+			Background(t.Surface).Border(1, t.Border).Gap(12).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, iconGrip).FontSize(16).TextColor(t.TextMuted)
+			a.renderSoftwareIcon(c, sw, 28)
+			ui.Column(c).Grow(1).Gap(2).Children(func() {
+				ui.Text(c, a.displayNameFor(sw)).FontSize(14).Bold().SingleLine()
+				ui.Text(c, sw.InstallPath).FontSize(11).TextColor(t.TextMuted).SingleLine()
+			})
+			idx := i
+			ui.ButtonBase(c.Key("up-"+sw.ID)).Size(28, 28).Radius(6).Center().
+				Disabled(!canUp).Tooltip(tr.HomeMoveUp).Label(tr.HomeMoveUp).
+				Children(func() { ui.Icon(c, iconUp).FontSize(15).TextColor(t.TextMuted) }).
+				OnClick(func() {
+					if idx > 0 {
+						a.managed[idx-1], a.managed[idx] = a.managed[idx], a.managed[idx-1]
+					}
+				})
+			ui.ButtonBase(c.Key("down-"+sw.ID)).Size(28, 28).Radius(6).Center().
+				Disabled(!canDown).Tooltip(tr.HomeMoveDown).Label(tr.HomeMoveDown).
+				Children(func() { ui.Icon(c, iconDown).FontSize(15).TextColor(t.TextMuted) }).
+				OnClick(func() {
+					if idx < len(a.managed)-1 {
+						a.managed[idx+1], a.managed[idx] = a.managed[idx], a.managed[idx+1]
+					}
+				})
+		})
+	}).Grow(1)
+}
+
+func (a *App) homeGridContentView(c *ui.Context) {
+	managed := a.filteredSoftware(a.managed)
+	unmanaged := a.filteredSoftware(a.unmanaged)
+	all := make([]model.Software, 0, len(managed)+len(unmanaged))
+	all = append(all, managed...)
+	all = append(all, unmanaged...)
+
+	ui.Scroll(c.Key("home-grid-scroll")).TrackScroll(&a.homeScrollState).Grow(1).Children(func() {
+		ui.Row(c).Wrap().Gap(14).Padding(0, 4, 16, 0).Children(func() {
+			for i := range all {
+				a.softwareGridCard(c, all[i])
+			}
+		})
+	})
+}
+
+func (a *App) softwareListRow(c *ui.Context, sw model.Software) {
+	t := c.Theme()
+	tr := a.tr()
+
+	title := a.displayNameFor(sw)
+	var subtitle string
+	titleColor := t.Text
+	switch sw.Status {
+	case model.StatusManaged:
+		if !sw.InstallExists {
+			subtitle = tr.HomeSoftwareDirDeleted
+			titleColor = t.Warning
+		} else {
+			subtitle = filepath.Base(sw.ExecutablePath)
+		}
+	case model.StatusUnknownInstall:
+		subtitle = tr.HomeUnknownFolder
+		titleColor = t.Warning
+	case model.StatusUnknownArchive:
+		subtitle = tr.HomeUnknownArchiveFile
+		titleColor = t.Warning
+	}
+
+	row := ui.Row(c.Key("row-"+sw.ID)).Padding(10, 14).Radius(10).
+		Background(t.Surface).Border(1, t.Border).Gap(12).AlignItems(ui.Center)
+	if row.Hovered() {
+		row.Background(t.SurfaceHover)
+	}
+
+	// 右键菜单
+	row.PopoverMenu(func(m *ui.Menu) {
+		a.buildSoftwareContextMenu(m, sw)
+	})
+
+	row.Children(func() {
+		// 左侧可点击启动区
+		launchArea := ui.Row(c.Key("launch-" + sw.ID)).Grow(1).MinWidth(0).Gap(12).AlignItems(ui.Center).
+			Cursor(ui.CursorPointer)
+		launchArea.Children(func() {
+			a.renderSoftwareIcon(c, sw, 34)
+			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+				ui.Text(c, title).FontSize(14).Bold().TextColor(titleColor).SingleLine()
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, subtitle).FontSize(12).TextColor(t.TextMuted).SingleLine().Shrink(0)
+					if sw.InstallPath != "" {
+						ui.Text(c, "·").FontSize(12).TextColor(t.TextMuted).Shrink(0)
+						ui.Text(c, sw.InstallPath).FontSize(11).TextColor(t.TextMuted).SingleLine().Grow(1).MinWidth(0)
+					}
+				})
+			})
+		})
+		if launchArea.Clicked() && sw.Status == model.StatusManaged {
+			a.launchSoftware(sw, "")
+		}
+
+		// 右侧状态徽章 + 快捷操作
+		ui.Row(c).Gap(6).Shrink(0).AlignItems(ui.Center).Children(func() {
+			canRehost := (sw.Status == model.StatusUnknownInstall ||
+				(sw.Status == model.StatusManaged && !sw.InstallExists)) &&
+				(sw.ArchiveExists || sw.IsBackupArchive)
+
+			if sw.Status == model.StatusManaged {
+				// 归档状态徽章（绿/红）
+				archColor := t.Danger
+				archTip := tr.TileArchiveNotExists
+				if sw.ArchiveExists {
+					archColor = t.Success
+					archTip = tr.TileArchiveExists
+				}
+				statusPill(c, iconArchive, archColor, archTip)
+
+				// 备份状态徽章（蓝/灰）
+				bakColor := t.TextMuted
+				bakTip := tr.TileBackupNotDetected
+				if sw.IsBackupArchive {
+					bakColor = t.Accent
+					bakTip = tr.TileBackupDetected
+				}
+				statusPill(c, iconRestore, bakColor, bakTip)
+
+				// 备选程序启动按钮
+				var alternatives []string
+				altLoading := false
+				if sw.InstallExists {
+					if alt := a.ensureAltExecutables(sw.InstallPath); alt != nil {
+						altLoading = alt.loading
+						for _, p := range alt.paths {
+							if sw.ExecutablePath == "" || !winutil.SamePath(p, sw.ExecutablePath) {
+								alternatives = append(alternatives, p)
+							}
+						}
+					}
+				}
+				if altLoading {
+					ui.Box(c).Size(30, 30).Center().Children(func() {
+						ui.Spinner(c).Size(14, 14)
+					})
+				} else if len(alternatives) > 0 {
+					altBtn := ui.ButtonBase(c.Key("alt-"+sw.ID)).Size(30, 30).Radius(6).Center().
+						Label(tr.TileLaunchOther).Tooltip(tr.TileLaunchOther)
+					if altBtn.Hovered() {
+						altBtn.Background(t.SurfaceHover)
+					}
+					altBtn.Children(func() {
+						ui.Icon(c, iconTerminal).FontSize(15).TextColor(t.TextMuted)
+					})
+					altsCopy := slices.Clone(alternatives)
+					swCopy := sw
+					altBtn.PopoverMenuButton(func(m *ui.Menu) {
+						for _, altPath := range altsCopy {
+							if m.Item(filepath.Base(altPath)).ID(altPath).Chosen() {
+								a.launchSoftware(swCopy, altPath)
+							}
+						}
+					}, ui.PopoverMenuButtonOptions{
+						At:   ui.AnchorBottomEnd,
+						Self: ui.AnchorTopEnd,
+					})
+				} else {
+					ui.Box(c).Size(30, 30)
+				}
+
+				// 重新托管 或 更改主程序
+				if canRehost {
+					green := t.Success
+					if iconButton(c, "rehost-"+sw.ID, iconRefresh, tr.HomeRehost, false, false, &green).Clicked() {
+						a.startRehostSoftware(sw)
+					}
+				} else {
+					canChange := !altLoading && len(alternatives) > 0
+					tip := tr.HomeChangeExecutable
+					if altLoading {
+						tip = tr.HomeScanning
+					} else if !sw.InstallExists {
+						tip = tr.HomeSoftwareDirDeleted
+					} else if !canChange {
+						tip = tr.HomeOnlyOneExecutableFound
+					}
+					if iconButton(c, "edit-exe-"+sw.ID, iconEdit, tip, !canChange, false, nil).Clicked() {
+						a.openChangeExecutableModal(sw)
+					}
+				}
+			} else if canRehost {
+				green := t.Success
+				if iconButton(c, "rehost-"+sw.ID, iconRefresh, tr.HomeRehost, false, false, &green).Clicked() {
+					a.startRehostSoftware(sw)
+				}
+			}
+
+			// 删除按钮
+			if iconButton(c, "del-"+sw.ID, iconTrash, tr.Delete, false, true, nil).Clicked() {
+				a.openDeleteSoftwareModal(sw)
+			}
+		})
+	})
+}
+
+func (a *App) softwareGridCard(c *ui.Context, sw model.Software) {
+	t := c.Theme()
+	tr := a.tr()
+
+	title := a.displayNameFor(sw)
+	titleColor := t.Text
+	var badgeText string
+	if sw.Status == model.StatusManaged && !sw.InstallExists {
+		titleColor = t.Warning
+		badgeText = tr.HomeSoftwareDirDeleted
+	} else if sw.Status == model.StatusUnknownInstall {
+		titleColor = t.Warning
+		badgeText = tr.HomeUnknownFolder
+	}
+
+	card := ui.Column(c.Key("grid-"+sw.ID)).Size(172, 168).Padding(14, 12).Radius(12).
+		Background(t.Surface).Border(1, t.Border).Center().Gap(10).Cursor(ui.CursorPointer)
+	if card.Hovered() {
+		card.Background(t.SurfaceHover).Border(1, t.Accent.Alpha(0.5))
+	}
+	card.PopoverMenu(func(m *ui.Menu) {
+		a.buildSoftwareContextMenu(m, sw)
+	})
+	card.Children(func() {
+		a.renderSoftwareIcon(c, sw, 48)
+		ui.Text(c, title).FontSize(13).Bold().TextColor(titleColor).TextAlign(ui.Center).MaxLines(2)
+		if badgeText != "" {
+			ui.Text(c, badgeText).FontSize(11).TextColor(t.Warning).SingleLine()
+		} else if sw.Status == model.StatusManaged {
+			ui.Row(c).Gap(6).Center().Children(func() {
+				archColor := t.Danger
+				if sw.ArchiveExists {
+					archColor = t.Success
+				}
+				ui.Box(c).Size(8, 8).Radius(4).Background(archColor)
+				bakColor := t.TextMuted.Alpha(0.35)
+				if sw.IsBackupArchive {
+					bakColor = t.Accent
+				}
+				ui.Box(c).Size(8, 8).Radius(4).Background(bakColor)
+			})
+		}
+	})
+	if card.Clicked() && sw.Status == model.StatusManaged {
+		a.launchSoftware(sw, "")
+	}
+}
+
+func statusPill(c *ui.Context, ico *ui.SVG, color ui.Color, tooltip string) {
+	ui.Box(c).Height(26).Padding(0, 7).Radius(6).
+		Background(color.Alpha(0.12)).Border(1, color.Alpha(0.45)).
+		Center().Tooltip(tooltip).Children(func() {
+		ui.Icon(c, ico).FontSize(13).TextColor(color)
+	})
+}
+
+func (a *App) buildSoftwareContextMenu(m *ui.Menu, sw model.Software) {
+	tr := a.tr()
+	swCopy := sw
+
+	if swCopy.Status == model.StatusManaged && swCopy.InstallExists && swCopy.ExecutablePath != "" {
+		if m.Item(tr.Open).Chosen() {
+			a.launchSoftware(swCopy, "")
+		}
+		m.Separator()
+	}
+
+	if m.Item(tr.TileOpenFolder).Disabled(swCopy.InstallPath == "").Chosen() {
+		a.openSoftwareInstallDir(swCopy)
+	}
+	if swCopy.Status == model.StatusManaged {
+		if m.Item(tr.TileChangeFolder).Disabled(!swCopy.InstallExists).Chosen() {
+			a.openRenameFolderModal(swCopy)
+		}
+		if m.Item(tr.TileCreateBackup).Disabled(!swCopy.InstallExists).Chosen() {
+			a.runCreateBackupForSoftware(swCopy)
+		}
+		if m.Item(tr.TileAddToStartMenu).Disabled(swCopy.ExecutablePath == "" || !swCopy.InstallExists).Chosen() {
+			a.runAddToStartMenu(swCopy)
+		}
+		if m.Item(tr.TileOpenArchiveFolder).Disabled(swCopy.ArchivePath == "").Chosen() {
+			a.openSoftwareArchiveDir(swCopy)
+		}
+		if !swCopy.InstallExists && (swCopy.ArchiveExists || swCopy.IsBackupArchive) {
+			if m.Item(tr.HomeRehost).Chosen() {
+				a.startRehostSoftware(swCopy)
+			}
+		} else if swCopy.InstallExists {
+			if m.Item(tr.HomeChangeExecutable).Chosen() {
+				a.openChangeExecutableModal(swCopy)
+			}
+		}
+	}
+	m.Separator()
+	if m.Item(tr.Delete).Danger().Chosen() {
+		a.openDeleteSoftwareModal(swCopy)
+	}
+}
+
+// --- 主页动作方法 ---
+
+func (a *App) startAddSoftwarePicker() {
+	if a.settingsSvc.GetInstallPath() == "" {
+		a.showInfo(a.tr().HomeInstallDirNotConfig, a.tr().HomeInstallDirNotConfigMsg)
+		return
+	}
+	exts := append(slices.Clone(archive.PickerExtensions), a.settingsSvc.GetExecutableExtensions()...)
+	win := a.win
+	title := a.tr().Add
+
+	go func() {
+		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+			Parent:   win,
+			Title:    title,
+			Multiple: true,
+			Filters: []mygo.FileFilter{
+				{Name: "Archives & Executables", Extensions: exts},
+			},
+		})
+		if err != nil || len(paths) == 0 {
+			return
+		}
+		a.update(func() {
+			a.addFilesSequentially(paths)
+		})
+	}()
+}
+
+func (a *App) handleDroppedPaths(paths []string) {
+	if a.settingsSvc.GetInstallPath() == "" {
+		a.showInfo(a.tr().HomeInstallDirNotConfig, a.tr().HomeInstallDirNotConfigMsg)
+		return
+	}
+	allowedExecs := a.settingsSvc.GetExecutableExtensions()
+	var valid []string
+	seen := make(map[string]bool)
+
+	for _, p := range paths {
+		info, err := os.Stat(p)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		key := strings.ToLower(filepath.Clean(p))
+		if seen[key] {
+			continue
+		}
+		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(p)), ".")
+		if archive.DetectFormat(p) != archive.FormatUnknown || slices.Contains(allowedExecs, ext) {
+			seen[key] = true
+			valid = append(valid, p)
+		}
+	}
+	if len(valid) == 0 {
+		a.showInfo(a.tr().HomeUnrecognizedDropTitle, a.tr().HomeUnrecognizedDropMsg)
+		return
+	}
+	a.addFilesSequentially(valid)
+}
+
+func (a *App) addFilesSequentially(paths []string) {
+	if len(paths) == 0 {
+		return
+	}
+	// 先处理首个文件（如遇多可执行文件/重复冲突将弹出交互弹窗）
+	a.runAddFile(paths[0], false)
+}
+
+func (a *App) runAddFile(filePath string, fromArchiveManager bool) {
+	a.busyOpen = true
+	a.busyMsg = a.tr().HomeProcessingFiles
+
+	go func() {
+		res := a.softwareSvc.AddSoftwareFromFile(filePath)
+		a.update(func() {
+			a.busyOpen = false
+			a.handleAddResult(res, fromArchiveManager)
+		})
+	}()
+}
+
+func (a *App) handleAddResult(res software.AddResult, fromArchiveManager bool) {
+	tr := a.tr()
+	switch res.Type {
+	case software.AddSuccess:
+		a.toast(tr.Success, "")
+		if fromArchiveManager {
+			a.reloadArchives()
+		} else {
+			a.reloadHome()
+		}
+	case software.AddNeedsSelection:
+		if res.PendingAddition == nil {
+			return
+		}
+		a.selectExeMode = "add"
+		a.selectExePending = res.PendingAddition
+		a.selectExePaths = res.PendingAddition.ExecutablePaths
+		if len(a.selectExePaths) > 0 {
+			a.selectExeChoice = a.selectExePaths[0]
+		}
+		a.selectExeOpen = true
+	case software.AddDuplicate:
+		if res.DuplicateInfo == nil {
+			return
+		}
+		a.dupInfo = res.DuplicateInfo
+		a.dupRename = a.suggestAlternativeName(res.DuplicateInfo.IntendedName)
+		a.dupFromArchiveManager = fromArchiveManager
+		a.dupModalOpen = true
+	case software.AddError:
+		if errors.Is(res.Err, software.ErrInstallPathNotConfigured) {
+			a.showInfo(tr.HomeInstallDirNotConfig, tr.HomeInstallDirNotConfigMsg)
+		} else if res.Err != nil {
+			a.showInfo(tr.Error, res.Err.Error())
+		}
+	}
+}
+
+func (a *App) suggestAlternativeName(baseName string) string {
+	tr := a.tr()
+	if strings.TrimSpace(baseName) == "" {
+		return fmt.Sprintf("%s%d", tr.HomeNewSoftware, time.Now().UnixMilli())
+	}
+	if !strings.HasSuffix(baseName, tr.HomeCopySuffix) {
+		return baseName + tr.HomeCopySuffix
+	}
+	return fmt.Sprintf("%s_%d", baseName, time.Now().Unix()%10000)
+}
+
+func (a *App) startRehostSoftware(sw model.Software) {
+	a.busyOpen = true
+	a.busyMsg = a.tr().HomeRestoring
+
+	go func() {
+		res := a.softwareSvc.RehostSoftware(sw)
+		a.update(func() {
+			a.busyOpen = false
+			switch res.Type {
+			case software.AddSuccess:
+				a.toast(a.tr().Success, sw.Name)
+				a.reloadHome()
+			case software.AddNeedsSelection:
+				if res.PendingAddition != nil {
+					a.selectExeMode = "rehost"
+					a.selectExePending = res.PendingAddition
+					a.selectExePaths = res.PendingAddition.ExecutablePaths
+					if len(a.selectExePaths) > 0 {
+						a.selectExeChoice = a.selectExePaths[0]
+					}
+					a.selectExeOpen = true
+				}
+			case software.AddError:
+				if res.Err != nil {
+					a.showInfo(a.tr().Error, res.Err.Error())
+				}
+			}
+		})
+	}()
+}
+
+func (a *App) openChangeExecutableModal(sw model.Software) {
+	execs := a.softwareSvc.FindExecutablesInDirectory(sw.InstallPath)
+	if len(execs) <= 1 {
+		a.showInfo(a.tr().HomeChangeExecutable, a.tr().HomeOnlyOneExecutableFound)
+		return
+	}
+	a.selectExeMode = "change"
+	a.selectExeTargetID = sw.ID
+	a.selectExePaths = execs
+	a.selectExeChoice = sw.ExecutablePath
+	if a.selectExeChoice == "" {
+		a.selectExeChoice = execs[0]
+	}
+	a.selectExeOpen = true
+}
+
+func (a *App) launchSoftware(sw model.Software, altExePath string) {
+	tr := a.tr()
+	target := sw.ExecutablePath
+	if altExePath != "" {
+		target = altExePath
+	}
+	if st, err := os.Stat(sw.InstallPath); err != nil || !st.IsDir() {
+		if sw.ArchiveExists || sw.IsBackupArchive {
+			a.showInfo(tr.HomeCannotLaunchTitle, tr.HomeCannotLaunchMissingDir)
+		} else {
+			a.showInfo(tr.HomeCannotLaunchTitle, tr.HomeCannotLaunchNoArchive)
+		}
+		return
+	}
+	if sw.Status != model.StatusManaged || target == "" {
+		a.showInfo(tr.HomeCannotLaunchTitle, tr.HomeCannotLaunchNoExe)
+		return
+	}
+	logger.Info("启动软件: %s -> %s", sw.Name, target)
+	if err := winutil.LaunchExecutable(target, sw.InstallPath); err != nil {
+		logger.Error("启动软件失败 (%s): %v", sw.Name, err)
+		a.showInfo(tr.HomeLaunchFailedTitle, err.Error())
+	}
+}
+
+func (a *App) openInstallDirectory() {
+	tr := a.tr()
+	installPath := a.settingsSvc.GetInstallPath()
+	if installPath == "" {
+		a.showInfo(tr.HomeInstallDirNotConfig, tr.HomeInstallDirNotConfigMsg)
+		return
+	}
+	if st, err := os.Stat(installPath); err != nil || !st.IsDir() {
+		a.showInfo(tr.HomeDirNotExistTitle, installPath)
+		return
+	}
+	if err := winutil.OpenDirectory(installPath); err != nil {
+		a.logAndToastError(tr.Error, err)
+	}
+}
+
+func (a *App) openSoftwareInstallDir(sw model.Software) {
+	tr := a.tr()
+	if sw.InstallPath == "" {
+		a.toast(tr.Warning, tr.TileNoInstallDir)
+		return
+	}
+	if st, err := os.Stat(sw.InstallPath); err != nil || !st.IsDir() {
+		a.toast(tr.Warning, sw.InstallPath)
+		return
+	}
+	if err := winutil.OpenDirectory(sw.InstallPath); err != nil {
+		a.logAndToastError(tr.Error, err)
+	}
+}
+
+func (a *App) openSoftwareArchiveDir(sw model.Software) {
+	tr := a.tr()
+	if sw.ArchivePath == "" {
+		a.toast(tr.Warning, tr.TileNoArchive)
+		return
+	}
+	if err := winutil.RevealInExplorer(sw.ArchivePath); err != nil {
+		a.toast(tr.Warning, tr.TileArchiveNotFound)
+	}
+}
+
+func (a *App) openRenameFolderModal(sw model.Software) {
+	a.renameTarget = sw
+	a.renameInput = filepath.Base(sw.InstallPath)
+	a.renameModalOpen = true
+}
+
+func (a *App) openDeleteSoftwareModal(sw model.Software) {
+	a.deleteTarget = sw
+	a.deleteIsArchiveMgr = false
+	a.deleteIsBackup = false
+	a.deleteInstallDir = sw.Status == model.StatusUnknownInstall
+	a.deleteArchive = sw.Status == model.StatusUnknownArchive
+	a.deleteModalOpen = true
+}
+
+func (a *App) runCreateBackupForSoftware(sw model.Software) {
+	tr := a.tr()
+	a.busyOpen = true
+	a.busyMsg = tr.TileCreatingBackup
+
+	go func() {
+		created, err := a.softwareSvc.CreateBackupForSoftware(sw)
+		a.update(func() {
+			a.busyOpen = false
+			if err != nil {
+				a.showInfo(tr.Error, err.Error())
+				return
+			}
+			a.toast(tr.Success, i18n.Fmt(tr.TileBackupCreatedFmt, filepath.Base(created)))
+			a.reloadHome()
+		})
+	}()
+}
+
+func (a *App) runAddToStartMenu(sw model.Software) {
+	tr := a.tr()
+	displayName := a.displayNameFor(sw)
+	if sw.ExecutablePath == "" {
+		a.toast(tr.Warning, tr.TileNoExecutable)
+		return
+	}
+
+	go func() {
+		startMenuDir, err := winutil.StartMenuDir()
+		if err != nil {
+			a.update(func() { a.showInfo(tr.Error, i18n.Fmt(tr.TileAddToStartMenuErrFmt, err.Error())) })
+			return
+		}
+		// 若开始菜单内尚无绿驿管家自身快捷方式，一并补建
+		if selfExe, exeErr := os.Executable(); exeErr == nil {
+			selfLnk := filepath.Join(startMenuDir, tr.AppName+".lnk")
+			if _, statErr := os.Stat(selfLnk); errors.Is(statErr, os.ErrNotExist) {
+				_ = winutil.CreateShortcut(selfExe, selfLnk, tr.AppName)
+			}
+		}
+
+		safeName := software.SanitizeSoftwareName(displayName)
+		lnkPath := filepath.Join(startMenuDir, safeName+".lnk")
+		err = winutil.CreateShortcut(sw.ExecutablePath, lnkPath, displayName)
+		a.update(func() {
+			if err != nil {
+				a.showInfo(tr.Error, i18n.Fmt(tr.TileAddToStartMenuErrFmt, err.Error()))
+				return
+			}
+			a.toast(tr.Success, i18n.Fmt(tr.TileAddedToStartMenuFmt, displayName))
+		})
+	}()
+}
+
+func (a *App) saveCurrentOrder() {
+	ids := make([]string, len(a.managed))
+	for i, s := range a.managed {
+		ids[i] = s.ID
+	}
+	go func() {
+		err := a.softwareSvc.UpdateManagedSoftwareOrder(ids)
+		a.update(func() {
+			a.reorderMode = false
+			if err != nil {
+				a.logAndToastError(a.tr().Error, err)
+				return
+			}
+			a.toast(a.tr().Success, a.tr().HomeReorderSave)
+			a.reloadHome()
+		})
+	}()
+}
+
+func (a *App) openScanConfirmModal() {
+	if a.settingsSvc.GetInstallPath() == "" {
+		a.showInfo(a.tr().HomeInstallDirNotConfig, a.tr().HomeInstallDirNotConfigMsg)
+		return
+	}
+	backupDir, _ := a.softwareSvc.ResolveBackupDirectoryPath()
+	a.scanBackupDirText = backupDir
+	a.scanCreateBackup = true
+	a.scanConfirmOpen = true
+}
+
+func (a *App) startBatchScan() {
+	createBackup := a.scanCreateBackup
+	a.scanConfirmOpen = false
+	a.scanProgressOpen = true
+	a.scanDone = 0
+	a.scanTotal = 0
+	a.scanCurrent = ""
+
+	go func() {
+		summary, err := a.softwareSvc.ArchiveInstallSubdirectories(createBackup, func(done, total int, current string) {
+			a.update(func() {
+				a.scanDone = done
+				a.scanTotal = total
+				a.scanCurrent = current
+			})
+		})
+		a.update(func() {
+			a.scanProgressOpen = false
+			if err != nil {
+				a.showInfo(a.tr().Error, err.Error())
+				return
+			}
+			tr := a.tr()
+			var sb strings.Builder
+			sb.WriteString(i18n.Fmt(tr.ScanSummaryInstallFmt, summary.InstallDirPath) + "\n")
+			sb.WriteString(i18n.Fmt(tr.ScanSummaryArchiveFmt, summary.ArchiveDirPath) + "\n")
+			sb.WriteString(i18n.Fmt(tr.ScanSummaryTotalFmt, summary.Total) + "\n")
+			sb.WriteString(i18n.Fmt(tr.ScanSummaryArchivedFmt, len(summary.Archived)) + "\n")
+			sb.WriteString(i18n.Fmt(tr.ScanSummarySkippedFmt, len(summary.SkippedExisting)) + "\n")
+			sb.WriteString(i18n.Fmt(tr.ScanSummaryFailedFmt, len(summary.Failures)))
+			if len(summary.Failures) > 0 {
+				sb.WriteString("\n")
+				limit := min(5, len(summary.Failures))
+				for i := range limit {
+					f := summary.Failures[i]
+					sb.WriteString(fmt.Sprintf("- %s: %s\n", f.Name, f.Error))
+				}
+				if len(summary.Failures) > 5 {
+					sb.WriteString(i18n.Fmt(tr.ScanSummaryMoreFmt, len(summary.Failures)-5))
+				}
+			}
+
+			if len(summary.Suggestions) > 0 {
+				a.assocSuggestions = summary.Suggestions
+				a.assocEnabled = make(map[string]bool, len(summary.Suggestions))
+				a.assocSelected = make(map[string]string, len(summary.Suggestions))
+				for _, s := range summary.Suggestions {
+					a.assocEnabled[s.InstallPath] = true
+					if len(s.Candidates) > 0 {
+						a.assocSelected[s.InstallPath] = s.Candidates[0]
+					}
+				}
+				a.assocCreateBackup = createBackup
+				a.assocSummaryText = sb.String()
+				a.assocModalOpen = true
+			} else {
+				a.showInfo(tr.ScanSummaryTitle, sb.String())
+				a.reloadHome()
+			}
+		})
+	}()
+}
+
+// reorderSlice 将 rows 中的元素按原相对顺序移动到位置 to 之前（兼容 MyGo ListState.Reorder 语义）。
+func reorderSlice[T any](items []T, rows []int, to int) []T {
+	if len(rows) == 0 || len(items) == 0 {
+		return items
+	}
+	inRows := make(map[int]bool, len(rows))
+	for _, r := range rows {
+		inRows[r] = true
+	}
+	var moved, rest []T
+	insertAt := to
+	for i, item := range items {
+		if inRows[i] {
+			moved = append(moved, item)
+			if i < to {
+				insertAt--
+			}
+		} else {
+			rest = append(rest, item)
+		}
+	}
+	if insertAt < 0 {
+		insertAt = 0
+	}
+	if insertAt > len(rest) {
+		insertAt = len(rest)
+	}
+	out := make([]T, 0, len(items))
+	out = append(out, rest[:insertAt]...)
+	out = append(out, moved...)
+	out = append(out, rest[insertAt:]...)
+	return out
+}

@@ -2,43 +2,37 @@
 
 ## 项目结构与模块组织
 
-- `lib/` 按职能拆分：`screens/` 承载导航与可视层，建议按业务模块继续分子目录，保持 UI 与逻辑解耦。
-- `widgets/` 存放复用组件，编写时同步补充文档注释，示例放在临时 `example` 分支或
-  `test/widget_test.dart` 中。
-- 状态与数据交互集中在 `providers/`、`services/`，模型定义保存在 `lib/models/`，工具函数放 `lib/utils/`
-  ，这些层尽量保持可测试与平台无关。
-- 测试位于 `test/`，与 `lib/` 保持镜像结构，命名遵循 `{feature}_test.dart`，便于快速定位覆盖空白。
-- 静态资产可放置在 `assets/`（如需新增），记得同步更新 `pubspec.yaml` 的 `flutter.assets` 配置。
-- 平台工程分别在 `linux/`、`macos/`、`windows/`，涉及原生插件或渠道配置时务必在对应目录记录改动说明。
-- `build/` 与生成产物不应提交，确保 `.gitignore` 规则与 CI 环境一致，减少冲突。
+本项目已采用 **Go + [MyGo](https://mygo.run/zh/docs/ui) 原生 GPU UI** 重写，纯 Go 实现（`CGO_ENABLED=0`，无需 WebView2 或前端构建）。
+
+- `main.go`：应用入口，负责初始化日志、配置、核心服务及 MyGo 主窗口。
+- `mygo.json`：MyGo 应用打包与元数据配置（图标位于 `resources/icon.png`）。
+- `internal/app/`：MyGo 原生 UI 视图层与交互状态：
+  - `app.go`：主窗口框架、主题、标题栏、可折叠侧边栏与异步图标/元数据缓存。
+  - `home_view.go`：主页（软件列表/网格、拖拽添加、拖拽/箭头排序、右键菜单、批量扫描）。
+  - `archive_view.go`：归档管理页（归档与备份列表、手动关联、还原、创建备份、删除）。
+  - `settings_view.go`：设置页（存储、归档处理、7-Zip 检测、可执行识别、外观字体/语言、文件日志、关于与更新）。
+  - `dev_view.go`：开发者选项页（图标与文件说明提取测试）。
+  - `modals.go`：全部原生模态对话框集中管理。
+  - `icons.go`：内置矢量 SVG 图标集。
+- `internal/software/`：核心业务层（托管列表读写、压缩包解压与扁平化、去重冲突、重新托管、重命名、批量扫描归档）。
+- `internal/archive/`：多格式流式归档解压（ZIP/TAR/GZ/BZ2/XZ/RAR/7Z）、Zip-Slip 防护、GB18030 中文文件名兼容与 7-Zip 检测。
+- `internal/settings/` & `internal/storage/`：跨进程文件锁保护、原子写入的 JSON 配置存储（完全兼容旧版 `data/app_data.json`）。
+- `internal/winutil/`：纯 Go Win32 API 交互（`version.dll` 文件说明、`ExtractIconExW`/`DrawIconEx`、`ShellExecuteW` 启动、`LockFileEx` 锁、开始菜单 `.lnk` 快捷方式、7-Zip 注册表查询）。
+- `internal/updater/`：GitHub Releases 更新检查、可取消流式下载（支持系统代理）与安全自更新。
+- `internal/i18n/`：中英文双语界面文案。
+- `internal/logger/`：控制台与纯文本文件日志（支持运行时热切换）。
 
 ## 构建、测试与开发命令
 
-- 由于正在使用wsl环境，暂时不要运行dart/flutter相关命令。
+- 开发运行：`go tool mygo dev` 或 `go run -tags mygo_nowebview .`
+- 单元测试与 UI 测试：`go test ./...`
+- 静态检查：`go vet ./...` 与 `go tool mygo vet`
+- 发布构建（Windows 无 WebView 精简版）：
+  - `go build -tags mygo_nowebview -ldflags "-H=windowsgui -s -w" -o CarryDock.exe .`
+  - 或使用 `GOFLAGS=-tags=mygo_nowebview go tool mygo build -platform windows/amd64`
 
-## 编码风格与命名约定
+## 编码规范
 
-- 遵循 Flutter 默认 2 空格缩进，行宽控制在 100 列内，超出需拆分表达式。
-- 命名遵循驼峰：类使用帕斯卡命名，方法与变量使用小驼峰，常量前缀 `k` 并以功能补充后缀。
-- UI 组件文件命名推荐 `feature_purpose.dart`，状态管理文件命名 `feature_provider.dart`，服务端交互命名
-  `feature_service.dart`。
-- `analysis_options.yaml` 已启用官方 lint，切勿屏蔽规则；如需例外，请在 PR 中写明理由。
-- 重要逻辑需补充中文文档注释，说明参数含义、前置条件与返回值，提升协作效率。
-- 避免在 widget 中直接维护全局状态，改由 Provider 或 Riverpod 管理，确保可测性与可扩展性。
-
-## 提交与合并规范
-
-- 保持 Git 历史的简洁中文短语风格（示例：`修复拖拽逻辑`、`补全状态同步`），首字使用动词，突出动作与对象。
-- 每个 PR 包含：变更说明（含核心改动与风险）、测试结果、关联 Issue 链接；若涉及 UI，附上前后对比截图或录屏。
-- 遵循小步提交策略：配置、逻辑、资源分别提交，减少回溯成本；必要时在描述中标注依赖顺序。
-- 请求评审前需通过 `flutter analyze` 与 `flutter test`，并在 PR 描述中确认已覆盖的验证步骤。
-- 被指派评审者响应前可先自检，使用 checklist（分析、测试、文档）确保内容齐备。
-- 分支命名推荐 `feature/<topic>`、`fix/<issue>`、`chore/<task>`，方便 CI 与发布流水线自动识别。
-
-## 安全与配置提示
-
-- 不在仓库中保存敏感凭据，将密钥与 API Token 置于本地 `.env` 或系统变量，通过 `--dart-define` 注入运行时。
-- 更新 `pubspec.yaml` 中第三方库时评估 `changelog` 与兼容性，必要时记录迁移步骤和回滚策略。
-- 保持日志聚焦调试所需信息，发布版本关闭 `debugPrint`，避免泄露用户或业务数据。
-- 若引入后端接口，使用 `services/` 层统一封装请求，并记录超时与重试策略，便于性能追踪。
-- 配置 `devtools_options.yaml` 优化调试体验，可在 PR 中共享推荐设置，促进团队一致性。
+- 遵循标准 `gofmt` 与 Go 惯例；避免在结构或 goroutine 中保存 `ui.Element` 临时构建值。
+- 后台耗时操作（IO、解压、网络、系统对话框）一律在 goroutine 中执行，通过 `win.Update(...)` 回到主线程更新 UI 状态。
+- 重要逻辑保持清晰简洁的中文注释。
