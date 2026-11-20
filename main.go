@@ -15,7 +15,7 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-//go:embed resources/icon.png
+//go:embed assets/icon.png
 var appIconPNG []byte
 
 func main() {

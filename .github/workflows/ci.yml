@@ -39,13 +39,17 @@ jobs:
           $ver = $verParts[0]
           $buildNum = if ($verParts.Length -gt 1) { $verParts[1] } else { "105" }
 
+          # 同步版本号到 mygo.json（用于 Windows PE 版本信息）和 internal/version
+          $cfg = Get-Content mygo.json -Raw | ConvertFrom-Json
+          $cfg.version = $ver
+          $cfg | ConvertTo-Json -Depth 10 | Set-Content mygo.json -Encoding UTF8
+
           $env:CGO_ENABLED = "0"
-          $ldflags = "-H=windowsgui -s -w -X carrydock/internal/version.Version=$ver -X carrydock/internal/version.BuildNumber=$buildNum -X 'carrydock/internal/version.BuildTime=$now'"
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          go build -tags mygo_nowebview -ldflags $ldflags -o dist/CarryDock.exe .
+          $env:GOFLAGS = "-tags=mygo_nowebview"
+          go tool mygo build -platform windows/amd64 -skip-installer -o dist
 
           $zipName = "carrydock-v${ver}+${buildNum}.zip"
-          Compress-Archive -Path dist/CarryDock.exe -DestinationPath $zipName -Force
+          Compress-Archive -Path dist/windows-amd64/CarryDock.exe -DestinationPath $zipName -Force
           echo "zip_file=$zipName" >> $env:GITHUB_OUTPUT
           echo "version=$ver" >> $env:GITHUB_OUTPUT
           echo "build_num=$buildNum" >> $env:GITHUB_OUTPUT

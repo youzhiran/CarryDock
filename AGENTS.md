@@ -5,7 +5,7 @@
 本项目已采用 **Go + [MyGo](https://mygo.run/zh/docs/ui) 原生 GPU UI** 重写，纯 Go 实现（`CGO_ENABLED=0`，无需 WebView2 或前端构建）。
 
 - `main.go`：应用入口，负责初始化日志、配置、核心服务及 MyGo 主窗口。
-- `mygo.json`：MyGo 应用打包与元数据配置（图标位于 `resources/icon.png`）。
+- `mygo.json`：MyGo 应用打包与元数据配置（图标位于 `assets/icon.png`）。
 - `internal/app/`：MyGo 原生 UI 视图层与交互状态：
   - `app.go`：主窗口框架、主题、标题栏、可折叠侧边栏与异步图标/元数据缓存。
   - `home_view.go`：主页（软件列表/网格、拖拽添加、拖拽/箭头排序、右键菜单、批量扫描）。
@@ -27,9 +27,9 @@
 - 开发运行：`go tool mygo dev` 或 `go run -tags mygo_nowebview .`
 - 单元测试与 UI 测试：`go test ./...`
 - 静态检查：`go vet ./...` 与 `go tool mygo vet`
-- 发布构建（Windows 无 WebView 精简版）：
-  - `go build -tags mygo_nowebview -ldflags "-H=windowsgui -s -w" -o CarryDock.exe .`
-  - 或使用 `GOFLAGS=-tags=mygo_nowebview go tool mygo build -platform windows/amd64`
+- 发布构建（Windows 无 WebView 精简版，自动内嵌 PE 图标、DPI 清单与版本信息）：
+  - `$env:CGO_ENABLED="0"; $env:GOFLAGS="-tags=mygo_nowebview"; go tool mygo build -platform windows/amd64 -skip-installer`
+  - 输出位于 `build/windows-amd64/CarryDock.exe`
 
 ## 编码规范
 

@@ -33,9 +33,11 @@ go run -tags mygo_nowebview .
 # 或带热重载：
 go tool mygo dev
 
-# 构建单文件 Windows GUI 可执行程序（无 WebView2 依赖）
+# 构建单文件 Windows GUI 可执行程序（无 WebView2 依赖，自动内嵌图标与版本信息）
 $env:CGO_ENABLED="0"
-go build -tags mygo_nowebview -ldflags "-H=windowsgui -s -w" -o CarryDock.exe .
+$env:GOFLAGS="-tags=mygo_nowebview"
+go tool mygo build -platform windows/amd64 -skip-installer
+# 产物位于 build/windows-amd64/CarryDock.exe
 ```
 
 ## 数据兼容性

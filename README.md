@@ -33,7 +33,9 @@ go run -tags mygo_nowebview .
 # Or with MyGo live reload:
 go tool mygo dev
 
-# Build standalone Windows GUI binary (without WebView2)
+# Build standalone Windows GUI binary (without WebView2, with embedded PE icon & version info)
 $env:CGO_ENABLED="0"
-go build -tags mygo_nowebview -ldflags "-H=windowsgui -s -w" -o CarryDock.exe .
+$env:GOFLAGS="-tags=mygo_nowebview"
+go tool mygo build -platform windows/amd64 -skip-installer
+# Output: build/windows-amd64/CarryDock.exe
 ```
