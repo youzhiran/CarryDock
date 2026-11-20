@@ -514,6 +514,34 @@ func HideConsole(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 }
 
+func buildBatchCmdLine(cmdExe, scriptPath string) string {
+	clean := filepath.Clean(strings.TrimSpace(scriptPath))
+	return fmt.Sprintf(`"%s" /c ""%s""`, cmdExe, clean)
+}
+
+// LaunchBatchScript 在独立新控制台窗口中异步启动批处理脚本，避免路径含空格或特殊字符时 cmd /c start 解析失败。
+func LaunchBatchScript(scriptPath string) error {
+	trimmed := strings.TrimSpace(scriptPath)
+	if trimmed == "" {
+		return fmt.Errorf("批处理脚本路径为空")
+	}
+	clean := filepath.Clean(trimmed)
+	if abs, err := filepath.Abs(clean); err == nil {
+		clean = abs
+	}
+	cmdExe := strings.TrimSpace(os.Getenv("ComSpec"))
+	if cmdExe == "" {
+		cmdExe = "cmd.exe"
+	}
+	cmd := exec.Command(cmdExe)
+	cmd.Dir = filepath.Dir(clean)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		CreationFlags: windows.CREATE_NEW_CONSOLE,
+		CmdLine:       buildBatchCmdLine(cmdExe, clean),
+	}
+	return cmd.Start()
+}
+
 func resolveDirectoryTarget(dirPath string) (string, error) {
 	trimmed := strings.TrimSpace(dirPath)
 	if trimmed == "" {

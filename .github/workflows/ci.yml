@@ -29,27 +29,44 @@ jobs:
       - name: Build Windows Executable
         id: build
         run: |
-          $now = (Get-Date).AddHours(8).ToString("yyyy-MM-dd HH:mm:ss")
-          $tag = "${{ github.ref_name }}"
-          if (-not $tag.StartsWith("v")) {
-            $tag = "v0.9.0+105"
-          }
-          $cleanVer = $tag.TrimStart("v")
-          $verParts = $cleanVer.Split("+")
-          $ver = $verParts[0]
-          $buildNum = if ($verParts.Length -gt 1) { $verParts[1] } else { "105" }
+          $now = (Get-Date).ToUniversalTime().AddHours(8).ToString("yyyy-MM-dd HH:mm:ss")
 
-          # 同步版本号到 mygo.json（用于 Windows PE 版本信息）和 internal/version
+          $verFile = Get-Content internal/version/version.go -Raw
+          $defaultVer = if ($verFile -match 'Version\s*=\s*"([^"]+)"') { $Matches[1] } else { "0.9.0" }
+          $defaultBuild = if ($verFile -match 'BuildNumber\s*=\s*"([^"]+)"') { $Matches[1] } else { "105" }
+
+          $tag = "${{ github.ref_name }}"
+          if ($tag.StartsWith("v")) {
+            $cleanVer = $tag.TrimStart("v")
+            $verParts = $cleanVer.Split("+")
+            $ver = $verParts[0]
+            $buildNum = if ($verParts.Length -gt 1 -and $verParts[1] -ne "") { $verParts[1] } else { $defaultBuild }
+          } else {
+            $ver = $defaultVer
+            $buildNum = $defaultBuild
+          }
+
+          # 同步版本号到 mygo.json（用于 Windows PE 版本信息）
           $cfg = Get-Content mygo.json -Raw | ConvertFrom-Json
           $cfg.version = $ver
           $cfg | ConvertTo-Json -Depth 10 | Set-Content mygo.json -Encoding UTF8
 
+          # 通过 MYGO_LDFLAGS 向 internal/version 注入版本号、构建号与构建时间
           $env:CGO_ENABLED = "0"
           $env:GOFLAGS = "-tags=mygo_nowebview"
+          $env:MYGO_LDFLAGS = "-X carrydock/internal/version.Version=$ver -X carrydock/internal/version.BuildNumber=$buildNum -X 'carrydock/internal/version.BuildTime=$now'"
           go tool mygo build -platform windows/amd64 -skip-installer -o dist
 
+          # 打包为 CarryDock/CarryDock.exe 单层目录结构，确保旧版与新版自动更新器均可安全更新
+          $pkgDir = "dist/package/CarryDock"
+          if (Test-Path "dist/package") {
+            Remove-Item -Recurse -Force "dist/package"
+          }
+          New-Item -ItemType Directory -Force -Path $pkgDir | Out-Null
+          Copy-Item "dist/windows-amd64/CarryDock.exe" -Destination "$pkgDir/CarryDock.exe" -Force
+
           $zipName = "carrydock-v${ver}+${buildNum}.zip"
-          Compress-Archive -Path dist/windows-amd64/CarryDock.exe -DestinationPath $zipName -Force
+          Compress-Archive -Path $pkgDir -DestinationPath $zipName -Force
           echo "zip_file=$zipName" >> $env:GITHUB_OUTPUT
           echo "version=$ver" >> $env:GITHUB_OUTPUT
           echo "build_num=$buildNum" >> $env:GITHUB_OUTPUT

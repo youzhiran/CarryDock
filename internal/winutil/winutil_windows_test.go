@@ -201,3 +201,17 @@ func TestExplorerFormattingHelpers(t *testing.T) {
 		t.Fatalf("expected explorerExePath() %q to exist on Windows: %v", exp, err)
 	}
 }
+
+func TestBuildBatchCmdLine(t *testing.T) {
+	cmdExe := `C:\Windows\System32\cmd.exe`
+	script := `C:\Users\测试 用户\AppData\Local\Temp\carrydock_update_1\update.bat`
+	got := buildBatchCmdLine(cmdExe, script)
+	want := `"C:\Windows\System32\cmd.exe" /c ""C:\Users\测试 用户\AppData\Local\Temp\carrydock_update_1\update.bat""`
+	if got != want {
+		t.Fatalf("buildBatchCmdLine mismatch:\n got: %s\nwant: %s", got, want)
+	}
+
+	if err := LaunchBatchScript(""); err == nil {
+		t.Fatal("expected LaunchBatchScript(\"\") to return error")
+	}
+}

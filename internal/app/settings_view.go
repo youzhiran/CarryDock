@@ -479,7 +479,7 @@ func (a *App) settingsView(c *ui.Context) {
 
 					ui.Row(c).Padding(4, 8).AlignItems(ui.Center).Children(func() {
 						ui.Text(c, tr.SettingsBuildTime).FontSize(13).Bold().Grow(1).MinWidth(0)
-						ui.Text(c, version.BuildTime).FontSize(13).TextColor(t.TextMuted)
+						ui.Text(c, version.DisplayBuildTime()).FontSize(13).TextColor(t.TextMuted)
 					})
 
 					aboutLinkRow := func(key string, ico *ui.SVG, title, displayURL, targetURL string) {
@@ -806,7 +806,11 @@ func (a *App) startDownloadAndInstallUpdate() {
 	a.updateStatus = a.tr().UpdateDownloading
 
 	go func() {
-		savePath := filepath.Join(os.TempDir(), info.AssetName)
+		assetName := filepath.Base(strings.TrimSpace(info.AssetName))
+		if assetName == "" || assetName == "." || assetName == string(filepath.Separator) {
+			assetName = "carrydock-update.zip"
+		}
+		savePath := filepath.Join(os.TempDir(), assetName)
 		err := a.updaterSvc.DownloadUpdate(ctx, info.DownloadURL, savePath, func(p float64) {
 			a.update(func() {
 				a.updateProgress = p

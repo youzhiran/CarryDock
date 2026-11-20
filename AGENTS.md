@@ -28,7 +28,8 @@
 - 单元测试与 UI 测试：`go test ./...`
 - 静态检查：`go vet ./...` 与 `go tool mygo vet`
 - 发布构建（Windows 无 WebView 精简版，自动内嵌 PE 图标、DPI 清单与版本信息）：
-  - `$env:CGO_ENABLED="0"; $env:GOFLAGS="-tags=mygo_nowebview"; go tool mygo build -platform windows/amd64 -skip-installer`
+  - `$now = Get-Date -Format "yyyy-MM-dd HH:mm:ss"; $env:CGO_ENABLED="0"; $env:GOFLAGS="-tags=mygo_nowebview"; $env:MYGO_LDFLAGS="-X 'carrydock/internal/version.BuildTime=$now'"; go tool mygo build -platform windows/amd64 -skip-installer`
+  - 可通过 `MYGO_LDFLAGS` 追加 `-X carrydock/internal/version.Version=... -X carrydock/internal/version.BuildNumber=...` 注入版本号与构建号
   - 输出位于 `build/windows-amd64/CarryDock.exe`
 
 ## 编码规范

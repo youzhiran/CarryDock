@@ -50,6 +50,11 @@ func LaunchExecutable(exePath, fallbackWorkDir string) error {
 // HideConsole 在非 Windows 平台无操作。
 func HideConsole(cmd *exec.Cmd) {}
 
+// LaunchBatchScript 非 Windows 平台返回不支持错误。
+func LaunchBatchScript(scriptPath string) error {
+	return fmt.Errorf("仅 Windows 平台支持启动批处理脚本: %s", scriptPath)
+}
+
 // OpenDirectory 打开目录（占位实现）。
 func OpenDirectory(dirPath string) error {
 	return fmt.Errorf("当前平台不支持资源管理器打开: %s", dirPath)

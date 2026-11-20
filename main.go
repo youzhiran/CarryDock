@@ -26,6 +26,7 @@ func main() {
 	defer logger.Close()
 
 	logger.Info("CarryDock (MyGo 原生 UI) 启动")
+	go updater.CleanupLegacyFilesForCurrentApp()
 
 	softwareSvc := software.NewService(settingsSvc)
 	updaterSvc := updater.NewService()

@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -17,6 +16,7 @@ import (
 	"carrydock/internal/archive"
 	"carrydock/internal/logger"
 	"carrydock/internal/version"
+	"carrydock/internal/winutil"
 	"github.com/egoist/mygo/netproxy"
 )
 
@@ -237,7 +237,7 @@ func (s *Service) InstallUpdate(updateZipPath string) error {
 		exePath = resolved
 	}
 	appDir := filepath.Dir(exePath)
-	exeName := filepath.Base(exePath)
+	oldExeName := filepath.Base(exePath)
 
 	tempDir, err := os.MkdirTemp("", "carrydock_update_")
 	if err != nil {
@@ -254,57 +254,215 @@ func (s *Service) InstallUpdate(updateZipPath string) error {
 		_ = os.RemoveAll(tempDir)
 		return fmt.Errorf("更新包中未找到包含 .exe 可执行文件的目录")
 	}
-	// 如果新包中的主 exe 名称变更，优先采用新包的 exe 名称
-	if entries, err := os.ReadDir(sourceDir); err == nil {
-		for _, ent := range entries {
-			if !ent.IsDir() && strings.EqualFold(filepath.Ext(ent.Name()), ".exe") {
-				exeName = ent.Name()
-				break
-			}
+
+	newExeName := selectTargetExeName(sourceDir, oldExeName)
+
+	zipToDelete := ""
+	if isPathUnderDir(updateZipPath, os.TempDir()) {
+		if absZip, err := filepath.Abs(filepath.Clean(updateZipPath)); err == nil {
+			zipToDelete = absZip
 		}
 	}
 
 	scriptPath := filepath.Join(tempDir, "update.bat")
-	script := fmt.Sprintf(`@echo off
-setlocal
-title CarryDock Update
-echo ============================================
-echo CarryDock Auto Update
-echo ============================================
-set "appDir=%s"
-set "srcDir=%s"
-set "exeName=%s"
-
-echo Waiting for CarryDock to exit...
-timeout /t 2 /nobreak >nul
-
-echo Copying new files (preserving data folder)...
-robocopy "%%srcDir%%" "%%appDir%%" /E /XD data ~archives /R:3 /W:1 >nul
-if %%errorlevel%% GEQ 8 (
-    echo ERROR: Failed to copy update files.
-    pause
-    exit /b 1
-)
-
-echo Restarting CarryDock...
-start "" "%%appDir%%\%%exeName%%"
-cd /d "%%TEMP%%"
-rmdir /s /q "%s" 2>nul
-exit /b 0
-`, appDir, sourceDir, exeName, tempDir)
+	script := buildUpdateScript(updateScriptParams{
+		AppDir:     appDir,
+		SourceDir:  sourceDir,
+		OldExeName: oldExeName,
+		NewExeName: newExeName,
+		TempDir:    tempDir,
+		ZipPath:    zipToDelete,
+		OldPID:     os.Getpid(),
+	})
 
 	if err := os.WriteFile(scriptPath, []byte(script), 0o644); err != nil {
 		_ = os.RemoveAll(tempDir)
 		return err
 	}
 
-	logger.Info("启动更新脚本: %s (appDir=%s, srcDir=%s)", scriptPath, appDir, sourceDir)
-	cmd := exec.Command("cmd.exe", "/c", "start", "", scriptPath)
-	if err := cmd.Start(); err != nil {
+	logger.Info("启动更新脚本: %s (appDir=%s, srcDir=%s, oldExe=%s, newExe=%s)", scriptPath, appDir, sourceDir, oldExeName, newExeName)
+	logger.Close()
+
+	if err := winutil.LaunchBatchScript(scriptPath); err != nil {
+		_ = os.RemoveAll(tempDir)
 		return fmt.Errorf("启动更新脚本失败: %w", err)
 	}
 	os.Exit(0)
 	return nil
+}
+
+func selectTargetExeName(sourceDir, fallback string) string {
+	entries, err := os.ReadDir(sourceDir)
+	if err != nil {
+		return fallback
+	}
+	var firstExe string
+	for _, ent := range entries {
+		if !ent.IsDir() && strings.EqualFold(filepath.Ext(ent.Name()), ".exe") {
+			if strings.EqualFold(ent.Name(), "CarryDock.exe") {
+				return ent.Name()
+			}
+			if firstExe == "" {
+				firstExe = ent.Name()
+			}
+		}
+	}
+	if firstExe != "" {
+		return firstExe
+	}
+	return fallback
+}
+
+type updateScriptParams struct {
+	AppDir     string
+	SourceDir  string
+	OldExeName string
+	NewExeName string
+	TempDir    string
+	ZipPath    string
+	OldPID     int
+}
+
+func escapeBatchValue(s string) string {
+	return strings.ReplaceAll(s, "%", "%%")
+}
+
+func normalizeBatchDir(dir string) string {
+	trimmed := strings.TrimSpace(dir)
+	if trimmed == "" {
+		return ""
+	}
+	cleaned := strings.ReplaceAll(filepath.Clean(trimmed), "/", `\`)
+	// 保留盘符根目录（如 C:\）末尾的反斜杠，其余路径移除末尾反斜杠以免与引号冲突。
+	for len(cleaned) > 1 && strings.HasSuffix(cleaned, `\`) {
+		if len(cleaned) == 3 && cleaned[1] == ':' {
+			break
+		}
+		cleaned = strings.TrimSuffix(cleaned, `\`)
+	}
+	return cleaned
+}
+
+func buildUpdateScript(p updateScriptParams) string {
+	appDir := escapeBatchValue(normalizeBatchDir(p.AppDir))
+	srcDir := escapeBatchValue(normalizeBatchDir(p.SourceDir))
+	tempDir := escapeBatchValue(normalizeBatchDir(p.TempDir))
+	oldExe := escapeBatchValue(strings.TrimSpace(p.OldExeName))
+	newExe := escapeBatchValue(strings.TrimSpace(p.NewExeName))
+	if newExe == "" {
+		newExe = oldExe
+	}
+	zipPath := escapeBatchValue(strings.ReplaceAll(strings.TrimSpace(p.ZipPath), "/", `\`))
+
+	lines := []string{
+		"@echo off",
+		"chcp 65001 >nul",
+		"setlocal",
+		"title CarryDock Update",
+		"echo ============================================",
+		"echo CarryDock Auto Update",
+		"echo ============================================",
+		fmt.Sprintf(`set "appDir=%s"`, appDir),
+		fmt.Sprintf(`set "srcDir=%s"`, srcDir),
+		fmt.Sprintf(`set "oldExeName=%s"`, oldExe),
+		fmt.Sprintf(`set "exeName=%s"`, newExe),
+		fmt.Sprintf(`set "tempDir=%s"`, tempDir),
+	}
+	if zipPath != "" {
+		lines = append(lines, fmt.Sprintf(`set "zipPath=%s"`, zipPath))
+	}
+
+	lines = append(lines, "", "echo Waiting for CarryDock to exit...")
+	if p.OldPID > 0 {
+		pidStr := strconv.Itoa(p.OldPID)
+		lines = append(lines,
+			fmt.Sprintf(`set "oldPid=%s"`, pidStr),
+			"for /l %%i in (1,1,30) do (",
+			`    tasklist /FI "PID eq %oldPid%" 2>nul | find "%oldPid%" >nul`,
+			"    if errorlevel 1 goto :wait_done",
+			"    timeout /t 1 /nobreak >nul",
+			")",
+			":wait_done",
+			"timeout /t 1 /nobreak >nul",
+		)
+	} else {
+		lines = append(lines, "timeout /t 2 /nobreak >nul")
+	}
+
+	lines = append(lines,
+		"",
+		`if not exist "%srcDir%\%exeName%" (`,
+		`    echo ERROR: Update executable not found: "%srcDir%\%exeName%"`,
+		"    pause",
+		"    exit /b 1",
+		")",
+		"",
+		`set "exeBackedUp=0"`,
+		`if not "%oldExeName%"=="" (`,
+		`    if exist "%appDir%\%oldExeName%" (`,
+		`        if exist "%appDir%\%oldExeName%.update.bak" del /f /q "%appDir%\%oldExeName%.update.bak" 2>nul`,
+		`        move /y "%appDir%\%oldExeName%" "%appDir%\%oldExeName%.update.bak" >nul`,
+		`        if not errorlevel 1 set "exeBackedUp=1"`,
+		"    )",
+		")",
+		"",
+		"echo Copying new files ^(preserving data folder^)...",
+		`robocopy "%srcDir%" "%appDir%" /E /XD data ~archives /R:5 /W:1 >nul`,
+		"if %errorlevel% GEQ 8 (",
+		`    if "%exeBackedUp%"=="1" (`,
+		`        if exist "%appDir%\%oldExeName%.update.bak" (`,
+		`            move /y "%appDir%\%oldExeName%.update.bak" "%appDir%\%oldExeName%" >nul`,
+		"        )",
+		"    )",
+		"    echo ERROR: Failed to copy update files.",
+		"    pause",
+		"    exit /b 1",
+		")",
+		`if "%exeBackedUp%"=="1" (`,
+		`    if exist "%appDir%\%oldExeName%.update.bak" del /f /q "%appDir%\%oldExeName%.update.bak" 2>nul`,
+		")",
+		"",
+		"echo Cleaning up legacy files...",
+	)
+
+	for _, name := range legacyRootFiles {
+		escaped := escapeBatchValue(name)
+		lines = append(lines, fmt.Sprintf(`if exist "%%appDir%%\%s" del /f /q "%%appDir%%\%s" 2>nul`, escaped, escaped))
+	}
+	for _, name := range legacyDataFiles {
+		escaped := escapeBatchValue(name)
+		lines = append(lines, fmt.Sprintf(`if exist "%%appDir%%\data\%s" del /f /q "%%appDir%%\data\%s" 2>nul`, escaped, escaped))
+	}
+	for _, name := range legacyDataDirs {
+		escaped := escapeBatchValue(name)
+		lines = append(lines, fmt.Sprintf(`if exist "%%appDir%%\data\%s" rmdir /s /q "%%appDir%%\data\%s" 2>nul`, escaped, escaped))
+	}
+
+	lines = append(lines,
+		fmt.Sprintf(`if exist "%%appDir%%\%s" (`, legacyUpdateScriptName),
+		fmt.Sprintf(`    findstr /C:"%s" "%%appDir%%\%s" >nul 2>nul`, legacyUpdateScriptMarker, legacyUpdateScriptName),
+		"    if not errorlevel 1 (",
+		fmt.Sprintf(`        del /f /q "%%appDir%%\%s" 2>nul`, legacyUpdateScriptName),
+		fmt.Sprintf(`        if exist "%%appDir%%\%s" del /f /q "%%appDir%%\%s" 2>nul`, legacyConfigBackupName, legacyConfigBackupName),
+		"    )",
+		")",
+		"",
+		"echo Restarting CarryDock...",
+		`start "" /D "%appDir%" "%appDir%\%exeName%"`,
+	)
+
+	if zipPath != "" {
+		lines = append(lines, `if exist "%zipPath%" del /f /q "%zipPath%" 2>nul`)
+	}
+
+	lines = append(lines,
+		`cd /d "%TEMP%"`,
+		`start /b "" cmd.exe /c "timeout /t 2 /nobreak >nul & rmdir /s /q "%tempDir%" 2>nul"`,
+		"exit /b 0",
+		"",
+	)
+
+	return strings.Join(lines, "\r\n")
 }
 
 func findDirWithExe(root string) string {
