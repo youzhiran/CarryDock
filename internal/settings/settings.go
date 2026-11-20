@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"cmp"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -28,7 +29,7 @@ const (
 	DefaultUseGridLayout            = false
 	DefaultEnableFileLogging        = false
 	DefaultLanguage                 = "zh_CN"
-	DefaultFontFamily               = "Microsoft YaHei UI"
+	DefaultFontFamily               = ""
 )
 
 // DefaultExecutableExtensions 为默认识别的可执行文件扩展名。
@@ -39,17 +40,117 @@ var CommonExecutableExtensions = []string{
 	"exe", "bat", "cmd", "com", "lnk", "msi", "ps1", "vbs",
 }
 
-// PresetFonts 为界面预设的推荐字体列表。
-var PresetFonts = []string{
-	"", // 系统默认
+// DefaultFontPriority 定义默认字体的优先使用顺序：PingFang → 鸿蒙 → 微软雅黑。
+var DefaultFontPriority = []string{
+	"PingFang SC",
+	"PingFang",
+	"HarmonyOS Sans SC",
+	"HarmonyOS Sans",
 	"Microsoft YaHei UI",
-	"Segoe UI",
+	"Microsoft YaHei",
+}
+
+// PresetFonts 为界面预设的推荐字体列表（空字符串代表自动默认优先级序列）。
+var PresetFonts = []string{
+	"", // 自动默认
 	"PingFang SC",
 	"HarmonyOS Sans SC",
+	"Microsoft YaHei UI",
+	"Segoe UI",
 	"Maple Mono Normal NF CN",
 	"SimSun",
 	"Arial",
 	"Verdana",
+}
+
+// excludedSystemFonts 为不适合作为界面文字的纯图标/符号字体（小写键）。
+var excludedSystemFonts = map[string]struct{}{
+	"marlett":              {},
+	"symbol":               {},
+	"webdings":             {},
+	"wingdings":            {},
+	"wingdings 2":          {},
+	"wingdings 3":          {},
+	"mt extra":             {},
+	"hololens mdl2 assets": {},
+	"segoe mdl2 assets":    {},
+	"segoe fluent icons":   {},
+	"segoe ui emoji":       {},
+	"segoe ui symbol":      {},
+	"segoe ui historic":    {},
+}
+
+// ResolveDefaultFont 根据已安装系统字体列表，按 PingFang → 鸿蒙 → 微软雅黑 顺序返回首个可用字体规范名。
+func ResolveDefaultFont(installed []string) string {
+	lookup := make(map[string]string, len(installed))
+	for _, raw := range installed {
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			continue
+		}
+		key := strings.ToLower(name)
+		if _, exists := lookup[key]; !exists {
+			lookup[key] = name
+		}
+	}
+	for _, cand := range DefaultFontPriority {
+		if canonical, ok := lookup[strings.ToLower(cand)]; ok {
+			return canonical
+		}
+	}
+	return ""
+}
+
+// BuildFontStack 构建用于主题渲染的逗号分隔字体回退链。
+// 当 configured 非空时将其置于首位，随后按默认优先顺序附加 PingFang → 鸿蒙 → 微软雅黑（去重）。
+func BuildFontStack(configured string) string {
+	configured = strings.TrimSpace(configured)
+	seen := make(map[string]struct{}, len(DefaultFontPriority)+1)
+	stack := make([]string, 0, len(DefaultFontPriority)+1)
+	add := func(name string) {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return
+		}
+		key := strings.ToLower(name)
+		if _, exists := seen[key]; exists {
+			return
+		}
+		seen[key] = struct{}{}
+		stack = append(stack, name)
+	}
+	if configured != "" {
+		add(configured)
+	}
+	for _, f := range DefaultFontPriority {
+		add(f)
+	}
+	return strings.Join(stack, ", ")
+}
+
+// FilterSystemFonts 过滤不可用于界面排版的 @ 竖排字体及纯符号/图标字体，去重并按名称不区分大小写排序。
+func FilterSystemFonts(raw []string) []string {
+	seen := make(map[string]struct{}, len(raw))
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		name := strings.TrimSpace(item)
+		if name == "" || strings.HasPrefix(name, "@") {
+			continue
+		}
+		key := strings.ToLower(name)
+		if _, excluded := excludedSystemFonts[key]; excluded {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, name)
+	}
+	slices.SortFunc(out, func(a, b string) int {
+		return cmp.Or(strings.Compare(strings.ToLower(a), strings.ToLower(b)), strings.Compare(a, b))
+	})
+	return out
 }
 
 // Service 封装应用各项设置的读取与持久化逻辑，与原版 app_data.json 字段保持一致。

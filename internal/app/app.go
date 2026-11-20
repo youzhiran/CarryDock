@@ -47,11 +47,15 @@ type App struct {
 	updaterSvc  *updater.Service
 
 	// 全局外观与导航状态
-	lang        i18n.Lang
-	fontFamily  string
-	devEnabled  bool
-	page        pageID
-	sidebarOpen bool
+	lang               i18n.Lang
+	fontFamily         string
+	systemFontsLoading bool
+	systemFontsLoaded  bool
+	systemFonts        []string          // 过滤并排序后的系统可用字体名列表
+	installedFontMap   map[string]string // 小写字体名 -> 系统原始规范名（未过滤，用于准确检测可用性）
+	devEnabled         bool
+	page               pageID
+	sidebarOpen        bool
 
 	// 待发出的 Toast 队列（由后台任务安全入队，在 View 帧中派发）
 	pendingToasts []ui.Toast
@@ -200,26 +204,92 @@ func New(settingsSvc *settings.Service, softwareSvc *software.Service, updaterSv
 		appBmp, _ = ui.DecodeBitmap(iconPNG)
 	}
 	a := &App{
-		appIcon:     appBmp,
-		settingsSvc: settingsSvc,
-		softwareSvc: softwareSvc,
-		updaterSvc:  updaterSvc,
-		page:        pageHome,
-		sidebarOpen: true,
-		exeCache:    make(map[string]*exeMeta),
-		altCache:    make(map[string]*altExecEntry),
-		linkedPaths: make(map[string]bool),
-		extDraft:    make(map[string]bool),
+		appIcon:          appBmp,
+		settingsSvc:      settingsSvc,
+		softwareSvc:      softwareSvc,
+		updaterSvc:       updaterSvc,
+		page:             pageHome,
+		sidebarOpen:      true,
+		installedFontMap: make(map[string]string),
+		exeCache:         make(map[string]*exeMeta),
+		altCache:         make(map[string]*altExecEntry),
+		linkedPaths:      make(map[string]bool),
+		extDraft:         make(map[string]bool),
 	}
 	a.loadSettingsSnapshot()
 	return a
 }
 
-// AttachWindow 绑定主窗口并在启动时加载主页数据。
+// AttachWindow 绑定主窗口并在启动时加载主页数据与系统字体。
 func (a *App) AttachWindow(win *mygo.Window) {
 	a.win = win
 	a.syncWindowTitle()
+	a.loadSystemFontsAsync()
 	a.reloadHome()
+}
+
+func (a *App) loadSystemFontsAsync() {
+	if a.systemFontsLoaded || a.systemFontsLoading || a.win == nil {
+		return
+	}
+	a.systemFontsLoading = true
+	go func() {
+		families := ui.FontFamilies()
+		names := make([]string, 0, len(families))
+		for _, f := range families {
+			names = append(names, f.Name)
+		}
+		a.update(func() {
+			a.applyInstalledFonts(names)
+		})
+	}()
+}
+
+// applyInstalledFonts 写入已安装系统字体索引并生成过滤后的候选列表。
+func (a *App) applyInstalledFonts(rawNames []string) {
+	installed := make(map[string]string, len(rawNames))
+	for _, raw := range rawNames {
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			continue
+		}
+		key := strings.ToLower(name)
+		if _, exists := installed[key]; !exists {
+			installed[key] = name
+		}
+	}
+	a.installedFontMap = installed
+	a.systemFonts = settings.FilterSystemFonts(rawNames)
+	a.systemFontsLoaded = true
+	a.systemFontsLoading = false
+
+	// 若已保存字体与系统规范名存在大小写差异，在内存中规整为规范名以便选择器精确匹配
+	if a.setFontFamily != "" {
+		if canonical, ok := a.installedFontMap[strings.ToLower(strings.TrimSpace(a.setFontFamily))]; ok {
+			a.setFontFamily = canonical
+			a.fontFamily = canonical
+		}
+	}
+}
+
+func (a *App) isFontInstalled(name string) bool {
+	if !a.systemFontsLoaded {
+		return true
+	}
+	_, ok := a.installedFontMap[strings.ToLower(strings.TrimSpace(name))]
+	return ok
+}
+
+func (a *App) resolvedDefaultFont() string {
+	if !a.systemFontsLoaded {
+		return ""
+	}
+	for _, cand := range settings.DefaultFontPriority {
+		if canonical, ok := a.installedFontMap[strings.ToLower(cand)]; ok {
+			return canonical
+		}
+	}
+	return ""
 }
 
 func (a *App) tr() i18n.Strings {
@@ -282,12 +352,10 @@ func (a *App) navigateNow(target pageID) {
 
 // View 是 MyGo 原生 UI 主视图构建函数。
 func (a *App) View(c *ui.Context) {
-	// 1. 应用主题（跟随系统深浅色与强调色，并支持用户自定义字体）
+	// 1. 应用主题（跟随系统深浅色与强调色，并应用优先字体回退链）
 	base := *c.Theme()
 	base.Radius = 8
-	if a.fontFamily != "" {
-		base.Font = a.fontFamily
-	}
+	base.Font = settings.BuildFontStack(a.fontFamily)
 	c.SetTheme(&base)
 	c.SetMenuPresentation(ui.PopoverMenus)
 
@@ -363,11 +431,9 @@ func (a *App) titleBarView(c *ui.Context) {
 		}
 		toggleBtn := ui.ButtonBase(c.Key("nav-toggle")).Size(30, 28).Radius(6).Center().
 			Label(toggleTooltip).Tooltip(toggleTooltip)
-		if toggleBtn.Hovered() {
-			toggleBtn.Background(t.SurfaceHover)
-		}
+		toggleColor := applyHoverIconStyle(toggleBtn, t, false, false, nil)
 		toggleBtn.Children(func() {
-			ui.Icon(c, iconPanelLeft).FontSize(15).TextColor(t.TextMuted)
+			ui.Icon(c, iconPanelLeft).FontSize(15).TextColor(toggleColor)
 		})
 		if toggleBtn.Clicked() {
 			a.sidebarOpen = !a.sidebarOpen
@@ -411,9 +477,10 @@ func (a *App) navButton(c *ui.Context, id pageID, ico *ui.SVG, label string) {
 	active := a.page == id
 
 	btn := ui.ButtonBase(c.Key("nav-" + string(id))).Height(36).Radius(8).
-		AlignItems(ui.Center).Gap(10).Label(label)
+		AlignItems(ui.Center).Gap(10).Cursor(ui.CursorPointer).Label(label)
 	if a.sidebarOpen {
-		btn.Padding(0, 12)
+		// ButtonBase 默认设置 Justify(Center)，展开侧边栏时显式重置为左对齐
+		btn.Justify(ui.Start).Padding(0, 12)
 	} else {
 		btn.Center().Tooltip(label)
 	}
@@ -432,9 +499,9 @@ func (a *App) navButton(c *ui.Context, id pageID, ico *ui.SVG, label string) {
 			iconColor = t.Accent
 			textColor = t.Accent
 		}
-		ui.Icon(c, ico).FontSize(17).TextColor(iconColor)
+		ui.Icon(c, ico).FontSize(17).TextColor(iconColor).Shrink(0)
 		if a.sidebarOpen {
-			txt := ui.Text(c, label).FontSize(13).TextColor(textColor).SingleLine()
+			txt := ui.Text(c, label).FontSize(13).TextColor(textColor).SingleLine().MinWidth(0)
 			if active {
 				txt.Bold()
 			}
@@ -552,24 +619,46 @@ func (a *App) renderSoftwareIcon(c *ui.Context, sw model.Software, size float32)
 	})
 }
 
-// iconButton 渲染紧凑的无背景图标按钮（悬停高亮，支持禁用与危险色）。
+// applyHoverIconStyle 为无背景图标按钮应用悬停/按下高亮与鼠标手型，并返回当前图标前景色。
+func applyHoverIconStyle(btn ui.Element, t *ui.Theme, disabled, danger bool, accent *ui.Color) ui.Color {
+	if !disabled {
+		btn.Cursor(ui.CursorPointer)
+	}
+	hovered := !disabled && btn.Hovered()
+	pressed := !disabled && btn.Pressed()
+	// 使用带透明度的前景色叠加，确保在已悬停行（t.SurfaceHover）上依然具有清晰可见的悬停反馈
+	switch {
+	case pressed && danger:
+		btn.Background(t.Danger.Alpha(0.24))
+	case hovered && danger:
+		btn.Background(t.Danger.Alpha(0.16))
+	case pressed && accent != nil:
+		btn.Background(accent.Alpha(0.24))
+	case hovered && accent != nil:
+		btn.Background(accent.Alpha(0.16))
+	case pressed:
+		btn.Background(t.Text.Alpha(0.16))
+	case hovered:
+		btn.Background(t.Text.Alpha(0.10))
+	}
+	if danger {
+		return t.Danger
+	}
+	if accent != nil {
+		return *accent
+	}
+	if hovered || pressed {
+		return t.Text
+	}
+	return t.TextMuted
+}
+
+// iconButton 渲染紧凑的无背景图标按钮（悬停/按下高亮，支持禁用与危险色）。
 func iconButton(c *ui.Context, key string, ico *ui.SVG, tooltip string, disabled, danger bool, accent *ui.Color) ui.Element {
 	t := c.Theme()
 	btn := ui.ButtonBase(c.Key(key)).Size(30, 30).Radius(6).Center().
 		Disabled(disabled).Label(tooltip).Tooltip(tooltip)
-	if !disabled && btn.Hovered() {
-		if danger {
-			btn.Background(t.Danger.Alpha(0.14))
-		} else {
-			btn.Background(t.SurfaceHover)
-		}
-	}
-	color := t.TextMuted
-	if danger {
-		color = t.Danger
-	} else if accent != nil {
-		color = *accent
-	}
+	color := applyHoverIconStyle(btn, t, disabled, danger, accent)
 	btn.Children(func() {
 		ui.Icon(c, ico).FontSize(15).TextColor(color)
 	})

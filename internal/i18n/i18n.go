@@ -262,6 +262,13 @@ type Strings struct {
 	SettingsAppearance           string
 	SettingsAppFont              string
 	SettingsSystemDefaultFont    string
+	SettingsPresetFonts          string
+	SettingsSystemFonts          string
+	SettingsFontUnavailable      string
+	SettingsFontDefaultDescFmt   string
+	SettingsFontDefaultDescPlain string
+	SettingsFontMissingWarnFmt   string
+	SettingsFontLoading          string
 	SettingsLanguage             string
 	SettingsSaveLanguage         string
 	SettingsLanguageSaved        string
@@ -547,7 +554,14 @@ var zhStrings = Strings{
 	SettingsExtSelectAtLeastOne:  "请至少保留一个扩展名。",
 	SettingsAppearance:           "外观",
 	SettingsAppFont:              "应用字体",
-	SettingsSystemDefaultFont:    "系统默认",
+	SettingsSystemDefaultFont:    "自动默认",
+	SettingsPresetFonts:          "预设字体",
+	SettingsSystemFonts:          "系统已安装字体",
+	SettingsFontUnavailable:      "未安装",
+	SettingsFontDefaultDescFmt:   "优先顺序：PingFang → 鸿蒙 → 微软雅黑（当前：%s）",
+	SettingsFontDefaultDescPlain: "优先顺序：PingFang → 鸿蒙 → 微软雅黑",
+	SettingsFontMissingWarnFmt:   "该字体在当前系统未安装，已自动回退至 %s",
+	SettingsFontLoading:          "正在扫描系统字体...",
 	SettingsLanguage:             "界面语言",
 	SettingsSaveLanguage:         "保存语言设置",
 	SettingsLanguageSaved:        "语言设置已保存。",
@@ -831,7 +845,14 @@ var enStrings = Strings{
 	SettingsExtSelectAtLeastOne:  "Please keep at least one extension.",
 	SettingsAppearance:           "Appearance",
 	SettingsAppFont:              "Application Font",
-	SettingsSystemDefaultFont:    "System Default",
+	SettingsSystemDefaultFont:    "Auto Default",
+	SettingsPresetFonts:          "Preset Fonts",
+	SettingsSystemFonts:          "System Fonts",
+	SettingsFontUnavailable:      "Unavailable",
+	SettingsFontDefaultDescFmt:   "Priority: PingFang → HarmonyOS → YaHei (Active: %s)",
+	SettingsFontDefaultDescPlain: "Priority: PingFang → HarmonyOS → YaHei",
+	SettingsFontMissingWarnFmt:   "Font not installed on this system; falling back to %s",
+	SettingsFontLoading:          "Loading system fonts...",
 	SettingsLanguage:             "Language",
 	SettingsSaveLanguage:         "Save Language",
 	SettingsLanguageSaved:        "Language saved.",

@@ -411,7 +411,7 @@ func (a *App) scanConfirmModalView(c *ui.Context) {
 			}
 			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 				ui.Switch(c.Key("scan-toggle"), &a.scanCreateBackup).Label(tr.ScanArchiveToggle)
-				ui.Column(c).Grow(1).Gap(2).Children(func() {
+				ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
 					ui.Text(c, tr.ScanArchiveToggle).FontSize(13).Bold()
 					ui.Text(c, tr.ScanArchiveToggleHint).FontSize(11).TextColor(t.TextMuted)
 				})
@@ -493,7 +493,7 @@ func (a *App) associationModalView(c *ui.Context) {
 								if ui.Switch(c.Key("assoc-sw-"+s.InstallPath), &enabled).Label(s.DisplayName).Changed() {
 									a.assocEnabled[s.InstallPath] = enabled
 								}
-								ui.Text(c, s.DisplayName).FontSize(13).Bold().Grow(1).SingleLine()
+								ui.Text(c, s.DisplayName).FontSize(13).Bold().Grow(1).MinWidth(0).SingleLine()
 							})
 							if ui.Select(c.Key("assoc-sel-"+s.InstallPath), &selectedLabel, labels).
 								Disabled(!enabled || len(labels) <= 1).Changed() {
@@ -716,10 +716,13 @@ func (a *App) extensionsModalView(c *ui.Context) {
 					ui.Row(c.Key("ext-sel-"+extCopy)).Padding(4, 10).Radius(999).
 						Background(t.Surface).Border(1, t.Border).Gap(6).AlignItems(ui.Center).Children(func() {
 						ui.Text(c, "."+extCopy).FontSize(12)
-						if ui.ButtonBase(c.Key("ext-del-"+extCopy)).Size(16, 16).Radius(8).Center().
-							Label(tr.Remove).Children(func() {
-							ui.Icon(c, iconX).FontSize(11).TextColor(t.TextMuted)
-						}).Clicked() {
+						rmBtn := ui.ButtonBase(c.Key("ext-del-"+extCopy)).Size(16, 16).Radius(8).Center().
+							Label(tr.Remove)
+						rmColor := applyHoverIconStyle(rmBtn, t, false, false, nil)
+						rmBtn.Children(func() {
+							ui.Icon(c, iconX).FontSize(11).TextColor(rmColor)
+						})
+						if rmBtn.Clicked() {
 							delete(a.extDraft, extCopy)
 						}
 					})

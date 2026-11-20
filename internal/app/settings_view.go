@@ -39,6 +39,11 @@ func (a *App) loadSettingsSnapshot() {
 	a.setExts = slices.Clone(a.setSavedExts)
 
 	a.fontFamily = a.settingsSvc.GetFontFamily()
+	if a.systemFontsLoaded && a.fontFamily != "" {
+		if canonical, ok := a.installedFontMap[strings.ToLower(a.fontFamily)]; ok {
+			a.fontFamily = canonical
+		}
+	}
 	a.setFontFamily = a.fontFamily
 
 	a.setSavedLanguage = a.settingsSvc.GetLanguage()
@@ -186,6 +191,9 @@ func (a *App) pickDirectoryInto(target *string) {
 func (a *App) settingsView(c *ui.Context) {
 	t := c.Theme()
 	tr := a.tr()
+	if !a.systemFontsLoaded && !a.systemFontsLoading && a.win != nil {
+		a.loadSystemFontsAsync()
+	}
 
 	ui.Column(c).Fill().Padding(20, 24).Gap(14).Children(func() {
 		// 顶部标题与「全部保存」按钮
@@ -204,7 +212,7 @@ func (a *App) settingsView(c *ui.Context) {
 				// 提示条
 				ui.Row(c).Padding(12, 14).Radius(10).Background(t.Accent.Alpha(0.08)).
 					Border(1, t.Accent.Alpha(0.3)).Gap(10).AlignItems(ui.Center).Children(func() {
-					ui.Column(c).Gap(2).Grow(1).Children(func() {
+					ui.Column(c).Gap(2).Grow(1).MinWidth(0).Children(func() {
 						ui.Text(c, tr.SettingsDevHint).FontSize(13).Bold()
 						ui.Text(c, tr.SettingsDevHintContent).FontSize(12).TextColor(t.TextMuted)
 					})
@@ -217,7 +225,7 @@ func (a *App) settingsView(c *ui.Context) {
 						ui.Text(c, tr.SettingsInstallPath).FontSize(13).Bold()
 						ui.Row(c).Gap(8).Children(func() {
 							ui.TextInput(c.Key("set-install"), &a.setInstallPath).
-								Placeholder(tr.SettingsInstallPathHolder).Grow(1)
+								Placeholder(tr.SettingsInstallPathHolder).Grow(1).MinWidth(0)
 							if ui.Button(c.Key("set-install-browse"), tr.Browse).Clicked() {
 								a.pickDirectoryInto(&a.setInstallPath)
 							}
@@ -235,7 +243,7 @@ func (a *App) settingsView(c *ui.Context) {
 						ui.Text(c, tr.SettingsArchivePath).FontSize(13).Bold()
 						ui.Row(c).Gap(8).Children(func() {
 							ui.TextInput(c.Key("set-archive"), &a.setArchivePath).
-								Placeholder(tr.SettingsArchivePathHolder).Grow(1)
+								Placeholder(tr.SettingsArchivePathHolder).Grow(1).MinWidth(0)
 							if ui.Button(c.Key("set-archive-browse"), tr.Browse).Clicked() {
 								a.pickDirectoryInto(&a.setArchivePath)
 							}
@@ -250,7 +258,7 @@ func (a *App) settingsView(c *ui.Context) {
 
 					// 配置文件路径
 					ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-						ui.Column(c).Grow(1).Gap(2).Children(func() {
+						ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
 							ui.Text(c, tr.SettingsConfigFilePath).FontSize(13).Bold()
 							ui.Text(c, a.setConfigFilePath).FontSize(12).TextColor(t.TextMuted).Selectable()
 						})
@@ -263,7 +271,7 @@ func (a *App) settingsView(c *ui.Context) {
 				// 2. 归档处理
 				settingsCard(c, tr.SettingsArchiveHandling, func() {
 					ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-						ui.Column(c).Grow(1).Gap(2).Children(func() {
+						ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
 							ui.Text(c, tr.SettingsRemoveNested).FontSize(13).Bold()
 							ui.Text(c, tr.SettingsRemoveNestedDesc).FontSize(12).TextColor(t.TextMuted)
 						})
@@ -280,7 +288,7 @@ func (a *App) settingsView(c *ui.Context) {
 					ui.Divider(c)
 
 					ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-						ui.Column(c).Grow(1).Gap(2).Children(func() {
+						ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
 							ui.Text(c, tr.SettingsTest7Zip).FontSize(13).Bold()
 							ui.Text(c, tr.SettingsTest7ZipDesc).FontSize(12).TextColor(t.TextMuted)
 						})
@@ -304,7 +312,7 @@ func (a *App) settingsView(c *ui.Context) {
 					}
 					depthStr := strconv.Itoa(a.setMaxDepth)
 					ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, tr.SettingsMaxSearchDepth).FontSize(13).Bold().Grow(1)
+						ui.Text(c, tr.SettingsMaxSearchDepth).FontSize(13).Bold().Grow(1).MinWidth(0)
 						if ui.Select(c.Key("set-depth"), &depthStr, depthOpts).Width(100).Changed() {
 							if d, err := strconv.Atoi(depthStr); err == nil {
 								a.setMaxDepth = settings.NormalizeDepth(d)
@@ -317,7 +325,7 @@ func (a *App) settingsView(c *ui.Context) {
 					// 扩展名标签列表
 					ui.Column(c).Gap(8).Children(func() {
 						ui.Row(c).AlignItems(ui.Center).Children(func() {
-							ui.Text(c, tr.SettingsExecExtensions).FontSize(13).Bold().Grow(1)
+							ui.Text(c, tr.SettingsExecExtensions).FontSize(13).Bold().Grow(1).MinWidth(0)
 							if ui.Button(c.Key("set-edit-exts"), tr.SettingsSelectExtensions).Clicked() {
 								a.extDraft = make(map[string]bool, len(a.setExts))
 								for _, e := range a.setExts {
@@ -338,10 +346,13 @@ func (a *App) settingsView(c *ui.Context) {
 									ui.Row(c.Key("ext-chip-"+ext)).Padding(4, 10).Radius(999).
 										Background(t.Background).Border(1, t.Border).Gap(6).AlignItems(ui.Center).Children(func() {
 										ui.Text(c, "."+ext).FontSize(12)
-										if ui.ButtonBase(c.Key("ext-rm-"+ext)).Size(16, 16).Radius(8).Center().
-											Label(tr.Remove).Children(func() {
-											ui.Icon(c, iconX).FontSize(11).TextColor(t.TextMuted)
-										}).Clicked() {
+										rmBtn := ui.ButtonBase(c.Key("ext-rm-"+ext)).Size(16, 16).Radius(8).Center().
+											Label(tr.Remove)
+										rmColor := applyHoverIconStyle(rmBtn, t, false, false, nil)
+										rmBtn.Children(func() {
+											ui.Icon(c, iconX).FontSize(11).TextColor(rmColor)
+										})
+										if rmBtn.Clicked() {
 											removeTarget = extCopy
 										}
 									})
@@ -371,39 +382,7 @@ func (a *App) settingsView(c *ui.Context) {
 				// 4. 外观与语言
 				settingsCard(c, tr.SettingsAppearance, func() {
 					// 字体选择（即时生效并保存）
-					fontLabels := make([]string, 0, len(settings.PresetFonts))
-					fontMap := make(map[string]string, len(settings.PresetFonts))
-					currentFontLabel := tr.SettingsSystemDefaultFont
-					for _, f := range settings.PresetFonts {
-						label := f
-						if label == "" {
-							label = tr.SettingsSystemDefaultFont
-						}
-						fontLabels = append(fontLabels, label)
-						fontMap[label] = f
-						if f == a.setFontFamily {
-							currentFontLabel = label
-						}
-					}
-					if a.setFontFamily != "" {
-						if _, exists := fontMap[a.setFontFamily]; !exists {
-							fontLabels = append(fontLabels, a.setFontFamily)
-							fontMap[a.setFontFamily] = a.setFontFamily
-							currentFontLabel = a.setFontFamily
-						}
-					}
-
-					ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, tr.SettingsAppFont).FontSize(13).Bold().Grow(1)
-						if ui.Select(c.Key("set-font"), &currentFontLabel, fontLabels).Width(220).Changed() {
-							chosen := fontMap[currentFontLabel]
-							a.setFontFamily = chosen
-							a.fontFamily = chosen
-							go func(fn string) {
-								_ = a.settingsSvc.SaveFontFamily(fn)
-							}(chosen)
-						}
-					})
+					a.fontPickerView(c)
 
 					ui.Divider(c)
 
@@ -418,8 +397,8 @@ func (a *App) settingsView(c *ui.Context) {
 						langChoice = enLabel
 					}
 					ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, tr.SettingsLanguage).FontSize(13).Bold().Grow(1)
-						if ui.Select(c.Key("set-lang"), &langChoice, []string{zhLabel, enLabel}).Width(220).Changed() {
+						ui.Text(c, tr.SettingsLanguage).FontSize(13).Bold().Grow(1).MinWidth(0)
+						if ui.Select(c.Key("set-lang"), &langChoice, []string{zhLabel, enLabel}).Width(240).Changed() {
 							if langChoice == enLabel {
 								a.setLanguage = string(i18n.LangEnUS)
 							} else {
@@ -439,7 +418,7 @@ func (a *App) settingsView(c *ui.Context) {
 				// 5. 日志设置
 				settingsCard(c, tr.SettingsLogSettings, func() {
 					ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-						ui.Column(c).Grow(1).Gap(2).Children(func() {
+						ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
 							ui.Text(c, tr.SettingsEnableFileLogging).FontSize(13).Bold()
 							ui.Text(c, tr.SettingsEnableFileLoggingMsg).FontSize(12).TextColor(t.TextMuted)
 						})
@@ -459,7 +438,7 @@ func (a *App) settingsView(c *ui.Context) {
 					ui.Divider(c)
 
 					ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-						ui.Column(c).Grow(1).Gap(2).Children(func() {
+						ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
 							ui.Text(c, tr.SettingsLogFilePath).FontSize(13).Bold()
 							ui.Text(c, a.setLogFilePath).FontSize(12).TextColor(t.TextMuted).Selectable()
 						})
@@ -479,7 +458,7 @@ func (a *App) settingsView(c *ui.Context) {
 						verRow.Background(t.SurfaceHover)
 					}
 					verRow.Children(func() {
-						ui.Text(c, tr.SettingsVersion).FontSize(13).Bold().Grow(1)
+						ui.Text(c, tr.SettingsVersion).FontSize(13).Bold().Grow(1).MinWidth(0)
 						ui.Text(c, version.FullVersion()).FontSize(13).TextColor(t.TextMuted)
 					})
 					if verRow.Clicked() {
@@ -489,7 +468,7 @@ func (a *App) settingsView(c *ui.Context) {
 					ui.Divider(c)
 
 					ui.Row(c).Padding(4, 8).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, tr.SettingsBuildTime).FontSize(13).Bold().Grow(1)
+						ui.Text(c, tr.SettingsBuildTime).FontSize(13).Bold().Grow(1).MinWidth(0)
 						ui.Text(c, version.BuildTime).FontSize(13).TextColor(t.TextMuted)
 					})
 
@@ -517,6 +496,187 @@ func (a *App) settingsView(c *ui.Context) {
 				})
 			})
 		})
+	})
+}
+
+func (a *App) fontPickerView(c *ui.Context) {
+	t := c.Theme()
+	tr := a.tr()
+	resolved := a.resolvedDefaultFont()
+
+	fallbackName := resolved
+	if fallbackName == "" {
+		fallbackName = tr.SettingsSystemDefaultFont
+	}
+
+	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+		ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+			ui.Text(c, tr.SettingsAppFont).FontSize(13).Bold()
+			switch {
+			case a.setFontFamily == "":
+				desc := tr.SettingsFontDefaultDescPlain
+				if resolved != "" {
+					desc = i18n.Fmt(tr.SettingsFontDefaultDescFmt, resolved)
+				}
+				ui.Text(c, desc).FontSize(12).TextColor(t.TextMuted)
+			case a.systemFontsLoaded && !a.isFontInstalled(a.setFontFamily):
+				ui.Text(c, i18n.Fmt(tr.SettingsFontMissingWarnFmt, fallbackName)).
+					FontSize(12).TextColor(t.Warning)
+			}
+		})
+
+		chosen := a.setFontFamily
+		sel := ui.SelectBase(c.Key("set-font"), &chosen)
+		trigger := sel.Trigger
+		trigger.Width(240).Padding(6, 12).Gap(8).Radius(t.Radius).
+			Border(1, t.Border).Justify(ui.SpaceBetween).AlignItems(ui.Center).
+			Cursor(ui.CursorPointer).Label(tr.SettingsAppFont)
+		switch {
+		case trigger.Pressed():
+			trigger.Background(t.SurfacePressed)
+		case trigger.Hovered():
+			trigger.Background(t.SurfaceHover)
+		default:
+			trigger.Background(t.Surface)
+		}
+
+		triggerLabel := tr.SettingsSystemDefaultFont
+		if a.setFontFamily == "" {
+			if resolved != "" {
+				triggerLabel = fmt.Sprintf("%s (%s)", tr.SettingsSystemDefaultFont, resolved)
+			}
+		} else {
+			triggerLabel = a.setFontFamily
+			if a.systemFontsLoaded && !a.isFontInstalled(a.setFontFamily) {
+				triggerLabel = fmt.Sprintf("%s (%s)", a.setFontFamily, tr.SettingsFontUnavailable)
+			}
+		}
+		trigger.Children(func() {
+			ui.Text(c, triggerLabel).FontSize(13).SingleLine().Grow(1).MinWidth(0)
+			ui.Icon(c, iconDown).FontSize(14).TextColor(t.TextMuted).Shrink(0)
+		})
+
+		sel.Popup(func(panel ui.Element) {
+			panel.Margin(4, 0, 0, 0).Padding(4).Radius(t.Radius+2).
+				Background(t.Background).Border(1, t.Border).
+				Shadow(0, 6, 20, 0, ui.RGBA(0, 0, 0, 0.18)).
+				Width(300).MaxHeight(340)
+
+			renderFontOption := func(value, label, badge string, disabled, selected bool) {
+				item := sel.Item(value).Padding(6, 10).Radius(t.Radius).
+					AlignItems(ui.Center).Gap(8).Label(label)
+				if badge != "" {
+					item.Description(badge)
+				}
+				if disabled {
+					item.Disabled(true)
+				} else {
+					item.Cursor(ui.CursorPointer)
+				}
+				highlighted := !disabled && item.Highlighted()
+				switch {
+				case highlighted:
+					item.Background(t.Accent)
+				case selected && !disabled:
+					item.Background(t.Surface)
+				}
+
+				fg := t.Text
+				subFg := t.TextMuted
+				switch {
+				case disabled:
+					fg = t.TextMuted
+				case highlighted:
+					fg = t.AccentText
+					subFg = t.AccentText.Alpha(0.85)
+				}
+
+				item.Children(func() {
+					txt := ui.Text(c, label).FontSize(13).TextColor(fg).SingleLine().Grow(1).MinWidth(0)
+					if selected && !disabled {
+						txt.Bold()
+					}
+					if badge != "" {
+						ui.Text(c, badge).FontSize(11).TextColor(subFg).Shrink(0)
+					}
+					if selected {
+						ui.Icon(c, iconCheck).FontSize(13).TextColor(fg).Shrink(0)
+					}
+				})
+			}
+
+			ui.Scroll(c.Key("set-font-scroll")).Shrink(1).Children(func() {
+				ui.Column(c).Gap(2).Children(func() {
+					// 1. 自动默认（PingFang → 鸿蒙 → 微软雅黑）
+					renderFontOption("", tr.SettingsSystemDefaultFont, resolved, false, a.setFontFamily == "")
+
+					// 2. 预设字体（检测系统中是否可用，不可用时置灰禁用）
+					ui.Text(c, tr.SettingsPresetFonts).FontSize(11).Bold().
+						TextColor(t.TextMuted).Padding(6, 10, 2, 10)
+
+					shownKeys := make(map[string]bool, len(settings.PresetFonts)+len(a.systemFonts))
+					shownKeys[""] = true
+					for _, preset := range settings.PresetFonts[1:] {
+						key := strings.ToLower(preset)
+						shownKeys[key] = true
+
+						available := a.isFontInstalled(preset)
+						val := preset
+						if canonical, ok := a.installedFontMap[key]; ok {
+							val = canonical
+						}
+						badge := ""
+						if !available {
+							badge = tr.SettingsFontUnavailable
+						}
+						selected := strings.EqualFold(a.setFontFamily, val)
+						renderFontOption(val, preset, badge, !available, selected)
+					}
+
+					// 3. 收集系统已安装的其余字体（排除已列出的预设字体）
+					extraFonts := make([]string, 0, len(a.systemFonts))
+					for _, name := range a.systemFonts {
+						key := strings.ToLower(name)
+						if shownKeys[key] {
+							continue
+						}
+						shownKeys[key] = true
+						extraFonts = append(extraFonts, name)
+					}
+
+					// 若配置中保存的自定义字体未出现在预设或过滤后的系统列表（如已卸载或符号字体），仍保留可见项
+					if a.setFontFamily != "" && !shownKeys[strings.ToLower(a.setFontFamily)] {
+						shownKeys[strings.ToLower(a.setFontFamily)] = true
+						available := a.isFontInstalled(a.setFontFamily)
+						badge := ""
+						if !available {
+							badge = tr.SettingsFontUnavailable
+						}
+						renderFontOption(a.setFontFamily, a.setFontFamily, badge, !available, true)
+					}
+
+					// 4. 系统已安装的其他字体
+					ui.Divider(c).Margin(4, 6)
+					if !a.systemFontsLoaded && a.systemFontsLoading {
+						ui.Text(c, tr.SettingsFontLoading).FontSize(12).TextColor(t.TextMuted).Padding(6, 10)
+					} else if len(extraFonts) > 0 {
+						ui.Text(c, fmt.Sprintf("%s (%d)", tr.SettingsSystemFonts, len(extraFonts))).
+							FontSize(11).Bold().TextColor(t.TextMuted).Padding(4, 10, 2, 10)
+						for _, name := range extraFonts {
+							renderFontOption(name, name, "", false, strings.EqualFold(a.setFontFamily, name))
+						}
+					}
+				})
+			})
+		})
+
+		if sel.Trigger.Changed() {
+			a.setFontFamily = chosen
+			a.fontFamily = chosen
+			go func(fn string) {
+				_ = a.settingsSvc.SaveFontFamily(fn)
+			}(chosen)
+		}
 	})
 }
 

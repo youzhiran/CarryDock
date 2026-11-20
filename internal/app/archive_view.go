@@ -197,13 +197,13 @@ func (a *App) archiveFileRow(c *ui.Context, item model.Software, isBackup bool) 
 				ui.Icon(c, ico).FontSize(16).TextColor(icoColor)
 			})
 			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, item.Name).FontSize(14).Bold().SingleLine()
+				ui.Row(c).Gap(8).MinWidth(0).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, item.Name).FontSize(14).Bold().SingleLine().MinWidth(0)
 					if isLinked {
 						ui.Badge(c, tr.ArchiveLinked).Background(t.Success.Alpha(0.15)).TextColor(t.Success).Shrink(0)
 					}
 				})
-				ui.Text(c, item.ArchivePath).FontSize(11).TextColor(t.TextMuted).SingleLine()
+				ui.Text(c, item.ArchivePath).FontSize(11).TextColor(t.TextMuted).SingleLine().MinWidth(0)
 			})
 		})
 		if left.Clicked() {
