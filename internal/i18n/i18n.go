@@ -569,7 +569,7 @@ var zhStrings = Strings{
 
 	SettingsTitle:                "设置",
 	SettingsDevHint:              "提示",
-	SettingsDevHintContent:       "配置文件与原版 Flutter 绿驿管家完全兼容，如遇异常可查看或备份配置文件。",
+	SettingsDevHintContent:       "目前为开发版本，如遇异常请反馈。",
 	SettingsStorage:              "存储",
 	SettingsInstallPath:          "绿色软件安装目录",
 	SettingsInstallPathHolder:    "输入或选择绿色软件安装目录",
@@ -895,7 +895,7 @@ var enStrings = Strings{
 
 	SettingsTitle:                "Settings",
 	SettingsDevHint:              "Notice",
-	SettingsDevHintContent:       "Configuration and software list files stay fully compatible with previous CarryDock versions.",
+	SettingsDevHintContent:       "This is currently a development version. Please report any issues you encounter.",
 	SettingsStorage:              "Storage",
 	SettingsInstallPath:          "Installation Directory",
 	SettingsInstallPathHolder:    "Enter or browse portable software root directory",

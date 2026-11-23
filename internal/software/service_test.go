@@ -235,3 +235,97 @@ func TestAddRenameBackupRehostAndDelete(t *testing.T) {
 		t.Fatalf("expected BackupPath to be cleared, got %q", managed[0].BackupPath)
 	}
 }
+
+func TestResidualBackupAutoAssociationAndFallback(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	backupDir, err := svc.ResolveBackupDirectoryPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 准备两个同名软件的历史残留备份（旧 + 新），以及另一个相似前缀版本的软件备份
+	oldBak := filepath.Join(backupDir, "OnboardMemoryManager_2.7.4428-20261123_131205.zip")
+	newBak := filepath.Join(backupDir, "OnboardMemoryManager_2.7.4428-20261123_203229.zip")
+	makeZip(t, oldBak, map[string]string{"OnboardMemoryManager_2.7.4428.exe": "old"})
+	makeZip(t, newBak, map[string]string{"OnboardMemoryManager_2.7.4428.exe": "new"})
+
+	// 模拟用户删除软件后重新添加单文件 .exe（或压缩包）
+	srcExe25 := filepath.Join(t.TempDir(), "OnboardMemoryManager_2.5.358.exe")
+	srcExe27 := filepath.Join(t.TempDir(), "OnboardMemoryManager_2.7.4428.exe")
+	if err := os.WriteFile(srcExe25, []byte("exe25"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(srcExe27, []byte("exe27"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if res := svc.AddSoftwareFromFile(srcExe25); res.Type != AddSuccess {
+		t.Fatalf("add 2.5.358 failed: %v", res.Err)
+	}
+	if res := svc.AddSoftwareFromFile(srcExe27); res.Type != AddSuccess {
+		t.Fatalf("add 2.7.4428 failed: %v", res.Err)
+	}
+
+	// 1. 验证重新添加后，2.7.4428 自动关联最新的残留备份并写回 BackupPath，且 2.5.358 不会误关联
+	managed, err := svc.LoadManagedSoftware()
+	if err != nil || len(managed) != 2 {
+		t.Fatalf("LoadManagedSoftware failed: len=%d err=%v", len(managed), err)
+	}
+	if managed[0].Name != "OnboardMemoryManager_2.5.358" || managed[0].BackupPath != "" {
+		t.Fatalf("expected 2.5.358 to have empty BackupPath, got %+v", managed[0])
+	}
+	if managed[1].Name != "OnboardMemoryManager_2.7.4428" || managed[1].BackupPath != newBak {
+		t.Fatalf("expected 2.7.4428 BackupPath=%q, got %q", newBak, managed[1].BackupPath)
+	}
+
+	list, err := svc.GetSoftwareList()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range list {
+		if item.Name == "OnboardMemoryManager_2.5.358" && item.IsBackupArchive {
+			t.Fatalf("expected 2.5.358 IsBackupArchive=false on home list")
+		}
+		if item.Name == "OnboardMemoryManager_2.7.4428" && (!item.IsBackupArchive || item.BackupPath != newBak) {
+			t.Fatalf("expected 2.7.4428 IsBackupArchive=true and BackupPath=%q, got %+v", newBak, item)
+		}
+	}
+
+	// 2. 验证覆盖安装不会丢失已有关联的 BackupPath
+	dupRes := svc.AddSoftwareFromFile(srcExe27)
+	if dupRes.Type != AddDuplicate || dupRes.DuplicateInfo == nil {
+		t.Fatalf("expected AddDuplicate, got %v", dupRes.Type)
+	}
+	overRes := svc.ResolveDuplicateAddition(*dupRes.DuplicateInfo, true, "")
+	if overRes.Type != AddSuccess {
+		t.Fatalf("ResolveDuplicateAddition overwrite failed: %v", overRes.Err)
+	}
+	managed, _ = svc.LoadManagedSoftware()
+	if managed[1].BackupPath != newBak {
+		t.Fatalf("expected BackupPath preserved after overwrite, got %q", managed[1].BackupPath)
+	}
+
+	// 3. 删除当前关联的最新备份后，应自动回退关联到剩余的旧备份 oldBak
+	if err := svc.DeleteArchiveFile(newBak); err != nil {
+		t.Fatalf("DeleteArchiveFile(newBak) failed: %v", err)
+	}
+	managed, _ = svc.LoadManagedSoftware()
+	if managed[1].BackupPath != oldBak {
+		t.Fatalf("expected BackupPath to fallback to %q, got %q", oldBak, managed[1].BackupPath)
+	}
+
+	// 4. 再删除最后一份旧备份后，BackupPath 应清空且主页 IsBackupArchive 为 false
+	if err := svc.DeleteArchiveFile(oldBak); err != nil {
+		t.Fatalf("DeleteArchiveFile(oldBak) failed: %v", err)
+	}
+	managed, _ = svc.LoadManagedSoftware()
+	if managed[1].BackupPath != "" {
+		t.Fatalf("expected BackupPath cleared after all backups deleted, got %q", managed[1].BackupPath)
+	}
+	list, _ = svc.GetSoftwareList()
+	for _, item := range list {
+		if item.Name == "OnboardMemoryManager_2.7.4428" && item.IsBackupArchive {
+			t.Fatalf("expected 2.7.4428 IsBackupArchive=false after all backups deleted")
+		}
+	}
+}

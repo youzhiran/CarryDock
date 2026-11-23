@@ -815,3 +815,43 @@ func TestThemeModeAndThemeColorSettings(t *testing.T) {
 		t.Fatalf("expected theme color reset to empty, got state=%q stored=%q", a.themeColor, a.settingsSvc.GetThemeColor())
 	}
 }
+
+func TestHomeToolbarResponsiveOverflow(t *testing.T) {
+	a := newTestApp(t)
+	a.managed = []model.Software{
+		{ID: "1", Name: "Alpha", Status: model.StatusManaged, InstallExists: true},
+		{ID: "2", Name: "Beta", Status: model.StatusManaged, InstallExists: true},
+	}
+
+	// 1. 常规宽窗口（1020px）：全部工具栏按钮直接完整展示，不出现「...」更多按钮，且「打开安装目录」不重复
+	wideTester := ui.NewTester(a.View, 1020, 720)
+	for _, label := range []string{"列表视图", "网格视图", "调整排序", "刷新", "打开安装目录", "扫描当前目录软件"} {
+		if _, ok := wideTester.Access(label); !ok {
+			t.Fatalf("expected toolbar button %q visible in wide window", label)
+		}
+	}
+
+	// 2. 窄窗口（560px）：部分工具栏按钮显示不下，自动收纳到「更多操作」菜单中
+	narrowTester := ui.NewTester(a.View, 560, 720)
+	if _, ok := narrowTester.Access("扫描当前目录软件"); ok {
+		t.Fatalf("expected '扫描当前目录软件' collapsed into overflow menu in narrow window")
+	}
+	// 点击工具栏的「更多操作」按钮，验证被折叠的按钮出现在弹出菜单中
+	var toolbarMore ui.AccessInfo
+	foundMore := false
+	for _, item := range narrowTester.AccessAll() {
+		if item.Name == "更多操作" && item.Bounds.Y < 80 {
+			toolbarMore = item
+			foundMore = true
+			break
+		}
+	}
+	if !foundMore {
+		t.Fatalf("expected toolbar overflow button '更多操作' in narrow window")
+	}
+	narrowTester.ClickAt(toolbarMore.Bounds.X+toolbarMore.Bounds.W/2, toolbarMore.Bounds.Y+toolbarMore.Bounds.H/2)
+	narrowTester.Frame()
+	if !narrowTester.HasText("扫描当前目录软件") {
+		t.Fatalf("expected overflow menu to contain '扫描当前目录软件', got texts: %q", narrowTester.Texts())
+	}
+}

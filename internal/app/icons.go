@@ -98,6 +98,9 @@ var (
 	menuIconTerminal = mustMenuIcon(iconTerminal)
 	menuIconTrash    = mustMenuIcon(iconTrash)
 	menuIconSearch   = mustMenuIcon(iconSearch)
+	menuIconSort     = mustMenuIcon(iconSort)
+	menuIconList     = mustMenuIcon(iconList)
+	menuIconGrid     = mustMenuIcon(iconGrid)
 )
 
 func mustSVG(s string) *ui.SVG {

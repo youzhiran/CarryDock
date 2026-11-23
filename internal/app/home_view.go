@@ -181,7 +181,23 @@ func (a *App) homeHeaderBar(c *ui.Context) {
 	p := paletteOf(t)
 	tr := a.tr()
 
-	ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+	row := ui.Row(c.Key("home-header-bar")).Gap(10).AlignItems(ui.Center)
+
+	// 计算工具栏当前可用总宽度（优先取窗口实时尺寸减去侧边栏与内边距，确保首帧与缩放即时响应）
+	winW, _ := c.Size()
+	sideW := float32(204)
+	if !a.sidebarOpen {
+		sideW = 56
+	}
+	availW := winW - sideW - 49
+	if availW <= 0 {
+		availW = row.Bounds().W
+	}
+	if availW <= 0 {
+		availW = 760
+	}
+
+	row.Children(func() {
 		ui.Text(c, tr.HomeManagedSoftware).FontSize(22).Bold().SingleLine()
 		if len(a.managed) > 0 {
 			ui.Badge(c, fmt.Sprintf("%d", len(a.managed))).Background(p.subtleBg).TextColor(t.Text)
@@ -205,7 +221,6 @@ func (a *App) homeHeaderBar(c *ui.Context) {
 			return
 		}
 
-		// 分段式 列表 / 网格 视图切换器
 		setGrid := func(grid bool) {
 			if a.useGrid == grid {
 				return
@@ -217,72 +232,198 @@ func (a *App) homeHeaderBar(c *ui.Context) {
 				}
 			}(grid)
 		}
-		ui.Row(c.Key("view-mode-seg")).Padding(3).Radius(8).
-			Background(p.subtleBg).Border(1, p.cardBorder).Gap(2).AlignItems(ui.Center).Children(func() {
-			segBtn := func(key string, ico *ui.SVG, tip string, active bool) bool {
-				b := ui.ButtonBase(c.Key(key)).Size(28, 24).Radius(6).Center().
-					Cursor(ui.CursorPointer).Label(tip).Tooltip(tip)
-				fg := t.TextMuted
-				switch {
-				case active:
-					b.Background(p.card).Shadow(0, 1, 2, 0, p.shadow)
-					fg = t.Accent
-				case b.Hovered():
-					b.Background(t.Text.Alpha(0.06))
-					fg = t.Text
-				}
-				b.Children(func() {
-					ui.Icon(c, ico).FontSize(14).TextColor(fg)
+
+		// 估算左侧标题区与右侧主按钮「添加」所占宽度，动态计算可展开的工具栏按钮预算
+		titleW, _ := c.MeasureText(0, ui.Span{Text: tr.HomeManagedSoftware, Size: 22, Weight: 700})
+		if titleW <= 0 {
+			titleW = float32(len([]rune(tr.HomeManagedSoftware))) * 22
+		}
+		leftW := titleW
+		if len(a.managed) > 0 {
+			leftW += 10 + 32
+		}
+		if len(a.unmanaged) > 0 {
+			unmanagedText := i18n.Fmt(tr.HomeCountUnmanagedFmt, len(a.unmanaged))
+			uw, _ := c.MeasureText(0, ui.Span{Text: unmanagedText, Size: 11, Weight: 700})
+			if uw <= 0 {
+				uw = float32(len([]rune(unmanagedText))) * 11
+			}
+			leftW += 10 + uw + 18
+		}
+		addTextW, _ := c.MeasureText(0, ui.Span{Text: tr.Add, Size: 13})
+		if addTextW <= 0 {
+			addTextW = float32(len([]rune(tr.Add))) * 13
+		}
+		addBtnW := 10 + 14 + 6 + addTextW + 28
+		minSpacerW := float32(20)
+		toolbarBudget := availW - leftW - minSpacerW - addBtnW
+
+		type toolbarItem struct {
+			width      float32
+			render     func(hasNextInline bool)
+			renderMenu func(m *ui.Menu)
+		}
+
+		var items []toolbarItem
+
+		// 1. 列表 / 网格 视图切换器
+		items = append(items, toolbarItem{
+			width: 87, // 66px 分段控件 + 10px 间距 + 1px 分隔线 + 10px 间距
+			render: func(hasNextInline bool) {
+				ui.Row(c.Key("view-mode-seg")).Padding(3).Radius(8).
+					Background(p.subtleBg).Border(1, p.cardBorder).Gap(2).AlignItems(ui.Center).Children(func() {
+					segBtn := func(key string, ico *ui.SVG, tip string, active bool) bool {
+						b := ui.ButtonBase(c.Key(key)).Size(28, 24).Radius(6).Center().
+							Cursor(ui.CursorPointer).Label(tip).Tooltip(tip)
+						fg := t.TextMuted
+						switch {
+						case active:
+							b.Background(p.card).Shadow(0, 1, 2, 0, p.shadow)
+							fg = t.Accent
+						case b.Hovered():
+							b.Background(t.Text.Alpha(0.06))
+							fg = t.Text
+						}
+						b.Children(func() {
+							ui.Icon(c, ico).FontSize(14).TextColor(fg)
+						})
+						return b.Clicked()
+					}
+					if segBtn("btn-view-list", iconList, tr.HomeListView, !a.useGrid) {
+						setGrid(false)
+					}
+					if segBtn("btn-view-grid", iconGrid, tr.HomeGridView, a.useGrid) {
+						setGrid(true)
+					}
 				})
-				return b.Clicked()
-			}
-			if segBtn("btn-view-list", iconList, tr.HomeListView, !a.useGrid) {
-				setGrid(false)
-			}
-			if segBtn("btn-view-grid", iconGrid, tr.HomeGridView, a.useGrid) {
-				setGrid(true)
-			}
+				if hasNextInline {
+					verticalSep(c)
+				}
+			},
+			renderMenu: func(m *ui.Menu) {
+				if a.useGrid {
+					if m.Item(tr.HomeListView).Icon(menuIconList).Chosen() {
+						setGrid(false)
+					}
+				} else {
+					if m.Item(tr.HomeGridView).Icon(menuIconGrid).Chosen() {
+						setGrid(true)
+					}
+				}
+			},
 		})
 
-		verticalSep(c)
-
-		// 排序模式（仅列表模式且有 >=2 项时可用）
+		// 2. 自定义排序（仅列表模式且有 >=2 项时可用）
 		if !a.useGrid && len(a.managed) > 1 {
-			if iconButton(c, "btn-reorder", iconSort, tr.HomeReorder, false, false, nil).Clicked() {
-				a.searchQuery = ""
-				a.homeFilter = homeFilterAll
-				a.reorderMode = true
-			}
+			items = append(items, toolbarItem{
+				width: 40,
+				render: func(_ bool) {
+					if iconButton(c, "btn-reorder", iconSort, tr.HomeReorder, false, false, nil).Clicked() {
+						a.searchQuery = ""
+						a.homeFilter = homeFilterAll
+						a.reorderMode = true
+					}
+				},
+				renderMenu: func(m *ui.Menu) {
+					if m.Item(tr.HomeReorder).Icon(menuIconSort).Chosen() {
+						a.searchQuery = ""
+						a.homeFilter = homeFilterAll
+						a.reorderMode = true
+					}
+				},
+			})
 		}
 
-		// 刷新
-		if iconButton(c, "btn-refresh", iconRefresh, tr.Refresh, false, false, nil).Clicked() {
-			a.reloadHome()
-		}
-
-		// 打开安装目录
-		if iconButton(c, "btn-open-install", iconFolder, tr.HomeOpenInstallDir, false, false, nil).Clicked() {
-			a.openInstallDirectory()
-		}
-
-		// 更多菜单（扫描当前目录软件）
-		moreBtn := ui.ButtonBase(c.Key("btn-home-more")).Size(30, 30).Radius(6).Center().
-			Label(tr.HomeMoreActions).Tooltip(tr.HomeMoreActions)
-		moreColor := applyHoverIconStyle(moreBtn, t, false, false, nil)
-		moreBtn.Children(func() {
-			ui.Icon(c, iconMore).FontSize(15).TextColor(moreColor)
+		// 3. 刷新
+		items = append(items, toolbarItem{
+			width: 40,
+			render: func(_ bool) {
+				if iconButton(c, "btn-refresh", iconRefresh, tr.Refresh, false, false, nil).Clicked() {
+					a.reloadHome()
+				}
+			},
+			renderMenu: func(m *ui.Menu) {
+				if m.Item(tr.Refresh).Icon(menuIconRefresh).Chosen() {
+					a.reloadHome()
+				}
+			},
 		})
-		moreBtn.PopoverMenuButton(func(m *ui.Menu) {
-			if m.Item(tr.HomeScanCurrentDir).Icon(menuIconSearch).Chosen() {
-				a.openScanConfirmModal()
-			}
-			if m.Item(tr.HomeOpenInstallDir).Icon(menuIconFolder).Chosen() {
-				a.openInstallDirectory()
-			}
-		}, ui.PopoverMenuButtonOptions{
-			At:   ui.AnchorBottomEnd,
-			Self: ui.AnchorTopEnd,
+
+		// 4. 打开安装目录
+		items = append(items, toolbarItem{
+			width: 40,
+			render: func(_ bool) {
+				if iconButton(c, "btn-open-install", iconFolder, tr.HomeOpenInstallDir, false, false, nil).Clicked() {
+					a.openInstallDirectory()
+				}
+			},
+			renderMenu: func(m *ui.Menu) {
+				if m.Item(tr.HomeOpenInstallDir).Icon(menuIconFolder).Chosen() {
+					a.openInstallDirectory()
+				}
+			},
 		})
+
+		// 5. 扫描当前目录软件
+		items = append(items, toolbarItem{
+			width: 40,
+			render: func(_ bool) {
+				if iconButton(c, "btn-scan-dir", iconSearch, tr.HomeScanCurrentDir, false, false, nil).Clicked() {
+					a.openScanConfirmModal()
+				}
+			},
+			renderMenu: func(m *ui.Menu) {
+				if m.Item(tr.HomeScanCurrentDir).Icon(menuIconSearch).Chosen() {
+					a.openScanConfirmModal()
+				}
+			},
+		})
+
+		var totalW float32
+		for _, it := range items {
+			totalW += it.width
+		}
+
+		visibleCount := len(items)
+		if totalW > toolbarBudget {
+			const moreBtnW = float32(40)
+			budget := toolbarBudget - moreBtnW
+			var used float32
+			visibleCount = 0
+			for _, it := range items {
+				if used+it.width <= budget {
+					used += it.width
+					visibleCount++
+				} else {
+					break
+				}
+			}
+		}
+
+		overflowItems := items[visibleCount:]
+		hasMoreBtn := len(overflowItems) > 0
+		for i := 0; i < visibleCount; i++ {
+			hasNext := i+1 < visibleCount || hasMoreBtn
+			items[i].render(hasNext)
+		}
+
+		// 当空间不足导致部分工具栏按钮未完全显示时，自动收纳进「...」更多菜单
+		if hasMoreBtn {
+			moreBtn := ui.ButtonBase(c.Key("btn-home-more")).Size(30, 30).Radius(6).Center().
+				Label(tr.HomeMoreActions).Tooltip(tr.HomeMoreActions)
+			moreColor := applyHoverIconStyle(moreBtn, t, false, false, nil)
+			moreBtn.Children(func() {
+				ui.Icon(c, iconMore).FontSize(15).TextColor(moreColor)
+			})
+			moreBtn.PopoverMenuButton(func(m *ui.Menu) {
+				for _, ov := range overflowItems {
+					ov.renderMenu(m)
+				}
+			}, ui.PopoverMenuButtonOptions{
+				At:   ui.AnchorBottomEnd,
+				Self: ui.AnchorTopEnd,
+			})
+		}
 
 		// 添加软件主按钮
 		if ui.PrimaryButton(c.Key("btn-add-sw"), "").Children(func() {

@@ -246,12 +246,24 @@ func (a *App) duplicateModalView(c *ui.Context) {
 						a.busyOpen = true
 						a.busyMsg = tr.HomeRestoring
 						go func() {
-							if _, err := a.softwareSvc.CreateBackupFromDirectory(info.TargetInstallPath, filepath.Base(info.TargetInstallPath)); err != nil {
+							var err error
+							var createdBackup string
+							if info.ExistingManagedSoftware != nil && info.ExistingManagedSoftware.InstallPath != "" {
+								createdBackup, err = a.softwareSvc.CreateBackupForSoftware(*info.ExistingManagedSoftware)
+							} else {
+								createdBackup, err = a.softwareSvc.CreateBackupFromDirectory(info.TargetInstallPath, filepath.Base(info.TargetInstallPath))
+							}
+							if err != nil {
 								a.update(func() {
 									a.busyOpen = false
 									a.showInfo(a.tr().Error, err.Error())
 								})
 								return
+							}
+							if info.ExistingManagedSoftware != nil && createdBackup != "" {
+								cp := *info.ExistingManagedSoftware
+								cp.BackupPath = createdBackup
+								info.ExistingManagedSoftware = &cp
 							}
 							res := a.softwareSvc.ResolveDuplicateAddition(info, true, "")
 							a.update(func() {

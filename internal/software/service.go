@@ -200,6 +200,16 @@ func (s *Service) LoadManagedSoftware() ([]model.Software, error) {
 		list[i].SortOrder = i
 		list[i].Status = model.StatusManaged
 	}
+	if s.syncManagedBackups(list) {
+		_ = s.saveManagedSoftware(list)
+	}
+	for i := range list {
+		sw := &list[i]
+		sw.ArchiveExists = sw.ArchivePath != "" && fileExists(sw.ArchivePath)
+		sw.InstallExists = sw.InstallPath != "" && dirExists(sw.InstallPath)
+		sw.IsBackupArchive = (sw.BackupPath != "" && fileExists(sw.BackupPath)) ||
+			(sw.ArchivePath != "" && s.isBackupFilePath(sw.ArchivePath) && sw.ArchiveExists)
+	}
 	return list, nil
 }
 
@@ -250,31 +260,7 @@ func (s *Service) GetSoftwareList() ([]model.Software, error) {
 	if err != nil {
 		return nil, err
 	}
-	backupDir, _ := s.ResolveBackupDirectoryPath()
-
-	backupFiles := collectZipNames(backupDir)
-
-	for i := range managed {
-		sw := &managed[i]
-		sw.ArchiveExists = sw.ArchivePath != "" && fileExists(sw.ArchivePath)
-		sw.InstallExists = sw.InstallPath != "" && dirExists(sw.InstallPath)
-
-		hasBackup := false
-		if sw.BackupPath != "" && fileExists(sw.BackupPath) {
-			hasBackup = true
-		} else if sw.ArchivePath != "" && s.isBackupFilePath(sw.ArchivePath) && sw.ArchiveExists {
-			hasBackup = true
-		} else if len(backupFiles) > 0 {
-			prefix := strings.ToLower(SanitizeSoftwareName(sw.Name) + "-")
-			for _, bf := range backupFiles {
-				if strings.HasPrefix(strings.ToLower(bf), prefix) {
-					hasBackup = true
-					break
-				}
-			}
-		}
-		sw.IsBackupArchive = hasBackup
-	}
+	backupDir := filepath.Join(archDir, backupSubfolderName)
 
 	// 扫描安装目录下未托管的一级子目录（使用完整路径比对归档目录，避免误跳过同名软件文件夹）。
 	installPath := s.settings.GetInstallPath()
@@ -423,14 +409,25 @@ func (s *Service) LinkArchiveToSoftware(softwareID, archivePath string) error {
 		return fmt.Errorf("未找到指定软件 (ID: %s)", softwareID)
 	}
 	if s.isBackupFilePath(archivePath) {
+		for i := range list {
+			if i != idx && list[i].BackupPath != "" && winutil.SamePath(list[i].BackupPath, archivePath) {
+				list[i].BackupPath = ""
+			}
+		}
 		list[idx].BackupPath = archivePath
 	} else {
+		for i := range list {
+			if i != idx && list[i].ArchivePath != "" && winutil.SamePath(list[i].ArchivePath, archivePath) {
+				list[i].ArchivePath = ""
+			}
+		}
 		list[idx].ArchivePath = archivePath
 	}
+	s.syncManagedBackups(list)
 	return s.saveManagedSoftware(list)
 }
 
-// DeleteArchiveFile 删除归档或备份文件，并同步清除所有已托管软件中指向该文件的失效关联。
+// DeleteArchiveFile 删除归档或备份文件，并同步清除所有已托管软件中指向该文件的失效关联（若有其他残留备份则自动回退关联）。
 func (s *Service) DeleteArchiveFile(filePath string) error {
 	if fileExists(filePath) {
 		if err := os.Remove(filePath); err != nil {
@@ -451,6 +448,9 @@ func (s *Service) DeleteArchiveFile(filePath string) error {
 			list[i].ArchivePath = ""
 			changed = true
 		}
+	}
+	if s.syncManagedBackups(list) {
+		changed = true
 	}
 	if changed {
 		return s.saveManagedSoftware(list)
@@ -693,6 +693,9 @@ func (s *Service) addFromArchiveFile(
 	if isFromBackup && existingManaged != nil && existingManaged.ArchivePath != "" && fileExists(existingManaged.ArchivePath) {
 		finalArchivePath = existingManaged.ArchivePath
 	}
+	if !isFromBackup && backupPath == "" && existingManaged != nil && existingManaged.BackupPath != "" && fileExists(existingManaged.BackupPath) {
+		backupPath = existingManaged.BackupPath
+	}
 
 	if len(mappedExecs) == 1 {
 		if err := s.CompleteSoftwareAddition(PendingAddition{
@@ -804,10 +807,16 @@ func (s *Service) addFromExecutableFile(
 		return AddResult{Type: AddError, Err: err}
 	}
 
+	backupPath := ""
+	if existingManaged != nil && existingManaged.BackupPath != "" && fileExists(existingManaged.BackupPath) {
+		backupPath = existingManaged.BackupPath
+	}
+
 	if err := s.CompleteSoftwareAddition(PendingAddition{
 		SoftwareName:       softwareName,
 		InstallPath:        destDir,
 		ArchivePath:        targetArchivePath,
+		BackupPath:         backupPath,
 		PreferredSortOrder: preferredOrder,
 		CreatedArchive:     createdArchive,
 	}, destExe); err != nil {
@@ -823,10 +832,13 @@ func (s *Service) CompleteSoftwareAddition(pending PendingAddition, selectedExe 
 		return err
 	}
 
-	// 去重：若同安装路径已存在记录，先移除避免重复条目。
+	// 去重：若同安装路径已存在记录，先移除避免重复条目，并继承未显式覆盖的关联路径。
+	var prevBackupPath, prevArchivePath string
 	filtered := make([]model.Software, 0, len(list))
 	for _, item := range list {
 		if winutil.SamePath(item.InstallPath, pending.InstallPath) {
+			prevBackupPath = item.BackupPath
+			prevArchivePath = item.ArchivePath
 			continue
 		}
 		filtered = append(filtered, item)
@@ -847,9 +859,16 @@ func (s *Service) CompleteSoftwareAddition(pending PendingAddition, selectedExe 
 	if name == "" {
 		name = filepath.Base(pending.InstallPath)
 	}
+	archivePath := pending.ArchivePath
+	if archivePath == "" && prevArchivePath != "" && fileExists(prevArchivePath) {
+		archivePath = prevArchivePath
+	}
 	backupPath := pending.BackupPath
 	if backupPath == "" && s.isBackupFilePath(pending.ArchivePath) {
 		backupPath = pending.ArchivePath
+	}
+	if backupPath == "" && prevBackupPath != "" && fileExists(prevBackupPath) {
+		backupPath = prevBackupPath
 	}
 
 	list = append(list, model.Software{
@@ -857,11 +876,12 @@ func (s *Service) CompleteSoftwareAddition(pending PendingAddition, selectedExe 
 		Name:           name,
 		InstallPath:    pending.InstallPath,
 		ExecutablePath: selectedExe,
-		ArchivePath:    pending.ArchivePath,
+		ArchivePath:    archivePath,
 		BackupPath:     backupPath,
 		Status:         model.StatusManaged,
 		SortOrder:      order,
 	})
+	s.syncManagedBackups(list)
 	return s.saveManagedSoftware(list)
 }
 
@@ -1041,6 +1061,7 @@ func (s *Service) CompleteSoftwareRehost(existingID, installPath, sourceArchive,
 	} else if sourceArchive != "" {
 		list[idx].ArchivePath = sourceArchive
 	}
+	s.syncManagedBackups(list)
 	return s.saveManagedSoftware(list)
 }
 
@@ -1338,6 +1359,7 @@ func (s *Service) ArchiveInstallSubdirectories(
 		}
 	}
 
+	s.syncManagedBackups(managed)
 	if err := s.saveManagedSoftware(managed); err != nil {
 		return nil, err
 	}
@@ -1411,6 +1433,9 @@ func (s *Service) ApplyArchiveAssociations(resolutions []ArchiveAssociationResol
 				changed = true
 			}
 		}
+	}
+	if s.syncManagedBackups(list) {
+		changed = true
 	}
 	if changed {
 		return s.saveManagedSoftware(list)
@@ -1591,6 +1616,116 @@ func (s *Service) isBackupFilePath(p string) bool {
 		return false
 	}
 	return strings.EqualFold(filepath.Base(filepath.Dir(filepath.Clean(p))), backupSubfolderName)
+}
+
+// syncManagedBackups 检查并同步已托管软件的 BackupPath：
+// 当软件的 BackupPath 为空（如删除软件后重新添加、覆盖安装等）或原备份文件已不存在时，
+// 在 backup 目录下自动查找匹配该软件名称且未被占用的最新残留备份并回写 BackupPath。
+func (s *Service) syncManagedBackups(list []model.Software) bool {
+	if len(list) == 0 {
+		return false
+	}
+	archDir, err := s.ResolveArchiveDirectoryPath()
+	if err != nil {
+		return false
+	}
+	backupDir := filepath.Join(archDir, backupSubfolderName)
+	backupFiles := collectZipNames(backupDir)
+
+	occupied := make(map[string]bool, len(list))
+	for i := range list {
+		if list[i].BackupPath != "" && fileExists(list[i].BackupPath) {
+			occupied[normalizeBackupPathKey(list[i].BackupPath)] = true
+		}
+	}
+
+	changed := false
+	for i := range list {
+		if list[i].BackupPath != "" && fileExists(list[i].BackupPath) {
+			continue
+		}
+		latest := findLatestMatchingBackup(list[i], backupDir, backupFiles, occupied)
+		if latest != "" {
+			list[i].BackupPath = latest
+			occupied[normalizeBackupPathKey(latest)] = true
+			changed = true
+		} else if list[i].BackupPath != "" {
+			list[i].BackupPath = ""
+			changed = true
+		}
+	}
+	return changed
+}
+
+func normalizeBackupPathKey(p string) string {
+	clean := filepath.Clean(strings.TrimSpace(p))
+	if abs, err := filepath.Abs(clean); err == nil {
+		clean = abs
+	}
+	return strings.ToLower(clean)
+}
+
+func findLatestMatchingBackup(
+	sw model.Software,
+	backupDir string,
+	backupFiles []string,
+	occupied map[string]bool,
+) string {
+	if len(backupFiles) == 0 || backupDir == "" {
+		return ""
+	}
+	var candidates []string
+	if strings.TrimSpace(sw.Name) != "" {
+		if san := SanitizeSoftwareName(sw.Name); san != "" {
+			candidates = append(candidates, san)
+		}
+	}
+	if sw.InstallPath != "" {
+		base := filepath.Base(filepath.Clean(sw.InstallPath))
+		if base != "" && base != "." && base != string(filepath.Separator) {
+			if san := SanitizeSoftwareName(base); san != "" && !slices.ContainsFunc(candidates, func(c string) bool {
+				return strings.EqualFold(c, san)
+			}) {
+				candidates = append(candidates, san)
+			}
+		}
+	}
+	if len(candidates) == 0 {
+		return ""
+	}
+
+	bestFile := ""
+	bestStem := ""
+	for _, bf := range backupFiles {
+		fullPath := filepath.Join(backupDir, bf)
+		if occupied[normalizeBackupPathKey(fullPath)] {
+			continue
+		}
+		stem := archive.StripArchiveExtension(bf)
+		if stem == "" {
+			continue
+		}
+		baseName := stem
+		if backupTimestampRe.MatchString(stem) {
+			baseName = stripBackupTimestamp(stem)
+		}
+		matched := false
+		for _, cand := range candidates {
+			if strings.EqualFold(baseName, cand) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		lowerStem := strings.ToLower(stem)
+		if bestFile == "" || lowerStem > bestStem {
+			bestFile = fullPath
+			bestStem = lowerStem
+		}
+	}
+	return bestFile
 }
 
 var (
