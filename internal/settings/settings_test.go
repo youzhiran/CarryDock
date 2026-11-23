@@ -119,3 +119,77 @@ func TestFilterSystemFonts(t *testing.T) {
 		t.Fatalf("FilterSystemFonts = %v, want %v", got, want)
 	}
 }
+
+func TestThemeModeAndThemeColorSettings(t *testing.T) {
+	store := storage.NewAtDir(filepath.Join(t.TempDir(), "data"))
+	svc := NewService(store)
+
+	// 默认值校验
+	if got := svc.GetThemeMode(); got != DefaultThemeMode {
+		t.Fatalf("expected default theme mode %q, got %q", DefaultThemeMode, got)
+	}
+	if got := svc.GetThemeColor(); got != DefaultThemeColor {
+		t.Fatalf("expected default theme color %q, got %q", DefaultThemeColor, got)
+	}
+
+	// 规范化与预设校验
+	modeCases := map[string]string{
+		"":        ThemeModeSystem,
+		"system":  ThemeModeSystem,
+		" LIGHT ": ThemeModeLight,
+		"Dark":    ThemeModeDark,
+		"invalid": ThemeModeSystem,
+	}
+	for in, want := range modeCases {
+		if got := NormalizeThemeMode(in); got != want {
+			t.Fatalf("NormalizeThemeMode(%q) = %q, want %q", in, got, want)
+		}
+	}
+
+	colorCases := map[string]string{
+		"":         "",
+		"  ":       "",
+		"system":   "",
+		"SYSTEM":   "",
+		"#2563EB":  "#2563eb",
+		"7C3AED":   "#7c3aed",
+		" #0d9488": "#0d9488",
+		"#123":     "",
+		"#gggggg":  "",
+		"red":      "",
+	}
+	for in, want := range colorCases {
+		if got := NormalizeThemeColor(in); got != want {
+			t.Fatalf("NormalizeThemeColor(%q) = %q, want %q", in, got, want)
+		}
+	}
+
+	if !IsPresetThemeColor("#7C3AED") {
+		t.Fatalf("expected #7C3AED to be recognized as preset theme color")
+	}
+	if IsPresetThemeColor("#123456") || IsPresetThemeColor("") {
+		t.Fatalf("did not expect #123456 or empty string to be preset theme color")
+	}
+
+	// 持久化读写校验
+	if err := svc.SaveThemeMode("Dark"); err != nil {
+		t.Fatalf("SaveThemeMode failed: %v", err)
+	}
+	if got := svc.GetThemeMode(); got != ThemeModeDark {
+		t.Fatalf("expected saved theme mode %q, got %q", ThemeModeDark, got)
+	}
+
+	if err := svc.SaveThemeColor("7C3AED"); err != nil {
+		t.Fatalf("SaveThemeColor failed: %v", err)
+	}
+	if got := svc.GetThemeColor(); got != "#7c3aed" {
+		t.Fatalf("expected saved theme color #7c3aed, got %q", got)
+	}
+
+	if err := svc.SaveThemeColor("invalid"); err != nil {
+		t.Fatalf("SaveThemeColor(invalid) failed: %v", err)
+	}
+	if got := svc.GetThemeColor(); got != "" {
+		t.Fatalf("expected invalid color to reset to empty, got %q", got)
+	}
+}

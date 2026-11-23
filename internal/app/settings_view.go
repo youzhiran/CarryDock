@@ -50,6 +50,15 @@ func (a *App) loadSettingsSnapshot() {
 	a.setLanguage = a.setSavedLanguage
 	a.lang = i18n.Normalize(a.setSavedLanguage)
 
+	a.themeMode = a.settingsSvc.GetThemeMode()
+	a.themeColor = a.settingsSvc.GetThemeColor()
+	if a.themeColor != "" {
+		a.customColorDraft = ui.Hex(a.themeColor)
+	} else {
+		a.customColorDraft = ui.Hex(settings.PresetThemeColors[0])
+	}
+	a.applyNativeThemeMode()
+
 	a.setFileLogging = a.settingsSvc.GetEnableFileLogging()
 	a.setLogFilePath = a.settingsSvc.GetLogFilePath()
 
@@ -393,6 +402,16 @@ func (a *App) settingsView(c *ui.Context) {
 
 					ui.Divider(c).Background(p.cardBorder)
 
+					// 主题模式（即时生效并保存）
+					a.themeModePickerView(c)
+
+					ui.Divider(c).Background(p.cardBorder)
+
+					// 主题颜色（即时生效并保存）
+					a.themeColorPickerView(c)
+
+					ui.Divider(c).Background(p.cardBorder)
+
 					// 界面语言
 					zhLabel := tr.LanguageChinese
 					enLabel := tr.LanguageEnglish
@@ -718,6 +737,250 @@ func (a *App) fontPickerView(c *ui.Context) {
 			}(chosen)
 		}
 	})
+}
+
+func (a *App) themeModePickerView(c *ui.Context) {
+	t := c.Theme()
+	p := paletteOf(t)
+	tr := a.tr()
+
+	modes := []struct {
+		mode  string
+		label string
+		ico   *ui.SVG
+	}{
+		{settings.ThemeModeSystem, tr.SettingsThemeModeSystem, iconMonitor},
+		{settings.ThemeModeLight, tr.SettingsThemeModeLight, iconSun},
+		{settings.ThemeModeDark, tr.SettingsThemeModeDark, iconMoon},
+	}
+
+	ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+		ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+			ui.Text(c, tr.SettingsThemeMode).FontSize(13).Bold()
+			ui.Text(c, tr.SettingsThemeModeDesc).FontSize(12).TextColor(t.TextMuted)
+		})
+
+		ui.Row(c).Padding(3).Gap(2).Radius(9).Background(p.subtleBg).
+			Border(1, p.cardBorder).Shrink(0).Children(func() {
+			for _, opt := range modes {
+				active := a.themeMode == opt.mode
+				btn := ui.ButtonBase(c.Key("set-theme-mode-"+opt.mode)).Height(28).Padding(0, 10).
+					Radius(6).Center().Gap(5).Cursor(ui.CursorPointer).Label(opt.label)
+				fg := t.TextMuted
+				switch {
+				case active:
+					btn.Background(p.card).Shadow(0, 1, 2, 0, p.shadow)
+					fg = t.Accent
+				case btn.Hovered():
+					btn.Background(t.Text.Alpha(0.06))
+					fg = t.Text
+				}
+				btn.Children(func() {
+					ui.Icon(c, opt.ico).FontSize(13).TextColor(fg).Shrink(0)
+					txt := ui.Text(c, opt.label).FontSize(12).TextColor(fg).SingleLine()
+					if active {
+						txt.Bold()
+					}
+				})
+				if btn.Clicked() && a.themeMode != opt.mode {
+					a.themeMode = opt.mode
+					a.applyNativeThemeMode()
+					_ = a.settingsSvc.SaveThemeMode(opt.mode)
+				}
+			}
+		})
+	})
+}
+
+func (a *App) themeColorPickerView(c *ui.Context) {
+	t := c.Theme()
+	p := paletteOf(t)
+	tr := a.tr()
+
+	presetNames := []string{
+		tr.SettingsColorBlue,
+		tr.SettingsColorSky,
+		tr.SettingsColorTeal,
+		tr.SettingsColorGreen,
+		tr.SettingsColorPurple,
+		tr.SettingsColorPink,
+		tr.SettingsColorOrange,
+		tr.SettingsColorRed,
+	}
+
+	activeLabel := themeColorLabel(tr, a.themeColor)
+	isCustom := a.themeColor != "" && !settings.IsPresetThemeColor(a.themeColor)
+
+	ui.Column(c).Gap(10).Children(func() {
+		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+				ui.Text(c, tr.SettingsThemeColor).FontSize(13).Bold()
+				ui.Text(c, tr.SettingsThemeColorDesc).FontSize(12).TextColor(t.TextMuted)
+			})
+			ui.Row(c).Padding(4, 10).Radius(999).Background(p.subtleBg).
+				Border(1, p.cardBorder).AlignItems(ui.Center).Gap(6).Shrink(0).Children(func() {
+				ui.Box(c).Size(10, 10).Radius(5).Background(t.Accent).Shrink(0)
+				ui.Text(c, activeLabel).FontSize(12).TextColor(t.Text).SingleLine()
+			})
+		})
+
+		ui.Row(c).Wrap().Gap(8).AlignItems(ui.Center).Children(func() {
+			// 跟随系统
+			sysActive := a.themeColor == ""
+			sysBtn := ui.ButtonBase(c.Key("set-theme-color-system")).Height(28).Padding(0, 10).
+				Radius(999).Center().Gap(5).Cursor(ui.CursorPointer).Label(tr.SettingsThemeColorSystem)
+			switch {
+			case sysActive:
+				sysBtn.Background(p.accentTint).Border(1, t.Accent.Alpha(0.5))
+			case sysBtn.Hovered():
+				sysBtn.Background(t.SurfaceHover).Border(1, p.borderStrong)
+			default:
+				sysBtn.Background(p.subtleBg).Border(1, p.cardBorder)
+			}
+			sysFg := t.TextMuted
+			if sysActive {
+				sysFg = t.Accent
+			} else if sysBtn.Hovered() {
+				sysFg = t.Text
+			}
+			sysBtn.Children(func() {
+				ui.Icon(c, iconMonitor).FontSize(12).TextColor(sysFg).Shrink(0)
+				txt := ui.Text(c, tr.SettingsThemeColorSystem).FontSize(12).TextColor(sysFg).SingleLine()
+				if sysActive {
+					txt.Bold()
+				}
+			})
+			if sysBtn.Clicked() && a.themeColor != "" {
+				a.themeColor = ""
+				_ = a.settingsSvc.SaveThemeColor("")
+			}
+
+			// 预设主题色卡
+			for i, hex := range settings.PresetThemeColors {
+				name := hex
+				if i < len(presetNames) {
+					name = presetNames[i]
+				}
+				swatchCol := ui.Hex(hex)
+				selected := strings.EqualFold(a.themeColor, hex)
+				btn := ui.ButtonBase(c.Key("set-theme-color-"+hex)).Size(26, 26).Radius(13).
+					Background(swatchCol).Center().Cursor(ui.CursorPointer).
+					Label(name).Tooltip(fmt.Sprintf("%s (%s)", name, strings.ToUpper(hex)))
+				switch {
+				case selected:
+					btn.Border(2, t.Text)
+				case btn.Hovered():
+					btn.Border(2, p.borderStrong)
+				default:
+					btn.Border(1, ui.RGBA(0, 0, 0, 0.12))
+				}
+				if selected {
+					btn.Children(func() {
+						ui.Icon(c, iconCheck).FontSize(13).TextColor(contrastIconColor(swatchCol))
+					})
+				}
+				if btn.Clicked() {
+					a.themeColor = hex
+					a.customColorDraft = swatchCol
+					_ = a.settingsSvc.SaveThemeColor(hex)
+				}
+			}
+
+			// 自定义颜色选择器按钮
+			customBtn := ui.ButtonBase(c.Key("set-theme-color-custom")).Height(28).Padding(0, 10).
+				Radius(999).Center().Gap(6).Cursor(ui.CursorPointer).Label(tr.SettingsThemeColorCustom)
+			switch {
+			case isCustom || a.customColorOpen:
+				customBtn.Background(p.accentTint).Border(1, t.Accent.Alpha(0.5))
+			case customBtn.Hovered():
+				customBtn.Background(t.SurfaceHover).Border(1, p.borderStrong)
+			default:
+				customBtn.Background(p.subtleBg).Border(1, p.cardBorder)
+			}
+			customFg := t.TextMuted
+			if isCustom || a.customColorOpen {
+				customFg = t.Accent
+			} else if customBtn.Hovered() {
+				customFg = t.Text
+			}
+			customBtn.Children(func() {
+				dotCol := t.Accent
+				if isCustom {
+					dotCol = ui.Hex(a.themeColor)
+				}
+				ui.Box(c).Size(12, 12).Radius(6).Background(dotCol).Border(1, p.borderStrong).Shrink(0)
+				label := tr.SettingsThemeColorCustom
+				if isCustom {
+					label = strings.ToUpper(a.themeColor)
+				}
+				txt := ui.Text(c, label).FontSize(12).TextColor(customFg).SingleLine()
+				if isCustom {
+					txt.Bold()
+				}
+			})
+			if customBtn.Clicked() {
+				if a.themeColor != "" {
+					a.customColorDraft = ui.Hex(a.themeColor)
+				} else {
+					a.customColorDraft = t.Accent.SRGB()
+				}
+				a.customColorOpen = !a.customColorOpen
+			}
+
+			ui.Popover(c.Key("set-theme-color-popover"), customBtn, &a.customColorOpen, func() {
+				ui.Column(c).Padding(12).Gap(8).Width(256).Children(func() {
+					ui.Row(c).AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
+						ui.Text(c, tr.SettingsThemeColorCustom).FontSize(12).Bold()
+						ui.Text(c, strings.ToUpper(formatHexColor(a.customColorDraft))).
+							FontSize(12).TextColor(t.TextMuted)
+					})
+					if ui.ColorPicker(c.Key("set-color-picker"), &a.customColorDraft).Changed() {
+						if hex := settings.NormalizeThemeColor(formatHexColor(a.customColorDraft)); hex != "" {
+							a.themeColor = hex
+							_ = a.settingsSvc.SaveThemeColor(hex)
+						}
+					}
+				})
+			})
+		})
+	})
+}
+
+func themeColorLabel(tr i18n.Strings, hex string) string {
+	norm := settings.NormalizeThemeColor(hex)
+	if norm == "" {
+		return tr.SettingsThemeColorSystem
+	}
+	names := []string{
+		tr.SettingsColorBlue,
+		tr.SettingsColorSky,
+		tr.SettingsColorTeal,
+		tr.SettingsColorGreen,
+		tr.SettingsColorPurple,
+		tr.SettingsColorPink,
+		tr.SettingsColorOrange,
+		tr.SettingsColorRed,
+	}
+	for i, preset := range settings.PresetThemeColors {
+		if norm == preset && i < len(names) {
+			return names[i]
+		}
+	}
+	return strings.ToUpper(norm)
+}
+
+func formatHexColor(col ui.Color) string {
+	s := col.SRGB()
+	return fmt.Sprintf("#%02x%02x%02x", s.R, s.G, s.B)
+}
+
+func contrastIconColor(col ui.Color) ui.Color {
+	s := col.SRGB()
+	lum := 0.299*float64(s.R) + 0.587*float64(s.G) + 0.114*float64(s.B)
+	if lum > 165 {
+		return ui.Hex("#111827")
+	}
+	return ui.Hex("#ffffff")
 }
 
 func settingsCard(c *ui.Context, ico *ui.SVG, title string, body func()) {

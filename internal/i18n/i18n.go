@@ -284,6 +284,23 @@ type Strings struct {
 	SettingsFontDefaultDescPlain string
 	SettingsFontMissingWarnFmt   string
 	SettingsFontLoading          string
+	SettingsThemeMode            string
+	SettingsThemeModeDesc        string
+	SettingsThemeModeSystem      string
+	SettingsThemeModeLight       string
+	SettingsThemeModeDark        string
+	SettingsThemeColor           string
+	SettingsThemeColorDesc       string
+	SettingsThemeColorSystem     string
+	SettingsThemeColorCustom     string
+	SettingsColorBlue            string
+	SettingsColorSky             string
+	SettingsColorTeal            string
+	SettingsColorGreen           string
+	SettingsColorPurple          string
+	SettingsColorPink            string
+	SettingsColorOrange          string
+	SettingsColorRed             string
 	SettingsLanguage             string
 	SettingsSaveLanguage         string
 	SettingsLanguageSaved        string
@@ -595,6 +612,23 @@ var zhStrings = Strings{
 	SettingsFontDefaultDescPlain: "优先顺序：PingFang → 鸿蒙 → 微软雅黑",
 	SettingsFontMissingWarnFmt:   "该字体在当前系统未安装，已自动回退至 %s",
 	SettingsFontLoading:          "正在扫描系统字体...",
+	SettingsThemeMode:            "主题模式",
+	SettingsThemeModeDesc:        "切换浅色或深色外观，或跟随系统设置",
+	SettingsThemeModeSystem:      "跟随系统",
+	SettingsThemeModeLight:       "浅色",
+	SettingsThemeModeDark:        "深色",
+	SettingsThemeColor:           "主题颜色",
+	SettingsThemeColorDesc:       "自定义界面强调色、按钮与高亮配色",
+	SettingsThemeColorSystem:     "跟随系统",
+	SettingsThemeColorCustom:     "自定义",
+	SettingsColorBlue:            "经典蓝",
+	SettingsColorSky:             "天空蓝",
+	SettingsColorTeal:            "青碧色",
+	SettingsColorGreen:           "翡翠绿",
+	SettingsColorPurple:          "紫罗兰",
+	SettingsColorPink:            "玫红色",
+	SettingsColorOrange:          "琥珀橙",
+	SettingsColorRed:             "绯红色",
 	SettingsLanguage:             "界面语言",
 	SettingsSaveLanguage:         "保存语言设置",
 	SettingsLanguageSaved:        "语言设置已保存。",
@@ -904,6 +938,23 @@ var enStrings = Strings{
 	SettingsFontDefaultDescPlain: "Priority: PingFang → HarmonyOS → YaHei",
 	SettingsFontMissingWarnFmt:   "Font not installed on this system; falling back to %s",
 	SettingsFontLoading:          "Loading system fonts...",
+	SettingsThemeMode:            "Theme Mode",
+	SettingsThemeModeDesc:        "Switch between light and dark appearance, or follow system",
+	SettingsThemeModeSystem:      "System",
+	SettingsThemeModeLight:       "Light",
+	SettingsThemeModeDark:        "Dark",
+	SettingsThemeColor:           "Theme Color",
+	SettingsThemeColorDesc:       "Customize accent color for buttons and highlights",
+	SettingsThemeColorSystem:     "System",
+	SettingsThemeColorCustom:     "Custom",
+	SettingsColorBlue:            "Blue",
+	SettingsColorSky:             "Sky",
+	SettingsColorTeal:            "Teal",
+	SettingsColorGreen:           "Green",
+	SettingsColorPurple:          "Purple",
+	SettingsColorPink:            "Pink",
+	SettingsColorOrange:          "Orange",
+	SettingsColorRed:             "Red",
 	SettingsLanguage:             "Language",
 	SettingsSaveLanguage:         "Save Language",
 	SettingsLanguageSaved:        "Language saved.",

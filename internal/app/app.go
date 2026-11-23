@@ -67,6 +67,10 @@ type App struct {
 
 	// 全局外观与导航状态
 	lang               i18n.Lang
+	themeMode          string
+	themeColor         string
+	customColorOpen    bool
+	customColorDraft   ui.Color
 	fontFamily         string
 	systemFontsLoading bool
 	systemFontsLoaded  bool
@@ -253,6 +257,7 @@ func New(settingsSvc *settings.Service, softwareSvc *software.Service, updaterSv
 // AttachWindow 绑定主窗口并在启动时加载主页数据与系统字体。
 func (a *App) AttachWindow(win *mygo.Window) {
 	a.win = win
+	a.applyNativeThemeMode()
 	a.syncWindowTitle()
 	a.loadSystemFontsAsync()
 	a.reloadHome()
@@ -333,6 +338,21 @@ func (a *App) syncWindowTitle() {
 	}
 }
 
+func (a *App) applyNativeThemeMode() {
+	if a.win == nil {
+		return
+	}
+	src := mygo.ThemeSystem
+	switch a.themeMode {
+	case settings.ThemeModeLight:
+		src = mygo.ThemeLight
+	case settings.ThemeModeDark:
+		src = mygo.ThemeDark
+	}
+	mygo.Theme.SetSource(src)
+	a.win.SetWindowButtonsTheme(src)
+}
+
 // update 安全地在主线程更新状态并请求重绘；在无窗口单元测试环境下直接执行。
 func (a *App) update(fn func()) {
 	if a.win != nil {
@@ -402,8 +422,21 @@ func (a *App) anyModalOpen() bool {
 
 // View 是 MyGo 原生 UI 主视图构建函数。
 func (a *App) View(c *ui.Context) {
-	// 1. 应用主题（跟随系统深浅色与强调色，并应用优先字体回退链）
+	// 1. 应用主题（支持用户自定义深浅色模式与强调色，并应用优先字体回退链）
 	base := *c.Theme()
+	switch a.themeMode {
+	case settings.ThemeModeLight:
+		if base.Dark {
+			base = *ui.LightTheme().WithPreferences(c.Preferences())
+		}
+	case settings.ThemeModeDark:
+		if !base.Dark {
+			base = *ui.DarkTheme().WithPreferences(c.Preferences())
+		}
+	}
+	if a.themeColor != "" {
+		base = *base.WithAccent(ui.Hex(a.themeColor))
+	}
 	base.Radius = 8
 	base.Font = settings.BuildFontStack(a.fontFamily)
 	c.SetTheme(&base)

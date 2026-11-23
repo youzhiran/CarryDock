@@ -739,3 +739,79 @@ func TestArchiveAndBackupSoftwareIconAndCornerBadge(t *testing.T) {
 		t.Fatalf("expected accent blue backup corner badge pixels at bottom-right of backup icon")
 	}
 }
+
+func TestThemeModeAndThemeColorSettings(t *testing.T) {
+	a := newTestApp(t)
+	a.page = pageSettings
+
+	var lastTheme *ui.Theme
+	tt := ui.NewTester(func(c *ui.Context) {
+		a.View(c)
+		lastTheme = c.Theme()
+	}, 1020, 760)
+
+	// 向下滚动设置页使「外观」卡片中的主题模式与主题颜色进入可视区域
+	tt.Scroll(500, 300, 0, 560)
+	tt.Frame()
+
+	if !tt.HasText("主题模式") || !tt.HasText("主题颜色") {
+		t.Fatalf("expected theme mode and theme color settings, got texts: %q", tt.Texts())
+	}
+
+	// 切换为深色模式并验证即时生效与持久化
+	clickLabel(t, tt, "深色")
+	if a.themeMode != settings.ThemeModeDark || a.settingsSvc.GetThemeMode() != settings.ThemeModeDark {
+		t.Fatalf("expected dark theme mode saved, got state=%q stored=%q", a.themeMode, a.settingsSvc.GetThemeMode())
+	}
+	if lastTheme == nil || !lastTheme.Dark {
+		t.Fatalf("expected rendered theme to be dark, got %+v", lastTheme)
+	}
+
+	// 切换为浅色模式并验证即时生效与持久化
+	clickLabel(t, tt, "浅色")
+	if a.themeMode != settings.ThemeModeLight || a.settingsSvc.GetThemeMode() != settings.ThemeModeLight {
+		t.Fatalf("expected light theme mode saved, got state=%q stored=%q", a.themeMode, a.settingsSvc.GetThemeMode())
+	}
+	if lastTheme == nil || lastTheme.Dark {
+		t.Fatalf("expected rendered theme to be light, got %+v", lastTheme)
+	}
+
+	// 选择预设主题色「紫罗兰」(#7c3aed) 并验证即时生效与持久化
+	clickLabel(t, tt, "紫罗兰")
+	if a.themeColor != "#7c3aed" || a.settingsSvc.GetThemeColor() != "#7c3aed" {
+		t.Fatalf("expected theme color #7c3aed saved, got state=%q stored=%q", a.themeColor, a.settingsSvc.GetThemeColor())
+	}
+	wantAccent := ui.Hex("#7c3aed").SRGB()
+	gotAccent := lastTheme.Accent.SRGB()
+	if gotAccent.R != wantAccent.R || gotAccent.G != wantAccent.G || gotAccent.B != wantAccent.B {
+		t.Fatalf("expected rendered theme Accent %+v, got %+v", wantAccent, gotAccent)
+	}
+
+	// 点击自定义按钮弹出 ColorPicker 并确认不会报错，再次点击关闭弹窗
+	clickLabel(t, tt, "自定义")
+	if !a.customColorOpen {
+		t.Fatalf("expected custom color popover to open")
+	}
+	tt.Key(0, ui.KeyEscape)
+	tt.Frame()
+	if a.customColorOpen {
+		t.Fatalf("expected custom color popover to close on Escape")
+	}
+
+	// 点击主题颜色区域的「跟随系统」按钮恢复默认
+	var sysBtns []ui.AccessInfo
+	for _, item := range tt.AccessAll() {
+		if item.Name == "跟随系统" {
+			sysBtns = append(sysBtns, item)
+		}
+	}
+	if len(sysBtns) < 2 {
+		t.Fatalf("expected at least 2 '跟随系统' buttons (mode + color), got %d", len(sysBtns))
+	}
+	colorSys := sysBtns[len(sysBtns)-1]
+	tt.ClickAt(colorSys.Bounds.X+colorSys.Bounds.W/2, colorSys.Bounds.Y+colorSys.Bounds.H/2)
+	tt.Frame()
+	if a.themeColor != "" || a.settingsSvc.GetThemeColor() != "" {
+		t.Fatalf("expected theme color reset to empty, got state=%q stored=%q", a.themeColor, a.settingsSvc.GetThemeColor())
+	}
+}

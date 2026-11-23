@@ -21,6 +21,8 @@ const (
 	KeyEnableFileLogging       = "enable_file_logging"
 	KeyLogFilePath             = "log_file_path"
 	KeyLanguage                = "language"
+	KeyThemeMode               = "theme_mode"
+	KeyThemeColor              = "theme_color"
 
 	DefaultExecutableSearchMaxDepth = 3
 	MinSearchDepth                  = 1
@@ -30,6 +32,12 @@ const (
 	DefaultEnableFileLogging        = false
 	DefaultLanguage                 = "zh_CN"
 	DefaultFontFamily               = ""
+
+	ThemeModeSystem   = "system"
+	ThemeModeLight    = "light"
+	ThemeModeDark     = "dark"
+	DefaultThemeMode  = ThemeModeSystem
+	DefaultThemeColor = ""
 )
 
 // DefaultExecutableExtensions 为默认识别的可执行文件扩展名。
@@ -61,6 +69,18 @@ var PresetFonts = []string{
 	"SimSun",
 	"Arial",
 	"Verdana",
+}
+
+// PresetThemeColors 为界面预设的主题强调色列表（小写 #rrggbb）。
+var PresetThemeColors = []string{
+	"#2563eb", // 经典蓝
+	"#0284c7", // 天空蓝
+	"#0d9488", // 青碧色
+	"#16a34a", // 翡翠绿
+	"#7c3aed", // 紫罗兰
+	"#db2777", // 玫红色
+	"#ea580c", // 琥珀橙
+	"#dc2626", // 绯红色
 }
 
 // excludedSystemFonts 为不适合作为界面文字的纯图标/符号字体（小写键）。
@@ -196,6 +216,50 @@ func NormalizeDepth(depth int) int {
 		return MaxSearchDepth
 	}
 	return depth
+}
+
+// NormalizeThemeMode 规范化主题模式配置值，非法值回退为跟随系统。
+func NormalizeThemeMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case ThemeModeLight:
+		return ThemeModeLight
+	case ThemeModeDark:
+		return ThemeModeDark
+	default:
+		return ThemeModeSystem
+	}
+}
+
+// NormalizeThemeColor 规范化主题强调色（#rrggbb）；空值或 "system" 返回 "" 表示跟随系统，非法值返回 ""。
+func NormalizeThemeColor(color string) string {
+	s := strings.ToLower(strings.TrimSpace(color))
+	if s == "" || s == ThemeModeSystem {
+		return ""
+	}
+	if !strings.HasPrefix(s, "#") && len(s) == 6 {
+		s = "#" + s
+	}
+	if len(s) != 7 || s[0] != '#' {
+		return ""
+	}
+	for i := 1; i < len(s); i++ {
+		c := s[i]
+		isDigit := c >= '0' && c <= '9'
+		isHex := c >= 'a' && c <= 'f'
+		if !isDigit && !isHex {
+			return ""
+		}
+	}
+	return s
+}
+
+// IsPresetThemeColor 判断给定颜色是否属于预设主题强调色。
+func IsPresetThemeColor(color string) bool {
+	norm := NormalizeThemeColor(color)
+	if norm == "" {
+		return false
+	}
+	return slices.Contains(PresetThemeColors, norm)
 }
 
 // ConfigFilePath 返回配置文件绝对路径。
@@ -335,4 +399,28 @@ func (s *Service) GetLanguage() string {
 
 func (s *Service) SaveLanguage(lang string) error {
 	return s.store.Set(KeyLanguage, strings.TrimSpace(lang))
+}
+
+func (s *Service) GetThemeMode() string {
+	v, ok := s.store.GetString(KeyThemeMode)
+	if !ok {
+		return DefaultThemeMode
+	}
+	return NormalizeThemeMode(v)
+}
+
+func (s *Service) SaveThemeMode(mode string) error {
+	return s.store.Set(KeyThemeMode, NormalizeThemeMode(mode))
+}
+
+func (s *Service) GetThemeColor() string {
+	v, ok := s.store.GetString(KeyThemeColor)
+	if !ok {
+		return DefaultThemeColor
+	}
+	return NormalizeThemeColor(v)
+}
+
+func (s *Service) SaveThemeColor(color string) error {
+	return s.store.Set(KeyThemeColor, NormalizeThemeColor(color))
 }
