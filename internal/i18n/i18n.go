@@ -228,6 +228,8 @@ type Strings struct {
 	ArchiveLinkBackup        string
 	ArchiveLinkAction        string
 	ArchiveLinkSuccess       string
+	ArchiveUnlinkAction      string
+	ArchiveUnlinkSuccess     string
 	ArchiveDuplicateMsg      string
 	ArchiveBackupAndRestore  string
 	ArchiveRevealInExplorer  string
@@ -568,6 +570,8 @@ var zhStrings = Strings{
 	ArchiveLinkBackup:        "关联备份到软件",
 	ArchiveLinkAction:        "关联",
 	ArchiveLinkSuccess:       "归档已成功关联到软件。",
+	ArchiveUnlinkAction:      "取消关联",
+	ArchiveUnlinkSuccess:     "已取消关联。",
 	ArchiveDuplicateMsg:      "目标安装目录或归档已存在，是否先备份现有目录后再覆盖还原？",
 	ArchiveBackupAndRestore:  "备份并还原",
 	ArchiveRevealInExplorer:  "在资源管理器中显示",
@@ -904,6 +908,8 @@ var enStrings = Strings{
 	ArchiveLinkBackup:        "Link Backup to Software",
 	ArchiveLinkAction:        "Link",
 	ArchiveLinkSuccess:       "Archive has been linked to software.",
+	ArchiveUnlinkAction:      "Unlink",
+	ArchiveUnlinkSuccess:     "Unlinked successfully.",
 	ArchiveDuplicateMsg:      "Target install folder or archive already exists. Back up existing folder and restore?",
 	ArchiveBackupAndRestore:  "Backup & Restore",
 	ArchiveRevealInExplorer:  "Show in Explorer",

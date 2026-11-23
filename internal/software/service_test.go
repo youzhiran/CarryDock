@@ -305,7 +305,24 @@ func TestResidualBackupAutoAssociationAndFallback(t *testing.T) {
 		t.Fatalf("expected BackupPath preserved after overwrite, got %q", managed[1].BackupPath)
 	}
 
-	// 3. 删除当前关联的最新备份后，应自动回退关联到剩余的旧备份 oldBak
+	// 3. 测试手动取消备份关联：取消关联后 BackupPath 清空，且后续 LoadManagedSoftware / GetSoftwareList 不会强行恢复关联
+	if err := svc.UnlinkArchiveFromSoftware(newBak); err != nil {
+		t.Fatalf("UnlinkArchiveFromSoftware(newBak) failed: %v", err)
+	}
+	managed, _ = svc.LoadManagedSoftware()
+	if managed[1].BackupPath != "" || managed[1].IsBackupArchive {
+		t.Fatalf("expected BackupPath cleared and IsBackupArchive=false after unlink, got %+v", managed[1])
+	}
+	// 重新手动关联回 newBak
+	if err := svc.LinkArchiveToSoftware(managed[1].ID, newBak); err != nil {
+		t.Fatalf("LinkArchiveToSoftware(newBak) failed: %v", err)
+	}
+	managed, _ = svc.LoadManagedSoftware()
+	if managed[1].BackupPath != newBak || !managed[1].IsBackupArchive {
+		t.Fatalf("expected BackupPath re-linked to %q, got %+v", newBak, managed[1])
+	}
+
+	// 4. 删除当前关联的最新备份后，应自动回退关联到剩余的旧备份 oldBak
 	if err := svc.DeleteArchiveFile(newBak); err != nil {
 		t.Fatalf("DeleteArchiveFile(newBak) failed: %v", err)
 	}
@@ -314,7 +331,7 @@ func TestResidualBackupAutoAssociationAndFallback(t *testing.T) {
 		t.Fatalf("expected BackupPath to fallback to %q, got %q", oldBak, managed[1].BackupPath)
 	}
 
-	// 4. 再删除最后一份旧备份后，BackupPath 应清空且主页 IsBackupArchive 为 false
+	// 5. 再删除最后一份旧备份后，BackupPath 应清空且主页 IsBackupArchive 为 false
 	if err := svc.DeleteArchiveFile(oldBak); err != nil {
 		t.Fatalf("DeleteArchiveFile(oldBak) failed: %v", err)
 	}

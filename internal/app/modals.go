@@ -600,7 +600,26 @@ func (a *App) manualLinkModalView(c *ui.Context) {
 			ui.Text(c, title).FontSize(16).Bold()
 			ui.Text(c, a.linkTarget.Name).FontSize(12).TextColor(t.TextMuted).SingleLine()
 			ui.Select(c.Key("link-sw-sel"), &a.linkSelectedName, labels)
-			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				if a.linkCurrentlyLinked {
+					if ui.Button(c.Key("link-unlink"), tr.ArchiveUnlinkAction).TextColor(t.Danger).Clicked() {
+						archPath := a.linkTarget.ArchivePath
+						a.linkModalOpen = false
+						go func() {
+							err := a.softwareSvc.UnlinkArchiveFromSoftware(archPath)
+							a.update(func() {
+								if err != nil {
+									a.showInfo(a.tr().Error, err.Error())
+									return
+								}
+								a.toast(a.tr().Success, a.tr().ArchiveUnlinkSuccess)
+								a.reloadArchives()
+								a.reloadHome()
+							})
+						}()
+					}
+				}
+				ui.Spacer(c)
 				if ui.Button(c.Key("link-cancel"), tr.Cancel).Clicked() {
 					a.linkModalOpen = false
 				}
@@ -617,6 +636,7 @@ func (a *App) manualLinkModalView(c *ui.Context) {
 							}
 							a.toast(a.tr().Success, a.tr().ArchiveLinkSuccess)
 							a.reloadArchives()
+							a.reloadHome()
 						})
 					}()
 				}

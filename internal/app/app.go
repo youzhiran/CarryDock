@@ -200,12 +200,13 @@ type App struct {
 	assocSummaryText  string
 
 	// 归档管理：手动关联与创建备份弹窗
-	linkModalOpen    bool
-	linkTarget       model.Software
-	linkIsBackup     bool
-	linkManaged      []model.Software
-	linkSelectedName string
-	linkNameToID     map[string]string
+	linkModalOpen       bool
+	linkTarget          model.Software
+	linkIsBackup        bool
+	linkCurrentlyLinked bool
+	linkManaged         []model.Software
+	linkSelectedName    string
+	linkNameToID        map[string]string
 
 	backupModalOpen    bool
 	backupManaged      []model.Software

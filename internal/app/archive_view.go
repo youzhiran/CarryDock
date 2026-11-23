@@ -520,6 +520,7 @@ func (a *App) openManualLinkModal(item model.Software, isBackup bool) {
 	}
 	a.linkTarget = item
 	a.linkIsBackup = isBackup
+	a.linkCurrentlyLinked = false
 	a.linkManaged = managed
 	a.linkNameToID = make(map[string]string, len(managed))
 	a.linkSelectedName = ""
@@ -532,6 +533,7 @@ func (a *App) openManualLinkModal(item model.Software, isBackup bool) {
 		a.linkNameToID[label] = m.ID
 		if winutil.SamePath(m.ArchivePath, item.ArchivePath) || winutil.SamePath(m.BackupPath, item.ArchivePath) {
 			a.linkSelectedName = label
+			a.linkCurrentlyLinked = true
 		}
 		if a.linkSelectedName == "" && i == 0 {
 			a.linkSelectedName = label

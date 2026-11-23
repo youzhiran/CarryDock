@@ -200,7 +200,7 @@ func (s *Service) LoadManagedSoftware() ([]model.Software, error) {
 		list[i].SortOrder = i
 		list[i].Status = model.StatusManaged
 	}
-	if s.syncManagedBackups(list) {
+	if s.syncManagedBackups(list, false) {
 		_ = s.saveManagedSoftware(list)
 	}
 	for i := range list {
@@ -427,8 +427,33 @@ func (s *Service) LinkArchiveToSoftware(softwareID, archivePath string) error {
 		list[idx].ArchivePath = archivePath
 		logger.Info("手动关联归档文件: 软件=%s (ID=%s) -> %s", list[idx].Name, softwareID, archivePath)
 	}
-	s.syncManagedBackups(list)
+	s.syncManagedBackups(list, false)
 	return s.saveManagedSoftware(list)
+}
+
+// UnlinkArchiveFromSoftware 取消指定归档或备份文件与已托管软件的关联。
+func (s *Service) UnlinkArchiveFromSoftware(archivePath string) error {
+	list, err := s.LoadManagedSoftware()
+	if err != nil {
+		return err
+	}
+	changed := false
+	for i := range list {
+		if list[i].BackupPath != "" && winutil.SamePath(list[i].BackupPath, archivePath) {
+			logger.Info("手动取消备份关联: 软件=%s (ID=%s) -x- %s", list[i].Name, list[i].ID, archivePath)
+			list[i].BackupPath = ""
+			changed = true
+		}
+		if list[i].ArchivePath != "" && winutil.SamePath(list[i].ArchivePath, archivePath) {
+			logger.Info("手动取消归档关联: 软件=%s (ID=%s) -x- %s", list[i].Name, list[i].ID, archivePath)
+			list[i].ArchivePath = ""
+			changed = true
+		}
+	}
+	if changed {
+		return s.saveManagedSoftware(list)
+	}
+	return nil
 }
 
 // DeleteArchiveFile 删除归档或备份文件，并同步清除所有已托管软件中指向该文件的失效关联（若有其他残留备份则自动回退关联）。
@@ -446,19 +471,21 @@ func (s *Service) DeleteArchiveFile(filePath string) error {
 	}
 	changed := false
 	for i := range list {
-		if list[i].BackupPath != "" && winutil.SamePath(list[i].BackupPath, filePath) {
-			list[i].BackupPath = ""
-			changed = true
-			logger.Info("已解除软件 %s 对已删除备份文件的关联: %s", list[i].Name, filePath)
-		}
 		if list[i].ArchivePath != "" && winutil.SamePath(list[i].ArchivePath, filePath) {
 			list[i].ArchivePath = ""
 			changed = true
 			logger.Info("已解除软件 %s 对已删除归档文件的关联: %s", list[i].Name, filePath)
 		}
 	}
-	if s.syncManagedBackups(list) {
+	if s.syncManagedBackups(list, false) {
 		changed = true
+	}
+	for i := range list {
+		if list[i].BackupPath != "" && winutil.SamePath(list[i].BackupPath, filePath) {
+			list[i].BackupPath = ""
+			changed = true
+			logger.Info("已解除软件 %s 对已删除备份文件的关联: %s", list[i].Name, filePath)
+		}
 	}
 	if changed {
 		return s.saveManagedSoftware(list)
@@ -893,7 +920,7 @@ func (s *Service) CompleteSoftwareAddition(pending PendingAddition, selectedExe 
 		Status:         model.StatusManaged,
 		SortOrder:      order,
 	})
-	s.syncManagedBackups(list)
+	s.syncManagedBackups(list, true)
 	logger.Info("完成软件添加纳管: 名称=%s, 安装目录=%s, 主程序=%s, 归档=%s, 备份=%s", name, pending.InstallPath, selectedExe, archivePath, list[len(list)-1].BackupPath)
 	return s.saveManagedSoftware(list)
 }
@@ -1076,7 +1103,7 @@ func (s *Service) CompleteSoftwareRehost(existingID, installPath, sourceArchive,
 	} else if sourceArchive != "" {
 		list[idx].ArchivePath = sourceArchive
 	}
-	s.syncManagedBackups(list)
+	s.syncManagedBackups(list, true)
 	return s.saveManagedSoftware(list)
 }
 
@@ -1378,7 +1405,7 @@ func (s *Service) ArchiveInstallSubdirectories(
 		}
 	}
 
-	s.syncManagedBackups(managed)
+	s.syncManagedBackups(managed, true)
 	if err := s.saveManagedSoftware(managed); err != nil {
 		return nil, err
 	}
@@ -1453,7 +1480,7 @@ func (s *Service) ApplyArchiveAssociations(resolutions []ArchiveAssociationResol
 			}
 		}
 	}
-	if s.syncManagedBackups(list) {
+	if s.syncManagedBackups(list, true) {
 		changed = true
 	}
 	if changed {
@@ -1638,9 +1665,10 @@ func (s *Service) isBackupFilePath(p string) bool {
 }
 
 // syncManagedBackups 检查并同步已托管软件的 BackupPath：
-// 当软件的 BackupPath 为空（如删除软件后重新添加、覆盖安装等）或原备份文件已不存在时，
-// 在 backup 目录下自动查找匹配该软件名称且未被占用的最新残留备份并回写 BackupPath。
-func (s *Service) syncManagedBackups(list []model.Software) bool {
+// - 当 claimEmpty 为 true（如添加/重添软件、重新托管、批量扫描）时，对 BackupPath 为空的软件自动认领 backup 目录下最新的同名残留备份；
+// - 当软件原有的非空 BackupPath 文件已被删除时，自动回退关联到剩余的最新同名备份，若无可用备份则清空 BackupPath；
+// - 当 claimEmpty 为 false 且软件的 BackupPath 为空（例如用户主动点击了「取消关联」）时，保持为空不强行重连。
+func (s *Service) syncManagedBackups(list []model.Software, claimEmpty bool) bool {
 	if len(list) == 0 {
 		return false
 	}
@@ -1661,6 +1689,9 @@ func (s *Service) syncManagedBackups(list []model.Software) bool {
 	changed := false
 	for i := range list {
 		if list[i].BackupPath != "" && fileExists(list[i].BackupPath) {
+			continue
+		}
+		if list[i].BackupPath == "" && !claimEmpty {
 			continue
 		}
 		latest := findLatestMatchingBackup(list[i], backupDir, backupFiles, occupied)
