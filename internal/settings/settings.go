@@ -20,6 +20,7 @@ const (
 	KeyUseGridLayout           = "use_grid_layout"
 	KeyEnableFileLogging       = "enable_file_logging"
 	KeyLogFilePath             = "log_file_path"
+	KeyLogLevel                = "log_level"
 	KeyLanguage                = "language"
 	KeyThemeMode               = "theme_mode"
 	KeyThemeColor              = "theme_color"
@@ -32,6 +33,12 @@ const (
 	DefaultEnableFileLogging        = false
 	DefaultLanguage                 = "zh_CN"
 	DefaultFontFamily               = ""
+
+	LogLevelDebug   = "debug"
+	LogLevelInfo    = "info"
+	LogLevelWarn    = "warn"
+	LogLevelError   = "error"
+	DefaultLogLevel = LogLevelInfo
 
 	ThemeModeSystem   = "system"
 	ThemeModeLight    = "light"
@@ -230,6 +237,22 @@ func NormalizeThemeMode(mode string) string {
 	}
 }
 
+// NormalizeLogLevel 规范化日志输出级别配置值，非法值回退为 info。
+func NormalizeLogLevel(level string) string {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case LogLevelDebug:
+		return LogLevelDebug
+	case LogLevelInfo:
+		return LogLevelInfo
+	case LogLevelWarn, "warning":
+		return LogLevelWarn
+	case LogLevelError:
+		return LogLevelError
+	default:
+		return DefaultLogLevel
+	}
+}
+
 // NormalizeThemeColor 规范化主题强调色（#rrggbb）；空值或 "system" 返回 "" 表示跟随系统，非法值返回 ""。
 func NormalizeThemeColor(color string) string {
 	s := strings.ToLower(strings.TrimSpace(color))
@@ -387,6 +410,18 @@ func (s *Service) GetLogFilePath() string {
 
 func (s *Service) SaveLogFilePath(path string) error {
 	return s.store.Set(KeyLogFilePath, strings.TrimSpace(path))
+}
+
+func (s *Service) GetLogLevel() string {
+	v, ok := s.store.GetString(KeyLogLevel)
+	if !ok {
+		return DefaultLogLevel
+	}
+	return NormalizeLogLevel(v)
+}
+
+func (s *Service) SaveLogLevel(level string) error {
+	return s.store.Set(KeyLogLevel, NormalizeLogLevel(level))
 }
 
 func (s *Service) GetLanguage() string {

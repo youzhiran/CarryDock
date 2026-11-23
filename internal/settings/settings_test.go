@@ -193,3 +193,37 @@ func TestThemeModeAndThemeColorSettings(t *testing.T) {
 		t.Fatalf("expected invalid color to reset to empty, got %q", got)
 	}
 }
+
+func TestLogLevelSettings(t *testing.T) {
+	store := storage.NewAtDir(filepath.Join(t.TempDir(), "data"))
+	svc := NewService(store)
+
+	if got := svc.GetLogLevel(); got != DefaultLogLevel {
+		t.Fatalf("expected default log level %q, got %q", DefaultLogLevel, got)
+	}
+
+	cases := map[string]string{
+		"":         LogLevelInfo,
+		"debug":    LogLevelDebug,
+		" DEBUG ":  LogLevelDebug,
+		"INFO":     LogLevelInfo,
+		"warn":     LogLevelWarn,
+		"WARNING":  LogLevelWarn,
+		"Error":    LogLevelError,
+		"nonsense": LogLevelInfo,
+	}
+	for in, want := range cases {
+		if got := NormalizeLogLevel(in); got != want {
+			t.Fatalf("NormalizeLogLevel(%q) = %q, want %q", in, got, want)
+		}
+	}
+
+	for _, lvl := range []string{"DEBUG", "warn", "error", "info"} {
+		if err := svc.SaveLogLevel(lvl); err != nil {
+			t.Fatalf("SaveLogLevel(%q) failed: %v", lvl, err)
+		}
+		if got := svc.GetLogLevel(); got != NormalizeLogLevel(lvl) {
+			t.Fatalf("GetLogLevel() = %q, want %q", got, NormalizeLogLevel(lvl))
+		}
+	}
+}

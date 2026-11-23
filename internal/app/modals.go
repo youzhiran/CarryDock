@@ -771,6 +771,7 @@ func (a *App) extensionsModalView(c *ui.Context) {
 					}
 					a.setExts = settings.NormalizeExtensions(selected)
 					a.extModalOpen = false
+					a.saveExecutableSettings()
 				}
 			})
 		})

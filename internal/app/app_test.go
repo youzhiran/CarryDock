@@ -855,3 +855,29 @@ func TestHomeToolbarResponsiveOverflow(t *testing.T) {
 		t.Fatalf("expected overflow menu to contain '扫描当前目录软件', got texts: %q", narrowTester.Texts())
 	}
 }
+
+func TestSettingsLogLevelStrategySwitch(t *testing.T) {
+	a := newTestApp(t)
+	a.page = pageSettings
+
+	tt := ui.NewTester(a.View, 1020, 760)
+	// 向下滚动到「日志设置」卡片区域
+	tt.Scroll(500, 300, 0, 1050)
+	tt.Frame()
+
+	if !tt.HasText("日志输出级别") || !tt.HasText("常规 (INFO)") {
+		t.Fatalf("expected log level setting in Settings view, got texts: %q", tt.Texts())
+	}
+
+	// 切换到「调试 (DEBUG)」策略
+	clickLabel(t, tt, "调试 (DEBUG)")
+	if a.setLogLevel != settings.LogLevelDebug || a.settingsSvc.GetLogLevel() != settings.LogLevelDebug {
+		t.Fatalf("expected log level debug, got state=%q stored=%q", a.setLogLevel, a.settingsSvc.GetLogLevel())
+	}
+
+	// 切换到「仅错误 (ERROR)」策略
+	clickLabel(t, tt, "仅错误 (ERROR)")
+	if a.setLogLevel != settings.LogLevelError || a.settingsSvc.GetLogLevel() != settings.LogLevelError {
+		t.Fatalf("expected log level error, got state=%q stored=%q", a.setLogLevel, a.settingsSvc.GetLogLevel())
+	}
+}

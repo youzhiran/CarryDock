@@ -61,6 +61,8 @@ func (a *App) loadSettingsSnapshot() {
 
 	a.setFileLogging = a.settingsSvc.GetEnableFileLogging()
 	a.setLogFilePath = a.settingsSvc.GetLogFilePath()
+	a.setLogLevel = a.settingsSvc.GetLogLevel()
+	logger.SetLevel(a.setLogLevel)
 
 	a.devEnabled = a.settingsSvc.GetDeveloperOptionsEnabled()
 	a.useGrid = a.settingsSvc.GetUseGridLayout()
@@ -102,6 +104,7 @@ func (a *App) saveInstallPath() {
 	}
 	a.setSavedInstallPath = val
 	a.setInstallPath = val
+	logger.Info("已保存安装目录配置: %s", val)
 	a.toast(a.tr().Success, a.tr().SettingsInstallPathSaved)
 }
 
@@ -113,6 +116,7 @@ func (a *App) saveArchivePath() {
 	}
 	a.setSavedArchivePath = val
 	a.setArchivePath = val
+	logger.Info("已保存归档目录配置: %s", val)
 	a.toast(a.tr().Success, a.tr().SettingsArchivePathSaved)
 }
 
@@ -122,6 +126,7 @@ func (a *App) saveArchiveHandling() {
 		return
 	}
 	a.setSavedRemoveNested = a.setRemoveNested
+	logger.Info("已保存归档处理设置: 解压移除嵌套目录=%v", a.setRemoveNested)
 	a.toast(a.tr().Success, a.tr().SettingsArchiveHandlingSaved)
 }
 
@@ -140,6 +145,8 @@ func (a *App) saveExecutableSettings() {
 	}
 	a.setSavedMaxDepth = a.setMaxDepth
 	a.setSavedExts = slices.Clone(a.setExts)
+	a.altCache = make(map[string]*altExecEntry)
+	logger.Info("已保存可执行文件识别设置: 最大深度=%d, 扩展名=%v", a.setMaxDepth, a.setExts)
 	a.toast(a.tr().Success, a.tr().SettingsExecSettingsSaved)
 }
 
@@ -151,6 +158,7 @@ func (a *App) saveLanguageSetting() {
 	a.setSavedLanguage = a.setLanguage
 	a.lang = i18n.Normalize(a.setLanguage)
 	a.syncWindowTitle()
+	logger.Info("已切换界面语言: %s", a.lang)
 	a.toast(a.tr().Success, a.tr().SettingsLanguageSaved)
 }
 
@@ -177,7 +185,7 @@ func (a *App) saveAllSettings() bool {
 	return !a.hasUnsavedSettings()
 }
 
-func (a *App) pickDirectoryInto(target *string) {
+func (a *App) pickDirectoryInto(target *string, onPicked func()) {
 	win := a.win
 	title := a.tr().Browse
 	defaultPath := strings.TrimSpace(*target)
@@ -193,6 +201,9 @@ func (a *App) pickDirectoryInto(target *string) {
 		}
 		a.update(func() {
 			*target = paths[0]
+			if onPicked != nil {
+				onPicked()
+			}
 		})
 	}()
 }
@@ -206,18 +217,9 @@ func (a *App) settingsView(c *ui.Context) {
 	}
 
 	ui.Column(c).Fill().Padding(20, 24).Gap(14).Children(func() {
-		// 顶部标题与「全部保存」按钮
+		// 顶部标题
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, tr.SettingsTitle).FontSize(22).Bold().SingleLine()
-			if a.hasUnsavedSettings() {
-				pillBadge(c, tr.SettingsUnsavedBadge, p.warningTint, t.Warning)
-			}
-			ui.Spacer(c)
-			if a.hasUnsavedSettings() {
-				if ui.PrimaryButton(c.Key("set-save-all"), tr.SettingsSaveAll).Clicked() {
-					a.saveAllSettings()
-				}
-			}
 		})
 
 		ui.Scroll(c.Key("settings-scroll")).TrackScroll(&a.setScrollState).Grow(1).Children(func() {
@@ -240,14 +242,19 @@ func (a *App) settingsView(c *ui.Context) {
 					ui.Column(c).Gap(6).Children(func() {
 						ui.Text(c, tr.SettingsInstallPath).FontSize(13).Bold()
 						ui.Row(c).Gap(8).Children(func() {
-							ui.TextInput(c.Key("set-install"), &a.setInstallPath).
+							in := ui.TextInput(c.Key("set-install"), &a.setInstallPath).
 								Placeholder(tr.SettingsInstallPathHolder).Grow(1).MinWidth(0)
-							if ui.Button(c.Key("set-install-browse"), tr.Browse).Clicked() {
-								a.pickDirectoryInto(&a.setInstallPath)
+							if in.Changed() {
+								val := strings.TrimSpace(a.setInstallPath)
+								if err := a.settingsSvc.SaveInstallPath(val); err == nil {
+									a.setSavedInstallPath = val
+								}
 							}
-							if ui.PrimaryButton(c.Key("set-install-save"), tr.Save).
-								Disabled(!a.installPathDirty()).Clicked() {
+							if in.Submitted() {
 								a.saveInstallPath()
+							}
+							if ui.Button(c.Key("set-install-browse"), tr.Browse).Clicked() {
+								a.pickDirectoryInto(&a.setInstallPath, a.saveInstallPath)
 							}
 						})
 					})
@@ -258,14 +265,19 @@ func (a *App) settingsView(c *ui.Context) {
 					ui.Column(c).Gap(6).Children(func() {
 						ui.Text(c, tr.SettingsArchivePath).FontSize(13).Bold()
 						ui.Row(c).Gap(8).Children(func() {
-							ui.TextInput(c.Key("set-archive"), &a.setArchivePath).
+							in := ui.TextInput(c.Key("set-archive"), &a.setArchivePath).
 								Placeholder(tr.SettingsArchivePathHolder).Grow(1).MinWidth(0)
-							if ui.Button(c.Key("set-archive-browse"), tr.Browse).Clicked() {
-								a.pickDirectoryInto(&a.setArchivePath)
+							if in.Changed() {
+								val := strings.TrimSpace(a.setArchivePath)
+								if err := a.settingsSvc.SaveArchivePath(val); err == nil {
+									a.setSavedArchivePath = val
+								}
 							}
-							if ui.PrimaryButton(c.Key("set-archive-save"), tr.Save).
-								Disabled(!a.archivePathDirty()).Clicked() {
+							if in.Submitted() {
 								a.saveArchivePath()
+							}
+							if ui.Button(c.Key("set-archive-browse"), tr.Browse).Clicked() {
+								a.pickDirectoryInto(&a.setArchivePath, a.saveArchivePath)
 							}
 						})
 					})
@@ -291,15 +303,10 @@ func (a *App) settingsView(c *ui.Context) {
 							ui.Text(c, tr.SettingsRemoveNested).FontSize(13).Bold()
 							ui.Text(c, tr.SettingsRemoveNestedDesc).FontSize(12).TextColor(t.TextMuted)
 						})
-						ui.Switch(c.Key("set-nested"), &a.setRemoveNested).Label(tr.SettingsRemoveNested)
+						if ui.Switch(c.Key("set-nested"), &a.setRemoveNested).Label(tr.SettingsRemoveNested).Changed() {
+							a.saveArchiveHandling()
+						}
 					})
-					if a.archiveHandlingDirty() {
-						ui.Row(c).Justify(ui.End).Children(func() {
-							if ui.PrimaryButton(c.Key("set-save-nested"), tr.SettingsSaveArchiveHandling).Clicked() {
-								a.saveArchiveHandling()
-							}
-						})
-					}
 
 					ui.Divider(c).Background(p.cardBorder)
 
@@ -332,6 +339,7 @@ func (a *App) settingsView(c *ui.Context) {
 						if ui.Select(c.Key("set-depth"), &depthStr, depthOpts).Width(100).Changed() {
 							if d, err := strconv.Atoi(depthStr); err == nil {
 								a.setMaxDepth = settings.NormalizeDepth(d)
+								a.saveExecutableSettings()
 							}
 						}
 					})
@@ -375,39 +383,36 @@ func (a *App) settingsView(c *ui.Context) {
 								}
 							})
 							if removeTarget != "" {
-								var updated []string
-								for _, e := range a.setExts {
-									if e != removeTarget {
-										updated = append(updated, e)
+								if len(a.setExts) <= 1 {
+									a.toast(tr.Warning, tr.SettingsExtSelectAtLeastOne)
+								} else {
+									var updated []string
+									for _, e := range a.setExts {
+										if e != removeTarget {
+											updated = append(updated, e)
+										}
 									}
+									a.setExts = updated
+									a.saveExecutableSettings()
 								}
-								a.setExts = updated
 							}
 						}
 					})
-
-					if a.executableSettingsDirty() {
-						ui.Row(c).Justify(ui.End).Children(func() {
-							if ui.PrimaryButton(c.Key("set-save-exec"), tr.SettingsSaveExecSettings).Clicked() {
-								a.saveExecutableSettings()
-							}
-						})
-					}
 				})
 
 				// 4. 外观与语言
 				settingsCard(c, iconPalette, tr.SettingsAppearance, func() {
-					// 字体选择（即时生效并保存）
+					// 字体选择
 					a.fontPickerView(c)
 
 					ui.Divider(c).Background(p.cardBorder)
 
-					// 主题模式（即时生效并保存）
+					// 主题模式
 					a.themeModePickerView(c)
 
 					ui.Divider(c).Background(p.cardBorder)
 
-					// 主题颜色（即时生效并保存）
+					// 主题颜色
 					a.themeColorPickerView(c)
 
 					ui.Divider(c).Background(p.cardBorder)
@@ -430,15 +435,9 @@ func (a *App) settingsView(c *ui.Context) {
 							} else {
 								a.setLanguage = string(i18n.LangZhCN)
 							}
+							a.saveLanguageSetting()
 						}
 					})
-					if a.languageDirty() {
-						ui.Row(c).Justify(ui.End).Children(func() {
-							if ui.PrimaryButton(c.Key("set-save-lang"), tr.SettingsSaveLanguage).Clicked() {
-								a.saveLanguageSetting()
-							}
-						})
-					}
 				})
 
 				// 5. 日志设置
@@ -451,15 +450,21 @@ func (a *App) settingsView(c *ui.Context) {
 						if ui.Switch(c.Key("set-logging"), &a.setFileLogging).Label(tr.SettingsEnableFileLogging).Changed() {
 							enabled := a.setFileLogging
 							logPath := a.setLogFilePath
+							lvl := a.setLogLevel
 							go func() {
 								_ = a.settingsSvc.SaveEnableFileLogging(enabled)
-								_ = logger.Configure(enabled, logPath)
+								_ = logger.ConfigureWithLevel(enabled, logPath, lvl)
+								logger.Info("文件日志开关变更: enabled=%v, path=%s", enabled, logPath)
 								a.update(func() {
 									a.toast(a.tr().Success, a.tr().SettingsLogSettingsSaved)
 								})
 							}()
 						}
 					})
+
+					ui.Divider(c).Background(p.cardBorder)
+
+					a.logLevelPickerView(c)
 
 					ui.Divider(c).Background(p.cardBorder)
 
@@ -786,9 +791,83 @@ func (a *App) themeModePickerView(c *ui.Context) {
 					a.themeMode = opt.mode
 					a.applyNativeThemeMode()
 					_ = a.settingsSvc.SaveThemeMode(opt.mode)
+					logger.Info("已切换主题模式: %s", opt.mode)
 				}
 			}
 		})
+	})
+}
+
+func (a *App) logLevelPickerView(c *ui.Context) {
+	t := c.Theme()
+	p := paletteOf(t)
+	tr := a.tr()
+
+	currLevel := settings.NormalizeLogLevel(a.setLogLevel)
+	levels := []struct {
+		level string
+		label string
+		hint  string
+	}{
+		{settings.LogLevelDebug, tr.SettingsLogLevelDebug, tr.SettingsLogLevelDebugHint},
+		{settings.LogLevelInfo, tr.SettingsLogLevelInfo, tr.SettingsLogLevelInfoHint},
+		{settings.LogLevelWarn, tr.SettingsLogLevelWarn, tr.SettingsLogLevelWarnHint},
+		{settings.LogLevelError, tr.SettingsLogLevelError, tr.SettingsLogLevelErrorHint},
+	}
+
+	activeHint := tr.SettingsLogLevelInfoHint
+	for _, opt := range levels {
+		if opt.level == currLevel {
+			activeHint = opt.hint
+			break
+		}
+	}
+
+	ui.Column(c).Gap(8).Children(func() {
+		ui.Row(c).Gap(12).AlignItems(ui.Center).Wrap().Children(func() {
+			ui.Column(c).Grow(1).MinWidth(200).Gap(2).Children(func() {
+				ui.Text(c, tr.SettingsLogLevel).FontSize(13).Bold()
+				ui.Text(c, tr.SettingsLogLevelDesc).FontSize(12).TextColor(t.TextMuted)
+			})
+
+			ui.Row(c).Padding(3).Gap(2).Radius(9).Background(p.subtleBg).
+				Border(1, p.cardBorder).Shrink(0).Children(func() {
+				for _, opt := range levels {
+					active := currLevel == opt.level
+					btn := ui.ButtonBase(c.Key("set-log-level-"+opt.level)).Height(28).Padding(0, 10).
+						Radius(6).Center().Cursor(ui.CursorPointer).Label(opt.label)
+					fg := t.TextMuted
+					switch {
+					case active:
+						btn.Background(p.card).Shadow(0, 1, 2, 0, p.shadow)
+						fg = t.Accent
+					case btn.Hovered():
+						btn.Background(t.Text.Alpha(0.06))
+						fg = t.Text
+					}
+					btn.Children(func() {
+						txt := ui.Text(c, opt.label).FontSize(12).TextColor(fg).SingleLine()
+						if active {
+							txt.Bold()
+						}
+					})
+					if btn.Clicked() && currLevel != opt.level {
+						newLevel := opt.level
+						a.setLogLevel = newLevel
+						logger.SetLevel(newLevel)
+						logger.Info("已切换日志输出级别策略: %s", strings.ToUpper(newLevel))
+						go func(lvl string) {
+							_ = a.settingsSvc.SaveLogLevel(lvl)
+							a.update(func() {
+								a.toast(a.tr().Success, a.tr().SettingsLogSettingsSaved)
+							})
+						}(newLevel)
+					}
+				}
+			})
+		})
+
+		ui.Text(c, activeHint).FontSize(11).TextColor(t.TextMuted)
 	})
 }
 

@@ -307,6 +307,16 @@ type Strings struct {
 	SettingsLogSettings          string
 	SettingsEnableFileLogging    string
 	SettingsEnableFileLoggingMsg string
+	SettingsLogLevel             string
+	SettingsLogLevelDesc         string
+	SettingsLogLevelDebug        string
+	SettingsLogLevelInfo         string
+	SettingsLogLevelWarn         string
+	SettingsLogLevelError        string
+	SettingsLogLevelDebugHint    string
+	SettingsLogLevelInfoHint     string
+	SettingsLogLevelWarnHint     string
+	SettingsLogLevelErrorHint    string
 	SettingsLogFilePath          string
 	SettingsLogSettingsSaved     string
 	SettingsAbout                string
@@ -634,7 +644,17 @@ var zhStrings = Strings{
 	SettingsLanguageSaved:        "语言设置已保存。",
 	SettingsLogSettings:          "日志设置",
 	SettingsEnableFileLogging:    "启用文件日志",
-	SettingsEnableFileLoggingMsg: "将运行日志保存到文件以便排查问题（实时生效）",
+	SettingsEnableFileLoggingMsg: "将运行日志保存到文件以便排查问题",
+	SettingsLogLevel:             "日志输出级别",
+	SettingsLogLevelDesc:         "控制控制台与日志文件的最低输出策略",
+	SettingsLogLevelDebug:        "调试 (DEBUG)",
+	SettingsLogLevelInfo:         "常规 (INFO)",
+	SettingsLogLevelWarn:         "警告 (WARN)",
+	SettingsLogLevelError:        "仅错误 (ERROR)",
+	SettingsLogLevelDebugHint:    "当前策略：输出全部日志（DEBUG / INFO / WARN / ERROR），包含列表刷新、元数据提取与残留备份匹配细节",
+	SettingsLogLevelInfoHint:     "当前策略：输出常规业务及异常日志（INFO / WARN / ERROR），记录软件托管、解压、备份、关联与更新操作",
+	SettingsLogLevelWarnHint:     "当前策略：仅输出警告与错误日志（WARN / ERROR），忽略常规操作记录",
+	SettingsLogLevelErrorHint:    "当前策略：仅输出错误日志（ERROR），仅在操作失败或发生异常时记录",
 	SettingsLogFilePath:          "日志文件位置",
 	SettingsLogSettingsSaved:     "日志设置已保存。",
 	SettingsAbout:                "关于",
@@ -960,7 +980,17 @@ var enStrings = Strings{
 	SettingsLanguageSaved:        "Language saved.",
 	SettingsLogSettings:          "Logging",
 	SettingsEnableFileLogging:    "Enable File Logging",
-	SettingsEnableFileLoggingMsg: "Write logs to disk for troubleshooting (applies immediately)",
+	SettingsEnableFileLoggingMsg: "Write logs to disk for troubleshooting",
+	SettingsLogLevel:             "Log Output Level",
+	SettingsLogLevelDesc:         "Control the minimum severity strategy for console and file logs",
+	SettingsLogLevelDebug:        "Debug (DEBUG)",
+	SettingsLogLevelInfo:         "Standard (INFO)",
+	SettingsLogLevelWarn:         "Warning (WARN)",
+	SettingsLogLevelError:        "Error Only (ERROR)",
+	SettingsLogLevelDebugHint:    "Current strategy: Output all logs (DEBUG / INFO / WARN / ERROR), including list refresh, metadata extraction, and backup matching details",
+	SettingsLogLevelInfoHint:     "Current strategy: Output standard and error logs (INFO / WARN / ERROR) for software hosting, extraction, backup, linking, and updates",
+	SettingsLogLevelWarnHint:     "Current strategy: Output only warnings and errors (WARN / ERROR), omitting routine operations",
+	SettingsLogLevelErrorHint:    "Current strategy: Output only errors (ERROR) when operations fail",
 	SettingsLogFilePath:          "Log File",
 	SettingsLogSettingsSaved:     "Log settings saved.",
 	SettingsAbout:                "About",

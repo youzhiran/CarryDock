@@ -50,14 +50,19 @@ func NewService() *Service {
 // CheckForUpdate 仅发起一次网络请求获取远程版本并与当前版本比对。
 // 修复了原版一次检查请求两次 GitHub API、以及无 +buildNumber 后缀时无法判断更新的问题。
 func (s *Service) CheckForUpdate(ctx context.Context, forceReinstall bool) (hasUpdate bool, info *ReleaseInfo, err error) {
+	logger.Info("开始检查应用更新: 当前版本=%s (强制重装=%v)", version.FullVersion(), forceReinstall)
 	info, err = s.fetchLatestRelease(ctx)
 	if err != nil {
+		logger.Warn("检查应用更新失败: %v", err)
 		return false, nil, err
 	}
 	if forceReinstall {
+		logger.Info("准备重新安装最新版本: %s (%s)", info.Version, info.AssetName)
 		return true, info, nil
 	}
-	return IsNewerVersion(version.FullVersion(), info.Version), info, nil
+	hasUpdate = IsNewerVersion(version.FullVersion(), info.Version)
+	logger.Info("检查应用更新完成: 远程版本=%s, 是否有更新=%v", info.Version, hasUpdate)
+	return hasUpdate, info, nil
 }
 
 func (s *Service) fetchLatestRelease(ctx context.Context) (*ReleaseInfo, error) {

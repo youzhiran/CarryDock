@@ -20,12 +20,21 @@ var appIconPNG []byte
 
 func main() {
 	settingsSvc := settings.NewService(storage.Default())
-	if err := logger.Configure(settingsSvc.GetEnableFileLogging(), settingsSvc.GetLogFilePath()); err != nil {
+	if err := logger.ConfigureWithLevel(
+		settingsSvc.GetEnableFileLogging(),
+		settingsSvc.GetLogFilePath(),
+		settingsSvc.GetLogLevel(),
+	); err != nil {
 		log.Printf("初始化文件日志失败: %v", err)
 	}
 	defer logger.Close()
 
-	logger.Info("CarryDock (MyGo 原生 UI) 启动")
+	logger.Info(
+		"CarryDock (MyGo 原生 UI) 启动: logLevel=%s, fileLogging=%v, logPath=%s",
+		settingsSvc.GetLogLevel(),
+		settingsSvc.GetEnableFileLogging(),
+		settingsSvc.GetLogFilePath(),
+	)
 	go updater.CleanupLegacyFilesForCurrentApp()
 
 	softwareSvc := software.NewService(settingsSvc)

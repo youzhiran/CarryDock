@@ -133,6 +133,7 @@ type App struct {
 	setSavedLanguage     string
 	setFileLogging       bool
 	setLogFilePath       string
+	setLogLevel          string
 	setScrollState       ui.ScrollState
 
 	// 5 连击版本解锁开发者选项
@@ -684,6 +685,7 @@ func (a *App) ensureExeMeta(exePath string) *exeMeta {
 		if len(pngBytes) > 0 {
 			bmp, _ = ui.DecodeBitmap(pngBytes)
 		}
+		logger.Debug("提取可执行文件元数据完成: %s (说明=%q, 图标=%v)", p, desc, bmp != nil)
 		a.update(func() {
 			entry, ok := a.exeCache[cacheKey]
 			if !ok {
@@ -713,6 +715,7 @@ func (a *App) ensureAltExecutables(installPath string) *altExecEntry {
 
 	go func(dir, cacheKey string) {
 		paths := a.softwareSvc.FindExecutablesInDirectory(dir)
+		logger.Debug("扫描软件目录备选可执行程序完成: %s (共 %d 项)", dir, len(paths))
 		a.update(func() {
 			entry, ok := a.altCache[cacheKey]
 			if !ok {

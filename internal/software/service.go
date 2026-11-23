@@ -210,6 +210,7 @@ func (s *Service) LoadManagedSoftware() ([]model.Software, error) {
 		sw.IsBackupArchive = (sw.BackupPath != "" && fileExists(sw.BackupPath)) ||
 			(sw.ArchivePath != "" && s.isBackupFilePath(sw.ArchivePath) && sw.ArchiveExists)
 	}
+	logger.Debug("已加载托管软件列表: 共 %d 项 (%s)", len(list), listPath)
 	return list, nil
 }
 
@@ -338,6 +339,7 @@ func (s *Service) GetSoftwareList() ([]model.Software, error) {
 	out = append(out, managed...)
 	out = append(out, unknownInstalls...)
 	out = append(out, unknownArchives...)
+	logger.Debug("刷新软件列表状态完成: 已托管=%d, 未托管目录=%d, 未关联归档=%d", len(managed), len(unknownInstalls), len(unknownArchives))
 	return out, nil
 }
 
@@ -415,6 +417,7 @@ func (s *Service) LinkArchiveToSoftware(softwareID, archivePath string) error {
 			}
 		}
 		list[idx].BackupPath = archivePath
+		logger.Info("手动关联备份文件: 软件=%s (ID=%s) -> %s", list[idx].Name, softwareID, archivePath)
 	} else {
 		for i := range list {
 			if i != idx && list[i].ArchivePath != "" && winutil.SamePath(list[i].ArchivePath, archivePath) {
@@ -422,6 +425,7 @@ func (s *Service) LinkArchiveToSoftware(softwareID, archivePath string) error {
 			}
 		}
 		list[idx].ArchivePath = archivePath
+		logger.Info("手动关联归档文件: 软件=%s (ID=%s) -> %s", list[idx].Name, softwareID, archivePath)
 	}
 	s.syncManagedBackups(list)
 	return s.saveManagedSoftware(list)
@@ -431,8 +435,10 @@ func (s *Service) LinkArchiveToSoftware(softwareID, archivePath string) error {
 func (s *Service) DeleteArchiveFile(filePath string) error {
 	if fileExists(filePath) {
 		if err := os.Remove(filePath); err != nil {
+			logger.Error("删除归档/备份文件失败 (%s): %v", filePath, err)
 			return err
 		}
+		logger.Info("已删除归档/备份文件: %s", filePath)
 	}
 	list, err := s.LoadManagedSoftware()
 	if err != nil {
@@ -443,10 +449,12 @@ func (s *Service) DeleteArchiveFile(filePath string) error {
 		if list[i].BackupPath != "" && winutil.SamePath(list[i].BackupPath, filePath) {
 			list[i].BackupPath = ""
 			changed = true
+			logger.Info("已解除软件 %s 对已删除备份文件的关联: %s", list[i].Name, filePath)
 		}
 		if list[i].ArchivePath != "" && winutil.SamePath(list[i].ArchivePath, filePath) {
 			list[i].ArchivePath = ""
 			changed = true
+			logger.Info("已解除软件 %s 对已删除归档文件的关联: %s", list[i].Name, filePath)
 		}
 	}
 	if s.syncManagedBackups(list) {
@@ -502,14 +510,18 @@ func (s *Service) CreateBackupFromDirectory(sourceDir, displayName string) (stri
 		targetPath = filepath.Join(backupDir, fmt.Sprintf("%s-%s_%d.zip", sanitized, ts, n))
 	}
 
+	logger.Info("开始创建目录备份: %s -> %s", sourceDir, targetPath)
 	if err := archive.CreateZipFromDirectory(sourceDir, targetPath); err != nil {
+		logger.Error("创建目录备份失败 (%s -> %s): %v", sourceDir, targetPath, err)
 		return "", err
 	}
+	logger.Info("目录备份创建成功: %s", targetPath)
 	return targetPath, nil
 }
 
 // AddSoftwareFromFile 根据文件类型自动识别（归档或可执行文件）并执行软件添加流程。
 func (s *Service) AddSoftwareFromFile(filePath string) AddResult {
+	logger.Info("开始从文件添加软件: %s", filePath)
 	installPath := s.settings.GetInstallPath()
 	if installPath == "" {
 		return AddResult{Type: AddError, Err: ErrInstallPathNotConfigured}
@@ -882,11 +894,13 @@ func (s *Service) CompleteSoftwareAddition(pending PendingAddition, selectedExe 
 		SortOrder:      order,
 	})
 	s.syncManagedBackups(list)
+	logger.Info("完成软件添加纳管: 名称=%s, 安装目录=%s, 主程序=%s, 归档=%s, 备份=%s", name, pending.InstallPath, selectedExe, archivePath, list[len(list)-1].BackupPath)
 	return s.saveManagedSoftware(list)
 }
 
 // CancelPendingAddition 安全清理待添加软件产生的临时文件；不会删除原本已存在的归档文件。
 func (s *Service) CancelPendingAddition(pending PendingAddition) {
+	logger.Info("用户取消软件添加，清理临时文件: 安装目录=%s (清理新建归档=%v)", pending.InstallPath, pending.CreatedArchive)
 	if pending.InstallPath != "" {
 		_ = os.RemoveAll(pending.InstallPath)
 	}
@@ -904,6 +918,7 @@ func (s *Service) RehostSoftware(sw model.Software) AddResult {
 	if sourceArchive == "" {
 		return AddResult{Type: AddError, Err: errors.New("归档与备份文件均不存在，无法重新托管")}
 	}
+	logger.Info("开始重新托管软件: 名称=%s, 源归档=%s -> %s", sw.Name, sourceArchive, sw.InstallPath)
 
 	format := archive.DetectFormat(sourceArchive)
 	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(sourceArchive)), ".")
@@ -1121,6 +1136,7 @@ func (s *Service) RenameSoftwareFolder(sw model.Software, newFolderName string) 
 			}
 			list[i].InstallPath = newInstallPath
 			list[i].ExecutablePath = newExecPath
+			logger.Info("完成软件目录重命名/迁移: %s -> %s", oldInstallPath, newInstallPath)
 			return s.saveManagedSoftware(list)
 		}
 	}
@@ -1136,6 +1152,7 @@ func (s *Service) UpdateSoftwareExecutable(softwareID, newExePath string) error 
 	for i := range list {
 		if list[i].ID == softwareID {
 			list[i].ExecutablePath = newExePath
+			logger.Info("已更新软件主程序: 软件=%s (ID=%s) -> %s", list[i].Name, softwareID, newExePath)
 			return s.saveManagedSoftware(list)
 		}
 	}
@@ -1161,11 +1178,13 @@ func (s *Service) UpdateManagedSoftwareOrder(orderedIDs []string) error {
 			next++
 		}
 	}
+	logger.Debug("已更新托管软件排序: 共 %d 项", len(orderedIDs))
 	return s.saveManagedSoftware(list)
 }
 
 // DeleteSoftware 删除软件记录，并按选项删除安装目录或归档文件。
 func (s *Service) DeleteSoftware(sw model.Software, deleteInstallDir, deleteArchive bool) error {
+	logger.Info("删除软件: 名称=%s (删除安装目录=%v, 删除归档=%v)", sw.Name, deleteInstallDir, deleteArchive)
 	list, err := s.LoadManagedSoftware()
 	if err != nil {
 		return err
@@ -1649,7 +1668,9 @@ func (s *Service) syncManagedBackups(list []model.Software) bool {
 			list[i].BackupPath = latest
 			occupied[normalizeBackupPathKey(latest)] = true
 			changed = true
+			logger.Info("自动关联残留备份: 软件=%s -> %s", list[i].Name, latest)
 		} else if list[i].BackupPath != "" {
+			logger.Warn("清除失效的备份关联 (%s): 原备份文件已不存在 %s", list[i].Name, list[i].BackupPath)
 			list[i].BackupPath = ""
 			changed = true
 		}
