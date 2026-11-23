@@ -1,10 +1,15 @@
 package app
 
 import (
+	"bytes"
+	"image"
+	"image/color"
+	"image/png"
 	"math"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"carrydock/internal/model"
@@ -61,6 +66,13 @@ func TestAppNativeUIViewsAndNavigation(t *testing.T) {
 		t.Fatalf("expected pageArchive, got %v", a.page)
 	}
 
+	if err := tt.Click("备份文件"); err != nil {
+		t.Fatalf("click Backups nav failed: %v", err)
+	}
+	if a.page != pageBackup {
+		t.Fatalf("expected pageBackup, got %v", a.page)
+	}
+
 	// 4. 切回设置页，验证 5 连击版本解锁开发者选项
 	if err := tt.Click("设置"); err != nil {
 		t.Fatalf("click Settings nav failed: %v", err)
@@ -98,13 +110,14 @@ func TestSidebarNavIconsLeftAligned(t *testing.T) {
 	tt := ui.NewTester(a.View, 1020, 680)
 	rHome, ok1 := tt.Find("主页")
 	rArch, ok2 := tt.Find("归档管理")
-	rSet, ok3 := tt.Find("设置")
-	if !ok1 || !ok2 || !ok3 {
-		t.Fatalf("expected all nav labels, found home=%v arch=%v set=%v", ok1, ok2, ok3)
+	rBak, ok3 := tt.Find("备份文件")
+	rSet, ok4 := tt.Find("设置")
+	if !ok1 || !ok2 || !ok3 || !ok4 {
+		t.Fatalf("expected all nav labels, found home=%v arch=%v bak=%v set=%v", ok1, ok2, ok3, ok4)
 	}
 
-	if math.Abs(float64(rHome.X-rArch.X)) > 1.0 || math.Abs(float64(rHome.X-rSet.X)) > 1.0 {
-		t.Fatalf("nav items should be left-aligned at same X, got home=%.1f arch=%.1f set=%.1f", rHome.X, rArch.X, rSet.X)
+	if math.Abs(float64(rHome.X-rArch.X)) > 1.0 || math.Abs(float64(rHome.X-rBak.X)) > 1.0 || math.Abs(float64(rHome.X-rSet.X)) > 1.0 {
+		t.Fatalf("nav items should be left-aligned at same X, got home=%.1f arch=%.1f bak=%.1f set=%.1f", rHome.X, rArch.X, rBak.X, rSet.X)
 	}
 	if rHome.X > 60 {
 		t.Fatalf("expected nav items near left edge of sidebar, got X=%.1f", rHome.X)
@@ -319,26 +332,33 @@ func TestArchiveSearchAndLinkedFilter(t *testing.T) {
 	}
 	a.backups = []model.Software{
 		{Name: "Alpha_bak.zip", ArchivePath: `C:\Bak\Alpha_bak.zip`, IsBackupArchive: true},
+		{Name: "Linked_bak.zip", ArchivePath: `C:\Bak\Linked_bak.zip`, IsBackupArchive: true},
 	}
 	a.linkedPaths = map[string]bool{
-		normalizePathKey(`C:\Arch\Alpha.zip`): true,
+		normalizePathKey(`C:\Arch\Alpha.zip`):     true,
+		normalizePathKey(`C:\Bak\Linked_bak.zip`): true,
 	}
 
 	tt := ui.NewTester(a.View, 1020, 720)
 
-	// 1. 「已关联」筛选
+	// 0. 归档管理页仅显示归档文件，不混入备份文件
+	if !tt.HasText("Alpha.zip") || !tt.HasText("Beta.7z") || tt.HasText("Alpha_bak.zip") {
+		t.Fatalf("expected only archives on pageArchive, texts: %q", tt.Texts())
+	}
+
+	// 1. 归档页「已关联」筛选
 	clickLabel(t, tt, "已关联")
 	if !tt.HasText("Alpha.zip") || tt.HasText("Beta.7z") {
 		t.Fatalf("expected only linked archives, texts: %q", tt.Texts())
 	}
 
-	// 2. 「未关联」筛选
+	// 2. 归档页「未关联」筛选
 	clickLabel(t, tt, "未关联")
-	if !tt.HasText("Beta.7z") || !tt.HasText("Alpha_bak.zip") || tt.HasText("Alpha.zip") {
-		t.Fatalf("expected only unlinked archives and backups, texts: %q", tt.Texts())
+	if !tt.HasText("Beta.7z") || tt.HasText("Alpha.zip") || tt.HasText("Alpha_bak.zip") {
+		t.Fatalf("expected only unlinked archives, texts: %q", tt.Texts())
 	}
 
-	// 3. 搜索无结果 -> 清除筛选还原
+	// 3. 归档页搜索无结果 -> 清除筛选还原
 	a.archiveSearch = "no-such-archive"
 	tt.Frame()
 	if !tt.HasText("没有匹配的项目") {
@@ -351,8 +371,41 @@ func TestArchiveSearchAndLinkedFilter(t *testing.T) {
 	if a.archiveSearch != "" || a.archiveFilter != archiveFilterAll {
 		t.Fatalf("expected archive search & filter reset, got search=%q filter=%q", a.archiveSearch, a.archiveFilter)
 	}
-	if !tt.HasText("Alpha.zip") || !tt.HasText("Beta.7z") || !tt.HasText("Alpha_bak.zip") {
-		t.Fatalf("expected all archives & backups visible after clear, texts: %q", tt.Texts())
+	if !tt.HasText("Alpha.zip") || !tt.HasText("Beta.7z") {
+		t.Fatalf("expected all archives visible after clear, texts: %q", tt.Texts())
+	}
+
+	// 4. 切换到备份文件页，验证仅显示备份文件及独立搜索/筛选状态
+	a.page = pageBackup
+	tt.Frame()
+	if !tt.HasText("Alpha_bak.zip") || !tt.HasText("Linked_bak.zip") || tt.HasText("Alpha.zip") {
+		t.Fatalf("expected only backups on pageBackup, texts: %q", tt.Texts())
+	}
+
+	clickLabel(t, tt, "已关联")
+	if !tt.HasText("Linked_bak.zip") || tt.HasText("Alpha_bak.zip") {
+		t.Fatalf("expected only linked backups, texts: %q", tt.Texts())
+	}
+
+	clickLabel(t, tt, "未关联")
+	if !tt.HasText("Alpha_bak.zip") || tt.HasText("Linked_bak.zip") {
+		t.Fatalf("expected only unlinked backups, texts: %q", tt.Texts())
+	}
+
+	a.backupSearch = "no-such-backup"
+	tt.Frame()
+	if !tt.HasText("没有匹配的项目") {
+		t.Fatalf("expected backup empty search prompt, got texts: %q", tt.Texts())
+	}
+	if err := tt.Click("清除筛选"); err != nil {
+		t.Fatalf("click clear backup filter failed: %v", err)
+	}
+	tt.Frame()
+	if a.backupSearch != "" || a.backupFilter != archiveFilterAll {
+		t.Fatalf("expected backup search & filter reset, got search=%q filter=%q", a.backupSearch, a.backupFilter)
+	}
+	if !tt.HasText("Alpha_bak.zip") || !tt.HasText("Linked_bak.zip") {
+		t.Fatalf("expected all backups visible after clear, texts: %q", tt.Texts())
 	}
 }
 
@@ -360,6 +413,9 @@ func TestGlobalKeyboardShortcuts(t *testing.T) {
 	a := newTestApp(t)
 	a.managed = []model.Software{
 		{ID: "m1", Name: "ToolOne", Status: model.StatusManaged, InstallExists: false, InstallPath: `c:\apps\toolone`},
+	}
+	a.backups = []model.Software{
+		{Name: "ToolOne-20261123_131205.zip", ArchivePath: `C:\Bak\ToolOne-20261123_131205.zip`, IsBackupArchive: true},
 	}
 
 	tt := ui.NewTester(a.View, 1020, 720)
@@ -376,18 +432,45 @@ func TestGlobalKeyboardShortcuts(t *testing.T) {
 		t.Fatalf("expected second Ctrl+B to expand sidebar")
 	}
 
-	// Ctrl+F 聚焦搜索框
+	// Ctrl+F 聚焦主页搜索框
 	tt.Key(ui.Cmd, ui.KeyF)
 	tt.Frame()
 	if !tt.Focused("搜索软件名称或路径...") {
 		t.Fatalf("expected Ctrl+F to focus home search box")
 	}
 
-	// Ctrl+3 切换到设置页
+	// 备份文件页 Ctrl+F 聚焦备份搜索框
+	a.page = pageBackup
+	tt.Frame()
+	tt.Key(ui.Cmd, ui.KeyF)
+	tt.Frame()
+	if !tt.Focused("搜索备份文件名...") {
+		t.Fatalf("expected Ctrl+F to focus backup search box")
+	}
+
+	// Ctrl+1 / Ctrl+2 / Ctrl+3 / Ctrl+4 切换页面
+	tt.Key(ui.Cmd, ui.Key1)
+	tt.Frame()
+	if a.page != pageHome {
+		t.Fatalf("expected Ctrl+1 to navigate to pageHome, got %v", a.page)
+	}
+
+	tt.Key(ui.Cmd, ui.Key2)
+	tt.Frame()
+	if a.page != pageArchive {
+		t.Fatalf("expected Ctrl+2 to navigate to pageArchive, got %v", a.page)
+	}
+
 	tt.Key(ui.Cmd, ui.Key3)
 	tt.Frame()
+	if a.page != pageBackup {
+		t.Fatalf("expected Ctrl+3 to navigate to pageBackup, got %v", a.page)
+	}
+
+	tt.Key(ui.Cmd, ui.Key4)
+	tt.Frame()
 	if a.page != pageSettings {
-		t.Fatalf("expected Ctrl+3 to navigate to pageSettings, got %v", a.page)
+		t.Fatalf("expected Ctrl+4 to navigate to pageSettings, got %v", a.page)
 	}
 }
 
@@ -517,5 +600,142 @@ func TestSoftwareContextMenuIcons(t *testing.T) {
 		return int(r) > int(g)+20 && int(r) > int(b)+20
 	}) {
 		t.Fatalf("expected red danger trash icon pixels inside 删除 item %+v", delItem.Bounds)
+	}
+}
+
+func TestArchiveAndBackupSoftwareIconAndCornerBadge(t *testing.T) {
+	a := newTestApp(t)
+	exeTool := filepath.Clean(`C:\Portable\ToolOne\ToolOne.exe`)
+	archTool := filepath.Clean(`C:\Portable\~archives\ToolOne.zip`)
+	bakLinked := filepath.Clean(`C:\Portable\~archives\backup\ToolOne-20261123_131205.zip`)
+	bakOld := filepath.Clean(`C:\Portable\~archives\backup\ToolOne-20260101_000000.zip`)
+	standaloneExe := filepath.Clean(`C:\Portable\~archives\Standalone.exe`)
+	unlinkedNamedArch := filepath.Clean(`C:\Portable\~archives\ToolOne.7z`)
+	unrelatedArch := filepath.Clean(`C:\Portable\~archives\RandomOther.zip`)
+
+	managed := []model.Software{
+		{
+			ID:             "sw-1",
+			Name:           "ToolOne",
+			InstallPath:    filepath.Clean(`C:\Portable\ToolOne`),
+			ExecutablePath: exeTool,
+			ArchivePath:    archTool,
+			BackupPath:     bakLinked,
+			Status:         model.StatusManaged,
+		},
+	}
+	linkedSw := map[string]model.Software{
+		normalizePathKey(archTool):  managed[0],
+		normalizePathKey(bakLinked): managed[0],
+	}
+	allowedExts := []string{"exe", "bat"}
+
+	// 1. 单元测试 resolveArchiveExePath 覆盖全部匹配场景
+	if got := resolveArchiveExePath(model.Software{Name: "ToolOne.zip", ArchivePath: archTool}, linkedSw, managed, allowedExts, false); got != exeTool {
+		t.Fatalf("linked archive exe = %q, want %q", got, exeTool)
+	}
+	if got := resolveArchiveExePath(model.Software{Name: "ToolOne-20261123_131205.zip", ArchivePath: bakLinked, IsBackupArchive: true}, linkedSw, managed, allowedExts, false); got != exeTool {
+		t.Fatalf("linked backup exe = %q, want %q", got, exeTool)
+	}
+	if got := resolveArchiveExePath(model.Software{Name: "ToolOne-20260101_000000.zip", ArchivePath: bakOld, IsBackupArchive: true}, linkedSw, managed, allowedExts, false); got != exeTool {
+		t.Fatalf("unlinked older backup exe = %q, want %q", got, exeTool)
+	}
+	if got := resolveArchiveExePath(model.Software{Name: "Standalone.exe", ArchivePath: standaloneExe}, linkedSw, managed, allowedExts, false); got != standaloneExe {
+		t.Fatalf("standalone exe archive = %q, want %q", got, standaloneExe)
+	}
+	if got := resolveArchiveExePath(model.Software{Name: "ToolOne.7z", ArchivePath: unlinkedNamedArch}, linkedSw, managed, allowedExts, false); got != exeTool {
+		t.Fatalf("unlinked named archive exe = %q, want %q", got, exeTool)
+	}
+	if got := resolveArchiveExePath(model.Software{Name: "RandomOther.zip", ArchivePath: unrelatedArch}, linkedSw, managed, allowedExts, false); got != "" {
+		t.Fatalf("unrelated archive exe = %q, want empty", got)
+	}
+
+	// 2. 构造纯绿色 32x32 软件图标位图并注入 exeCache，验证归档与备份列表均渲染软件图标及右下角角标
+	imgSrc := image.NewNRGBA(image.Rect(0, 0, 32, 32))
+	for y := range 32 {
+		for x := range 32 {
+			imgSrc.SetNRGBA(x, y, color.NRGBA{R: 0, G: 204, B: 68, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, imgSrc); err != nil {
+		t.Fatal(err)
+	}
+	bmp, err := ui.DecodeBitmap(buf.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.exeCache[strings.ToLower(exeTool)] = &exeMeta{icon: bmp}
+	a.managed = managed
+	a.linkedSoftware = linkedSw
+	a.linkedPaths = map[string]bool{
+		normalizePathKey(archTool):  true,
+		normalizePathKey(bakLinked): true,
+	}
+	a.archives = []model.Software{
+		{Name: "ToolOne.zip", ArchivePath: archTool, ExecutablePath: exeTool},
+	}
+	a.backups = []model.Software{
+		{Name: "ToolOne-20261123_131205.zip", ArchivePath: bakLinked, ExecutablePath: exeTool, IsBackupArchive: true},
+	}
+
+	hasPixelInRect := func(img *image.RGBA, x0, y0, x1, y1 int, pred func(r, g, b uint8) bool) bool {
+		x0 = max(0, x0)
+		y0 = max(0, y0)
+		x1 = min(img.Bounds().Dx(), x1)
+		y1 = min(img.Bounds().Dy(), y1)
+		for y := y0; y < y1; y++ {
+			for x := x0; x < x1; x++ {
+				px := img.RGBAAt(x, y)
+				if pred(px.R, px.G, px.B) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	// 归档管理页：验证绿色软件图标 + 灰蓝归档角标
+	a.page = pageArchive
+	tt := ui.NewTester(a.View, 1020, 720)
+	rArchTitle, ok := tt.Find("ToolOne.zip")
+	if !ok {
+		t.Fatalf("expected ToolOne.zip in archive view, texts: %q", tt.Texts())
+	}
+	archImg := tt.Image()
+	iconX0, iconY0 := int(rArchTitle.X)-62, int(rArchTitle.Y)-10
+	iconX1, iconY1 := int(rArchTitle.X)-6, int(rArchTitle.Y)+42
+	if !hasPixelInRect(archImg, iconX0, iconY0, iconX1, iconY1, func(r, g, b uint8) bool {
+		return int(g) > int(r)+80 && int(g) > int(b)+40
+	}) {
+		t.Fatalf("expected green software icon pixels left of archive title %+v", rArchTitle)
+	}
+	// 右下角归档角标 (#64748b: b > r+20, g > r+8)
+	if !hasPixelInRect(archImg, iconX0+20, iconY0+20, iconX1, iconY1, func(r, g, b uint8) bool {
+		return int(b) > int(r)+20 && int(g) > int(r)+8
+	}) {
+		t.Fatalf("expected slate archive corner badge pixels at bottom-right of archive icon")
+	}
+
+	// 备份文件页：验证绿色软件图标 + 强调色备份角标
+	a.page = pageBackup
+	tt.Frame()
+	rBakTitle, ok := tt.Find("ToolOne-20261123_131205.zip")
+	if !ok {
+		t.Fatalf("expected backup title in backup view, texts: %q", tt.Texts())
+	}
+	bakImg := tt.Image()
+	bX0, bY0 := int(rBakTitle.X)-62, int(rBakTitle.Y)-10
+	bX1, bY1 := int(rBakTitle.X)-6, int(rBakTitle.Y)+42
+	if !hasPixelInRect(bakImg, bX0, bY0, bX1, bY1, func(r, g, b uint8) bool {
+		return int(g) > int(r)+80 && int(g) > int(b)+40
+	}) {
+		t.Fatalf("expected green software icon pixels left of backup title %+v", rBakTitle)
+	}
+	// 右下角备份角标 (Accent 蓝色: b > r+40)
+	if !hasPixelInRect(bakImg, bX0+20, bY0+20, bX1, bY1, func(r, g, b uint8) bool {
+		return int(b) > int(r)+40
+	}) {
+		t.Fatalf("expected accent blue backup corner badge pixels at bottom-right of backup icon")
 	}
 }

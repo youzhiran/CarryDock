@@ -25,6 +25,7 @@ type pageID string
 const (
 	pageHome     pageID = "home"
 	pageArchive  pageID = "archive"
+	pageBackup   pageID = "backup"
 	pageSettings pageID = "settings"
 	pageDev      pageID = "dev"
 )
@@ -95,16 +96,21 @@ type App struct {
 	exeCache map[string]*exeMeta
 	altCache map[string]*altExecEntry
 
-	// 归档管理状态
+	// 归档管理与备份文件状态
 	archives             []model.Software
 	backups              []model.Software
 	linkedPaths          map[string]bool
+	linkedSoftware       map[string]model.Software
 	archiveLoading       bool
 	archiveNotConfigured bool
 	archiveSearch        string
 	archiveFilter        archiveFilterMode
 	archiveFocusFind     bool
 	archiveScrollState   ui.ScrollState
+	backupSearch         string
+	backupFilter         archiveFilterMode
+	backupFocusFind      bool
+	backupScrollState    ui.ScrollState
 
 	// 设置页表单状态
 	setInstallPath       string
@@ -237,6 +243,7 @@ func New(settingsSvc *settings.Service, softwareSvc *software.Service, updaterSv
 		exeCache:         make(map[string]*exeMeta),
 		altCache:         make(map[string]*altExecEntry),
 		linkedPaths:      make(map[string]bool),
+		linkedSoftware:   make(map[string]model.Software),
 		extDraft:         make(map[string]bool),
 	}
 	a.loadSettingsSnapshot()
@@ -249,6 +256,7 @@ func (a *App) AttachWindow(win *mygo.Window) {
 	a.syncWindowTitle()
 	a.loadSystemFontsAsync()
 	a.reloadHome()
+	a.reloadArchives()
 }
 
 func (a *App) loadSystemFontsAsync() {
@@ -366,7 +374,7 @@ func (a *App) navigateNow(target pageID) {
 	switch target {
 	case pageHome:
 		a.reloadHome()
-	case pageArchive:
+	case pageArchive, pageBackup:
 		a.reloadArchives()
 	case pageSettings:
 		a.loadSettingsSnapshot()
@@ -415,7 +423,7 @@ func (a *App) View(c *ui.Context) {
 			switch a.page {
 			case pageHome:
 				a.reloadHome()
-			case pageArchive:
+			case pageArchive, pageBackup:
 				a.reloadArchives()
 			}
 		}
@@ -428,6 +436,8 @@ func (a *App) View(c *ui.Context) {
 				a.homeFocusSearch = true
 			case pageArchive:
 				a.archiveFocusFind = true
+			case pageBackup:
+				a.backupFocusFind = true
 			}
 		}
 		if c.Shortcut(ui.Cmd, ui.Key1) {
@@ -435,6 +445,8 @@ func (a *App) View(c *ui.Context) {
 		} else if c.Shortcut(ui.Cmd, ui.Key2) {
 			a.requestNavigate(pageArchive)
 		} else if c.Shortcut(ui.Cmd, ui.Key3) {
+			a.requestNavigate(pageBackup)
+		} else if c.Shortcut(ui.Cmd, ui.Key4) {
 			a.requestNavigate(pageSettings)
 		}
 		if c.Shortcut(ui.Cmd, ui.KeyN) && a.page == pageHome && !a.reorderMode {
@@ -466,6 +478,8 @@ func (a *App) View(c *ui.Context) {
 					a.homeView(c)
 				case pageArchive:
 					a.archiveView(c)
+				case pageBackup:
+					a.backupView(c)
 				case pageSettings:
 					a.settingsView(c)
 				case pageDev:
@@ -529,7 +543,8 @@ func (a *App) sidebarView(c *ui.Context) {
 	}
 	side.Children(func() {
 		a.navButton(c, pageHome, iconHome, tr.NavHome, len(a.managed)+len(a.unmanaged), false)
-		a.navButton(c, pageArchive, iconArchive, tr.NavArchive, len(a.archives)+len(a.backups), false)
+		a.navButton(c, pageArchive, iconArchive, tr.NavArchive, len(a.archives), false)
+		a.navButton(c, pageBackup, iconRestore, tr.NavBackup, len(a.backups), false)
 
 		ui.Spacer(c)
 

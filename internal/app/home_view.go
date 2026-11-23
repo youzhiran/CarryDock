@@ -1045,6 +1045,7 @@ func (a *App) runCreateBackupForSoftware(sw model.Software) {
 			}
 			a.toast(tr.Success, i18n.Fmt(tr.TileBackupCreatedFmt, filepath.Base(created)))
 			a.reloadHome()
+			a.reloadArchives()
 		})
 	}()
 }

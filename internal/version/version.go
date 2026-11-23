@@ -13,8 +13,8 @@ import (
 // 构建时可通过 -ldflags 或 MYGO_LDFLAGS 注入：
 // -X carrydock/internal/version.Version=... -X carrydock/internal/version.BuildNumber=... -X 'carrydock/internal/version.BuildTime=...'
 var (
-	Version     = "0.9.1"
-	BuildNumber = "106"
+	Version     = "0.9.2"
+	BuildNumber = "107"
 	BuildTime   = "dev"
 )
 

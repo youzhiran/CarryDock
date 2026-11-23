@@ -174,7 +174,7 @@ func (a *App) selectExecutableModalView(c *ui.Context) {
 								return
 							}
 							a.toast(a.tr().Success, filepath.Base(chosen))
-							if a.page == pageArchive {
+							if a.page == pageArchive || a.page == pageBackup {
 								a.reloadArchives()
 							} else {
 								a.reloadHome()

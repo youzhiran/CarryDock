@@ -55,6 +55,7 @@ type Strings struct {
 	// Navigation
 	NavHome             string
 	NavArchive          string
+	NavBackup           string
 	NavSettings         string
 	NavDeveloperOptions string
 	NavToggleTooltip    string
@@ -201,10 +202,13 @@ type Strings struct {
 
 	// Archive Manager
 	ArchiveTitle             string
+	BackupTitle              string
 	ArchiveFiles             string
 	ArchiveNoArchiveFiles    string
+	ArchiveNoArchiveHint     string
 	ArchiveBackupFiles       string
 	ArchiveNoBackupFiles     string
+	BackupNoBackupHint       string
 	ArchiveOpenArchiveDir    string
 	ArchiveOpenBackupDir     string
 	ArchiveLinked            string
@@ -228,6 +232,7 @@ type Strings struct {
 	ArchiveBackupAndRestore  string
 	ArchiveRevealInExplorer  string
 	ArchiveSearchPlaceholder string
+	BackupSearchPlaceholder  string
 
 	// Select Executable Dialog
 	DialogSelectExecutable string
@@ -370,6 +375,7 @@ var zhStrings = Strings{
 
 	NavHome:             "主页",
 	NavArchive:          "归档管理",
+	NavBackup:           "备份文件",
 	NavSettings:         "设置",
 	NavDeveloperOptions: "开发者选项",
 	NavToggleTooltip:    "折叠导航栏",
@@ -509,10 +515,13 @@ var zhStrings = Strings{
 	AssocNoMatchKeepBackup: "（不关联）",
 
 	ArchiveTitle:             "归档管理",
+	BackupTitle:              "备份文件",
 	ArchiveFiles:             "归档文件",
 	ArchiveNoArchiveFiles:    "暂无归档文件",
+	ArchiveNoArchiveHint:     "添加或归档软件后，归档文件将显示在这里。",
 	ArchiveBackupFiles:       "备份文件",
 	ArchiveNoBackupFiles:     "暂无备份文件",
+	BackupNoBackupHint:       "点击右上角「创建备份」为已托管软件创建备份。",
 	ArchiveOpenArchiveDir:    "打开归档目录",
 	ArchiveOpenBackupDir:     "打开备份目录",
 	ArchiveLinked:            "已关联",
@@ -535,7 +544,8 @@ var zhStrings = Strings{
 	ArchiveDuplicateMsg:      "目标安装目录或归档已存在，是否先备份现有目录后再覆盖还原？",
 	ArchiveBackupAndRestore:  "备份并还原",
 	ArchiveRevealInExplorer:  "在资源管理器中显示",
-	ArchiveSearchPlaceholder: "搜索归档或备份文件名...",
+	ArchiveSearchPlaceholder: "搜索归档文件名...",
+	BackupSearchPlaceholder:  "搜索备份文件名...",
 
 	DialogSelectExecutable: "选择主程序可执行文件",
 	DialogNoExecutable:     "未找到可执行文件",
@@ -674,6 +684,7 @@ var enStrings = Strings{
 
 	NavHome:             "Home",
 	NavArchive:          "Archive Manager",
+	NavBackup:           "Backups",
 	NavSettings:         "Settings",
 	NavDeveloperOptions: "Developer Options",
 	NavToggleTooltip:    "Collapse sidebar",
@@ -813,10 +824,13 @@ var enStrings = Strings{
 	AssocNoMatchKeepBackup: "(Do not associate)",
 
 	ArchiveTitle:             "Archive Manager",
+	BackupTitle:              "Backups",
 	ArchiveFiles:             "Archives",
 	ArchiveNoArchiveFiles:    "No archive files",
+	ArchiveNoArchiveHint:     "Archived software packages will appear here.",
 	ArchiveBackupFiles:       "Backups",
 	ArchiveNoBackupFiles:     "No backup files",
+	BackupNoBackupHint:       "Click Create Backup above to back up managed software.",
 	ArchiveOpenArchiveDir:    "Open Archive Dir",
 	ArchiveOpenBackupDir:     "Open Backup Dir",
 	ArchiveLinked:            "Linked",
@@ -839,7 +853,8 @@ var enStrings = Strings{
 	ArchiveDuplicateMsg:      "Target install folder or archive already exists. Back up existing folder and restore?",
 	ArchiveBackupAndRestore:  "Backup & Restore",
 	ArchiveRevealInExplorer:  "Show in Explorer",
-	ArchiveSearchPlaceholder: "Search archives or backup files...",
+	ArchiveSearchPlaceholder: "Search archive files...",
+	BackupSearchPlaceholder:  "Search backup files...",
 
 	DialogSelectExecutable: "Select Main Executable",
 	DialogNoExecutable:     "No executables found",
