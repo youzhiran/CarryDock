@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -10,6 +11,8 @@ import (
 	"carrydock/internal/model"
 	"carrydock/internal/settings"
 	"carrydock/internal/software"
+	"carrydock/internal/winutil"
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -20,6 +23,7 @@ func (a *App) modalsView(c *ui.Context) {
 	a.duplicateModalView(c)
 	a.deleteModalView(c)
 	a.renameFolderModalView(c)
+	a.softwareSettingsModalView(c)
 	a.scanConfirmModalView(c)
 	a.scanProgressModalView(c)
 	a.associationModalView(c)
@@ -389,6 +393,15 @@ func (a *App) deleteModalView(c *ui.Context) {
 						Disabled(!target.InstallExists)
 					ui.Checkbox(c.Key("del-cb-arch"), &a.deleteArchive, tr.DeleteArchive).
 						Disabled(!target.ArchiveExists)
+					if len(target.PathEntries) > 0 {
+						p := paletteOf(t)
+						ui.Row(c).Padding(8, 10).Radius(8).Background(p.accentTint).
+							Border(1, t.Accent.Alpha(0.32)).Gap(8).AlignItems(ui.Center).Children(func() {
+							ui.Icon(c, iconPathEnv).FontSize(14).TextColor(t.Accent).Shrink(0)
+							ui.Text(c, i18n.Fmt(tr.DeletePathCleanupHintFmt, len(target.PathEntries))).
+								FontSize(12).TextColor(t.Text).Grow(1)
+						})
+					}
 				}
 			}
 
@@ -1015,4 +1028,242 @@ func (a *App) devIconTestModalView(c *ui.Context) {
 			})
 		})
 	})
+}
+
+func (a *App) softwareSettingsModalView(c *ui.Context) {
+	if !a.swSettingsModalOpen {
+		return
+	}
+	t := c.Theme()
+	p := paletteOf(t)
+	tr := a.tr()
+	target := a.swSetTarget
+
+	var checkedDirs []string
+	for _, dir := range a.swSetPathCandidates {
+		key := strings.ToLower(winutil.NormalizePathEntry(dir))
+		if a.swSetPathChecked[key] {
+			checkedDirs = append(checkedDirs, dir)
+		}
+	}
+
+	inSystemCount := 0
+	for _, dir := range target.PathEntries {
+		key := strings.ToLower(winutil.NormalizePathEntry(dir))
+		if a.swSetPathInSystem[key] {
+			inSystemCount++
+		}
+	}
+
+	saveLaunchConfig := func() {
+		envMap, err := winutil.ParseEnvText(a.swSetEnvText)
+		if err != nil {
+			a.swSetEnvError = err.Error()
+			return
+		}
+		a.swSetEnvError = ""
+		args := strings.TrimSpace(a.swSetArgs)
+		a.swSettingsModalOpen = false
+		go func() {
+			if updateErr := a.softwareSvc.UpdateSoftwareLaunchConfig(target.ID, args, envMap); updateErr != nil {
+				a.update(func() {
+					a.showInfo(a.tr().Error, updateErr.Error())
+				})
+				return
+			}
+			a.update(func() {
+				a.toast(a.tr().Success, a.tr().SwSetSavedToast)
+				a.reloadHome()
+			})
+		}()
+	}
+
+	ui.Modal(c.Key("modal-sw-settings"), &a.swSettingsModalOpen, func() {
+		ui.Column(c).Width(560).Gap(12).Children(func() {
+			ui.Text(c, i18n.Fmt(tr.SwSetTitleFmt, a.displayNameFor(target))).FontSize(16).Bold()
+
+			ui.Scroll(c.Key("sw-set-scroll")).MaxHeight(500).Children(func() {
+				ui.Column(c).Gap(12).Padding(0, 2).Children(func() {
+					// 1. 系统用户 Path 卡片
+					ui.Column(c).Padding(14).Radius(10).Background(p.subtleBg).
+						Border(1, p.cardBorder).Gap(10).Children(func() {
+						ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+							ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+								ui.Icon(c, iconPathEnv).FontSize(15).TextColor(t.Accent)
+								ui.Text(c, tr.SwSetPathSection).FontSize(13).Bold()
+							})
+							ui.Spacer(c)
+							if a.swSetPathLoading {
+								ui.Spinner(c).Size(14, 14)
+							} else if len(target.PathEntries) > 0 {
+								if inSystemCount == len(target.PathEntries) {
+									pillBadge(c, tr.SwSetPathRegistered, p.successTint, t.Success)
+								} else {
+									pillBadge(c, tr.SwSetPathOutOfSync, p.warningTint, t.Warning)
+								}
+							} else {
+								pillBadge(c, tr.SwSetPathUnregistered, p.card, t.TextMuted)
+							}
+						})
+
+						ui.Text(c, tr.SwSetPathDesc).FontSize(12).TextColor(t.TextMuted)
+
+						ui.Column(c).Gap(6).Children(func() {
+							for _, dir := range a.swSetPathCandidates {
+								norm := winutil.NormalizePathEntry(dir)
+								key := strings.ToLower(norm)
+								checked := a.swSetPathChecked[key]
+								exists := false
+								if st, err := os.Stat(norm); err == nil && st.IsDir() {
+									exists = true
+								}
+								label := formatPathCandidateLabel(norm, target.InstallPath, target.ExecutablePath, tr, exists)
+								ui.Column(c).Gap(2).Children(func() {
+									if ui.Checkbox(c.Key("sw-path-cb-"+key), &checked, label).Changed() {
+										a.swSetPathChecked[key] = checked
+									}
+									txtColor := t.TextMuted
+									if !exists {
+										txtColor = t.Warning
+									}
+									ui.Text(c, norm).FontSize(11).TextColor(txtColor).PaddingStart(24).Selectable()
+								})
+							}
+						})
+
+						ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+							if ui.Button(c.Key("sw-path-add-sub"), tr.SwSetPathAddSubdir).
+								Disabled(a.swSetPathBusy || !target.InstallExists).Clicked() {
+								win := a.win
+								title := tr.SwSetPathAddSubdir
+								defaultDir := target.InstallPath
+								go func() {
+									paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+										Parent:      win,
+										Title:       title,
+										DefaultPath: defaultDir,
+										Directory:   true,
+									})
+									if err != nil || len(paths) == 0 {
+										return
+									}
+									picked := winutil.NormalizePathEntry(paths[0])
+									if picked == "" {
+										return
+									}
+									a.update(func() {
+										if !winutil.PathListContains(a.swSetPathCandidates, picked) {
+											a.swSetPathCandidates = append(a.swSetPathCandidates, picked)
+										}
+										a.swSetPathChecked[strings.ToLower(picked)] = true
+										a.refreshSoftwareUserPathPresence()
+									})
+								}()
+							}
+
+							regLabel := tr.SwSetPathRegisterBtn
+							if len(target.PathEntries) > 0 {
+								regLabel = tr.SwSetPathUpdateBtn
+							}
+							if ui.PrimaryButton(c.Key("sw-path-register"), regLabel).
+								Disabled(a.swSetPathBusy || len(checkedDirs) == 0).Clicked() {
+								dirs := slices.Clone(checkedDirs)
+								a.swSetPathBusy = true
+								go func() {
+									synced, err := a.softwareSvc.RegisterSoftwarePath(target.ID, dirs)
+									a.update(func() {
+										a.swSetPathBusy = false
+										if err != nil {
+											a.showInfo(a.tr().Error, err.Error())
+											return
+										}
+										a.swSetTarget.PathEntries = slices.Clone(synced)
+										a.toast(a.tr().Success, i18n.Fmt(a.tr().SwSetPathRegisteredFmt, len(synced)))
+										a.refreshSoftwareUserPathPresence()
+										a.reloadHome()
+									})
+								}()
+							}
+
+							if ui.Button(c.Key("sw-path-remove"), tr.SwSetPathUnregisterBtn).
+								Disabled(a.swSetPathBusy || len(target.PathEntries) == 0).Clicked() {
+								a.swSetPathBusy = true
+								go func() {
+									_, err := a.softwareSvc.UnregisterSoftwarePath(target.ID)
+									a.update(func() {
+										a.swSetPathBusy = false
+										if err != nil {
+											a.showInfo(a.tr().Error, err.Error())
+											return
+										}
+										a.swSetTarget.PathEntries = nil
+										a.toast(a.tr().Success, i18n.Fmt(a.tr().SwSetPathRemovedFmt, a.displayNameFor(target)))
+										a.refreshSoftwareUserPathPresence()
+										a.reloadHome()
+									})
+								}()
+							}
+						})
+					})
+
+					// 2. 自定义命令行启动参数
+					ui.Column(c).Gap(6).Children(func() {
+						ui.Text(c, tr.SwSetArgsSection).FontSize(13).Bold()
+						ui.TextInput(c.Key("sw-set-args"), &a.swSetArgs).
+							Placeholder(tr.SwSetArgsPlaceholder).FillWidth()
+						ui.Text(c, tr.SwSetArgsHint).FontSize(11).TextColor(t.TextMuted)
+					})
+
+					// 3. 临时注入环境变量
+					ui.Column(c).Gap(6).Children(func() {
+						ui.Text(c, tr.SwSetEnvSection).FontSize(13).Bold()
+						if ui.TextArea(c.Key("sw-set-env"), &a.swSetEnvText).
+							Placeholder(tr.SwSetEnvPlaceholder).Height(110).FillWidth().Changed() {
+							a.swSetEnvError = ""
+						}
+						if a.swSetEnvError != "" {
+							ui.Text(c, a.swSetEnvError).FontSize(12).TextColor(t.Danger)
+						}
+						ui.Text(c, tr.SwSetEnvHint).FontSize(11).TextColor(t.TextMuted)
+					})
+				})
+			})
+
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				if ui.Button(c.Key("sw-set-clear"), tr.SwSetClearLaunchConfig).
+					Disabled(strings.TrimSpace(a.swSetArgs) == "" && strings.TrimSpace(a.swSetEnvText) == "").Clicked() {
+					a.swSetArgs = ""
+					a.swSetEnvText = ""
+					a.swSetEnvError = ""
+				}
+				ui.Spacer(c)
+				ui.Row(c).Gap(8).Children(func() {
+					if ui.Button(c.Key("sw-set-cancel"), tr.Cancel).Clicked() {
+						a.swSettingsModalOpen = false
+					}
+					if ui.PrimaryButton(c.Key("sw-set-save"), tr.Save).Clicked() {
+						saveLaunchConfig()
+					}
+				})
+			})
+		})
+	})
+}
+
+func formatPathCandidateLabel(dir, installPath, exePath string, tr i18n.Strings, exists bool) string {
+	label := dir
+	if installPath != "" && winutil.SamePath(dir, installPath) {
+		label = ". (" + tr.SwSetPathRootTag + ")"
+	} else if installPath != "" && winutil.IsPathUnderOrEqual(dir, installPath) {
+		if rel, err := filepath.Rel(installPath, dir); err == nil && rel != "." {
+			label = rel
+		}
+	}
+	if exePath != "" && winutil.SamePath(dir, filepath.Dir(exePath)) && !winutil.SamePath(dir, installPath) {
+		label += " (" + tr.SwSetPathExeDirTag + ")"
+	}
+	if !exists {
+		label += " [" + tr.SwSetPathMissingTag + "]"
+	}
+	return label
 }

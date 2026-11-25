@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestGetFileDescriptionAndExtractIconOnSystemBinaries(t *testing.T) {
@@ -269,5 +270,49 @@ func TestBuildBatchCmdLine(t *testing.T) {
 
 	if err := LaunchBatchScript(""); err == nil {
 		t.Fatal("expected LaunchBatchScript(\"\") to return error")
+	}
+}
+
+func TestLaunchExecutableWithOptionsArgsAndEnv(t *testing.T) {
+	tmp := t.TempDir()
+	installDir := filepath.Join(tmp, "MyTool")
+	binDir := filepath.Join(installDir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outFile := filepath.Join(tmp, "out.txt")
+	batPath := filepath.Join(binDir, "echo_env.bat")
+	script := "@echo off\r\n> \"" + outFile + "\" echo %~1^|%~2^|%CUSTOM_APP_HOME%^|%CARRY_TEST_VAR%\r\n"
+	if err := os.WriteFile(batPath, []byte(script), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := LaunchExecutableWithOptions(batPath, installDir, LaunchOptions{
+		Args: `first "second arg"`,
+		Env: map[string]string{
+			"CUSTOM_APP_HOME": "%INSTALL_DIR%",
+			"CARRY_TEST_VAR":  "ok=1",
+		},
+		InstallDir: installDir,
+	})
+	if err != nil {
+		t.Fatalf("LaunchExecutableWithOptions failed: %v", err)
+	}
+
+	var got string
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) {
+		if raw, readErr := os.ReadFile(outFile); readErr == nil && len(strings.TrimSpace(string(raw))) > 0 {
+			got = strings.TrimSpace(string(raw))
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	want := "first|second arg|" + installDir + "|ok=1"
+	if got != want {
+		t.Fatalf("launched batch output = %q, want %q", got, want)
+	}
+	if os.Getenv("CARRY_TEST_VAR") != "" {
+		t.Fatalf("expected parent process env not to be polluted, got %q", os.Getenv("CARRY_TEST_VAR"))
 	}
 }

@@ -107,7 +107,16 @@ func iconButton(c *ui.Context, key string, ico *ui.SVG, tooltip string, disabled
 
 // pillBadge 渲染语义胶囊标签（如状态标记、关联状态、未保存提示）。
 func pillBadge(c *ui.Context, label string, bg, fg ui.Color) {
-	ui.Row(c).Padding(2, 8).Radius(999).Background(bg).Center().Shrink(0).Children(func() {
+	pillBadgeWithTip(c, label, bg, fg, "")
+}
+
+// pillBadgeWithTip 渲染带悬停提示的语义胶囊标签。
+func pillBadgeWithTip(c *ui.Context, label string, bg, fg ui.Color, tooltip string) {
+	badge := ui.Row(c).Padding(2, 8).Radius(999).Background(bg).Center().Shrink(0)
+	if tooltip != "" {
+		badge.Tooltip(tooltip)
+	}
+	badge.Children(func() {
 		ui.Text(c, label).FontSize(11).TextColor(fg).SingleLine()
 	})
 }

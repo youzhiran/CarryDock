@@ -63,7 +63,11 @@ type PendingAddition struct {
 	ExistingSoftwareID string
 	// CreatedArchive 标记本次操作是否新复制生成了 ArchivePath，
 	// 取消选择主程序时仅在为 true 时清理，避免误删归档目录中原本已有的归档文件。
-	CreatedArchive bool
+	CreatedArchive       bool
+	PreservedLaunchArgs  string
+	PreservedLaunchEnv   map[string]string
+	PreservedPathEntries []string
+	PreservedInstallPath string
 }
 
 // DuplicateInfo 描述添加或还原时检测到的重复冲突或版本更新信息。
@@ -131,14 +135,48 @@ type PathMigrationSummary struct {
 	SoftwareSkipped   int
 }
 
+// UserPathManager 抽象系统用户 Path 环境变量的读写能力，便于测试隔离 Windows 注册表。
+type UserPathManager interface {
+	ListUserPath() ([]string, error)
+	AddUserPathDirs(dirs []string) ([]string, error)
+	RemoveUserPathDirs(dirs []string) ([]string, error)
+}
+
+type defaultUserPathManager struct{}
+
+func (defaultUserPathManager) ListUserPath() ([]string, error) {
+	return winutil.ListUserPath()
+}
+
+func (defaultUserPathManager) AddUserPathDirs(dirs []string) ([]string, error) {
+	return winutil.AddUserPathDirs(dirs)
+}
+
+func (defaultUserPathManager) RemoveUserPathDirs(dirs []string) ([]string, error) {
+	return winutil.RemoveUserPathDirs(dirs)
+}
+
 // Service 封装绿驿管家的核心软件托管、解压、备份、还原、排序与归档管理逻辑。
 type Service struct {
 	settings *settings.Service
+	userPath UserPathManager
 }
 
 // NewService 创建一个新的 Software Service。
 func NewService(settingsSvc *settings.Service) *Service {
-	return &Service{settings: settingsSvc}
+	return &Service{
+		settings: settingsSvc,
+		userPath: defaultUserPathManager{},
+	}
+}
+
+// SetUserPathManager 替换用户 Path 管理器（传入 nil 时恢复默认 Windows 注册表实现）。
+func (s *Service) SetUserPathManager(m UserPathManager) {
+	if m == nil {
+		s.userPath = defaultUserPathManager{}
+		return
+	}
+	s.userPath = m
 }
 
 func (s *Service) resolveArchiveDirectoryPathReadOnly() (string, error) {
@@ -197,6 +235,20 @@ func (s *Service) resolveSoftwarePaths(sw *model.Software) {
 	sw.ArchivePath = s.settings.ResolvePath(sw.ArchivePath)
 	sw.BackupPath = s.settings.ResolvePath(sw.BackupPath)
 	sw.IconPath = s.settings.ResolvePath(sw.IconPath)
+	if len(sw.PathEntries) > 0 {
+		resolved := make([]string, 0, len(sw.PathEntries))
+		for _, p := range sw.PathEntries {
+			rp := s.settings.ResolvePath(p)
+			if rp != "" && !winutil.PathListContains(resolved, rp) {
+				resolved = append(resolved, winutil.NormalizePathEntry(rp))
+			}
+		}
+		if len(resolved) == 0 {
+			sw.PathEntries = nil
+		} else {
+			sw.PathEntries = resolved
+		}
+	}
 }
 
 func (s *Service) formatSoftwarePathsForStorage(sw model.Software) (formatted model.Software, converted, skipped int) {
@@ -224,6 +276,19 @@ func (s *Service) formatSoftwarePathsForStorage(sw model.Software) (formatted mo
 	sw.ArchivePath = formatField(sw.ArchivePath)
 	sw.BackupPath = formatField(sw.BackupPath)
 	sw.IconPath = formatField(sw.IconPath)
+	if len(sw.PathEntries) > 0 {
+		formattedEntries := make([]string, 0, len(sw.PathEntries))
+		for _, entry := range sw.PathEntries {
+			if out := formatField(entry); out != "" {
+				formattedEntries = append(formattedEntries, out)
+			}
+		}
+		if len(formattedEntries) == 0 {
+			sw.PathEntries = nil
+		} else {
+			sw.PathEntries = formattedEntries
+		}
+	}
 	return sw, converted, skipped
 }
 
@@ -281,6 +346,11 @@ func (s *Service) SetRelativePathsMode(enabled bool) (PathMigrationSummary, erro
 				}
 				if strings.TrimSpace(orig.IconPath) != formatted.IconPath {
 					summary.SoftwareConverted++
+				}
+				for idx, fEntry := range formatted.PathEntries {
+					if idx >= len(orig.PathEntries) || strings.TrimSpace(orig.PathEntries[idx]) != fEntry {
+						summary.SoftwareConverted++
+					}
 				}
 			}
 		}
@@ -877,13 +947,13 @@ func (s *Service) addFromArchiveFile(
 	}
 
 	// 验证通过后执行覆盖/替换准备与归档复制。
-	var preferredOrder *int
+	var carryover overrideCarryover
 	if allowOverride {
 		overrideArchive := targetArchivePath
 		if sameSourceAsDest {
 			overrideArchive = ""
 		}
-		preferredOrder, err = s.prepareForOverride(destDir, overrideArchive, archivePath, replaceTarget)
+		carryover, err = s.prepareForOverride(destDir, overrideArchive, archivePath, replaceTarget)
 		if err != nil {
 			return AddResult{Type: AddError, Err: err}
 		}
@@ -938,12 +1008,16 @@ func (s *Service) addFromArchiveFile(
 
 	if selectedExe != "" {
 		if err := s.CompleteSoftwareAddition(PendingAddition{
-			SoftwareName:       softwareName,
-			InstallPath:        destDir,
-			ArchivePath:        finalArchivePath,
-			BackupPath:         backupPath,
-			PreferredSortOrder: preferredOrder,
-			CreatedArchive:     createdArchive,
+			SoftwareName:         softwareName,
+			InstallPath:          destDir,
+			ArchivePath:          finalArchivePath,
+			BackupPath:           backupPath,
+			PreferredSortOrder:   carryover.preferredOrder,
+			CreatedArchive:       createdArchive,
+			PreservedLaunchArgs:  carryover.launchArgs,
+			PreservedLaunchEnv:   carryover.launchEnv,
+			PreservedPathEntries: carryover.pathEntries,
+			PreservedInstallPath: carryover.oldInstallPath,
 		}, selectedExe); err != nil {
 			return AddResult{Type: AddError, Err: err}
 		}
@@ -953,13 +1027,17 @@ func (s *Service) addFromArchiveFile(
 	return AddResult{
 		Type: AddNeedsSelection,
 		PendingAddition: &PendingAddition{
-			SoftwareName:       softwareName,
-			InstallPath:        destDir,
-			ArchivePath:        finalArchivePath,
-			BackupPath:         backupPath,
-			ExecutablePaths:    mappedExecs,
-			PreferredSortOrder: preferredOrder,
-			CreatedArchive:     createdArchive,
+			SoftwareName:         softwareName,
+			InstallPath:          destDir,
+			ArchivePath:          finalArchivePath,
+			BackupPath:           backupPath,
+			ExecutablePaths:      mappedExecs,
+			PreferredSortOrder:   carryover.preferredOrder,
+			CreatedArchive:       createdArchive,
+			PreservedLaunchArgs:  carryover.launchArgs,
+			PreservedLaunchEnv:   carryover.launchEnv,
+			PreservedPathEntries: carryover.pathEntries,
+			PreservedInstallPath: carryover.oldInstallPath,
 		},
 	}
 }
@@ -1057,13 +1135,13 @@ func (s *Service) addFromExecutableFile(
 		}
 	}
 
-	var preferredOrder *int
+	var carryover overrideCarryover
 	if allowOverride {
 		overrideArchive := targetArchivePath
 		if sameSourceAsDest {
 			overrideArchive = ""
 		}
-		preferredOrder, err = s.prepareForOverride(destDir, overrideArchive, exePath, replaceTarget)
+		carryover, err = s.prepareForOverride(destDir, overrideArchive, exePath, replaceTarget)
 		if err != nil {
 			return AddResult{Type: AddError, Err: err}
 		}
@@ -1100,12 +1178,16 @@ func (s *Service) addFromExecutableFile(
 	}
 
 	if err := s.CompleteSoftwareAddition(PendingAddition{
-		SoftwareName:       softwareName,
-		InstallPath:        destDir,
-		ArchivePath:        targetArchivePath,
-		BackupPath:         backupPath,
-		PreferredSortOrder: preferredOrder,
-		CreatedArchive:     createdArchive,
+		SoftwareName:         softwareName,
+		InstallPath:          destDir,
+		ArchivePath:          targetArchivePath,
+		BackupPath:           backupPath,
+		PreferredSortOrder:   carryover.preferredOrder,
+		CreatedArchive:       createdArchive,
+		PreservedLaunchArgs:  carryover.launchArgs,
+		PreservedLaunchEnv:   carryover.launchEnv,
+		PreservedPathEntries: carryover.pathEntries,
+		PreservedInstallPath: carryover.oldInstallPath,
 	}, destExe); err != nil {
 		return AddResult{Type: AddError, Err: err}
 	}
@@ -1119,13 +1201,20 @@ func (s *Service) CompleteSoftwareAddition(pending PendingAddition, selectedExe 
 		return err
 	}
 
-	// 去重：若同安装路径已存在记录，先移除避免重复条目，并继承未显式覆盖的关联路径。
-	var prevBackupPath, prevArchivePath string
+	// 去重：若同安装路径已存在记录，先移除避免重复条目，并继承未显式覆盖的关联路径与启动配置。
+	var prevBackupPath, prevArchivePath, prevLaunchArgs string
+	var prevLaunchEnv map[string]string
+	var prevPathEntries []string
+	var prevInstallPath string
 	filtered := make([]model.Software, 0, len(list))
 	for _, item := range list {
 		if winutil.SamePath(item.InstallPath, pending.InstallPath) {
 			prevBackupPath = item.BackupPath
 			prevArchivePath = item.ArchivePath
+			prevLaunchArgs = item.LaunchArgs
+			prevLaunchEnv = cloneStringMap(item.LaunchEnv)
+			prevPathEntries = slices.Clone(item.PathEntries)
+			prevInstallPath = item.InstallPath
 			continue
 		}
 		filtered = append(filtered, item)
@@ -1158,6 +1247,35 @@ func (s *Service) CompleteSoftwareAddition(pending PendingAddition, selectedExe 
 		backupPath = prevBackupPath
 	}
 
+	launchArgs := strings.TrimSpace(pending.PreservedLaunchArgs)
+	if launchArgs == "" {
+		launchArgs = strings.TrimSpace(prevLaunchArgs)
+	}
+	launchEnv := cloneStringMap(pending.PreservedLaunchEnv)
+	if len(launchEnv) == 0 {
+		launchEnv = prevLaunchEnv
+	}
+	rawPathEntries := pending.PreservedPathEntries
+	oldRoot := pending.PreservedInstallPath
+	if len(rawPathEntries) == 0 {
+		rawPathEntries = prevPathEntries
+		oldRoot = prevInstallPath
+	}
+	var finalPathEntries []string
+	if len(rawPathEntries) > 0 {
+		remapped := remapPathEntries(rawPathEntries, oldRoot, pending.InstallPath)
+		for _, dir := range remapped {
+			if dirExists(dir) {
+				finalPathEntries = append(finalPathEntries, dir)
+			}
+		}
+		if len(finalPathEntries) > 0 {
+			if _, addErr := s.userPath.AddUserPathDirs(finalPathEntries); addErr != nil && !errors.Is(addErr, errors.ErrUnsupported) {
+				logger.Warn("覆盖安装后同步用户 Path 失败 (%s): %v", name, addErr)
+			}
+		}
+	}
+
 	list = append(list, model.Software{
 		ID:             newUUID(),
 		Name:           name,
@@ -1165,6 +1283,9 @@ func (s *Service) CompleteSoftwareAddition(pending PendingAddition, selectedExe 
 		ExecutablePath: selectedExe,
 		ArchivePath:    archivePath,
 		BackupPath:     backupPath,
+		LaunchArgs:     launchArgs,
+		LaunchEnv:      launchEnv,
+		PathEntries:    finalPathEntries,
 		Status:         model.StatusManaged,
 		SortOrder:      order,
 	})
@@ -1411,6 +1532,31 @@ func (s *Service) RenameSoftwareFolder(sw model.Software, newFolderName string) 
 			}
 			list[i].InstallPath = newInstallPath
 			list[i].ExecutablePath = newExecPath
+			if len(list[i].PathEntries) > 0 {
+				oldEntries := slices.Clone(list[i].PathEntries)
+				remapped := remapPathEntries(oldEntries, oldInstallPath, newInstallPath)
+				var toRemove []string
+				for _, oldDir := range oldEntries {
+					if !winutil.PathListContains(remapped, oldDir) {
+						toRemove = append(toRemove, oldDir)
+					}
+				}
+				toRemove = excludeReferencedPathDirs(toRemove, list, sw.ID)
+				s.removeUserPathDirsQuiet(toRemove, list[i].Name)
+
+				var toAdd []string
+				for _, newDir := range remapped {
+					if dirExists(newDir) {
+						toAdd = append(toAdd, newDir)
+					}
+				}
+				if len(toAdd) > 0 {
+					if _, addErr := s.userPath.AddUserPathDirs(toAdd); addErr != nil && !errors.Is(addErr, errors.ErrUnsupported) {
+						logger.Warn("迁移软件用户 Path 失败 (%s): %v", list[i].Name, addErr)
+					}
+				}
+				list[i].PathEntries = remapped
+			}
 			logger.Info("完成软件目录重命名/迁移: %s -> %s", oldInstallPath, newInstallPath)
 			return s.saveManagedSoftware(list)
 		}
@@ -1432,6 +1578,213 @@ func (s *Service) UpdateSoftwareExecutable(softwareID, newExePath string) error 
 		}
 	}
 	return fmt.Errorf("未找到 ID 为 %s 的软件", softwareID)
+}
+
+// UpdateSoftwareLaunchConfig 更新已托管软件的自定义命令行启动参数与临时注入环境变量。
+func (s *Service) UpdateSoftwareLaunchConfig(softwareID, launchArgs string, launchEnv map[string]string) error {
+	list, err := s.LoadManagedSoftware()
+	if err != nil {
+		return err
+	}
+	for i := range list {
+		if list[i].ID == softwareID {
+			list[i].LaunchArgs = strings.TrimSpace(launchArgs)
+			list[i].LaunchEnv = cloneStringMap(launchEnv)
+			logger.Info("已更新软件启动配置: 软件=%s (ID=%s, 参数=%q, 环境变量=%d项)", list[i].Name, softwareID, list[i].LaunchArgs, len(list[i].LaunchEnv))
+			return s.saveManagedSoftware(list)
+		}
+	}
+	return fmt.Errorf("未找到 ID 为 %s 的软件", softwareID)
+}
+
+// SuggestPathCandidates 识别软件根目录与常见开发子目录，返回去重后的候选列表与默认勾选推荐列表。
+func (s *Service) SuggestPathCandidates(sw model.Software) (candidates []string, defaultPick []string) {
+	addCandidate := func(dir string) {
+		norm := winutil.NormalizePathEntry(dir)
+		if norm == "" || winutil.PathListContains(candidates, norm) {
+			return
+		}
+		candidates = append(candidates, norm)
+	}
+
+	root := winutil.NormalizePathEntry(sw.InstallPath)
+	if root != "" {
+		addCandidate(root)
+	}
+
+	exeDir := ""
+	if sw.ExecutablePath != "" {
+		d := winutil.NormalizePathEntry(filepath.Dir(sw.ExecutablePath))
+		if d != "" && root != "" && winutil.IsPathUnderOrEqual(d, root) && !winutil.PathListContains([]string{root}, d) {
+			exeDir = d
+			addCandidate(d)
+		}
+	}
+
+	commonSubdirs := []string{
+		"bin",
+		"cmd",
+		"Scripts",
+		filepath.Join("usr", "bin"),
+		"tools",
+		filepath.Join("mingw64", "bin"),
+		"platform-tools",
+	}
+	var existingSubdirs []string
+	if root != "" {
+		for _, sub := range commonSubdirs {
+			subPath := winutil.NormalizePathEntry(filepath.Join(root, sub))
+			if dirExists(subPath) {
+				addCandidate(subPath)
+				existingSubdirs = append(existingSubdirs, subPath)
+			}
+		}
+	}
+
+	for _, saved := range sw.PathEntries {
+		addCandidate(saved)
+	}
+
+	if len(sw.PathEntries) > 0 {
+		for _, saved := range sw.PathEntries {
+			norm := winutil.NormalizePathEntry(saved)
+			if norm != "" && !winutil.PathListContains(defaultPick, norm) {
+				defaultPick = append(defaultPick, norm)
+			}
+		}
+		return candidates, defaultPick
+	}
+
+	if exeDir != "" && dirExists(exeDir) {
+		return candidates, []string{exeDir}
+	}
+	if root != "" {
+		cmdDir := winutil.NormalizePathEntry(filepath.Join(root, "cmd"))
+		binDir := winutil.NormalizePathEntry(filepath.Join(root, "bin"))
+		if !hasDirectExecutableInDir(root, s.settings.GetExecutableExtensions()) {
+			if dirExists(cmdDir) {
+				return candidates, []string{cmdDir}
+			}
+			if dirExists(binDir) {
+				return candidates, []string{binDir}
+			}
+			if len(existingSubdirs) > 0 {
+				return candidates, []string{existingSubdirs[0]}
+			}
+		}
+		return candidates, []string{root}
+	}
+	return candidates, nil
+}
+
+// RegisterSoftwarePath 将选定目录写入系统用户 Path 并持久化到软件记录，同时清理该软件不再保留的旧 Path 项。
+func (s *Service) RegisterSoftwarePath(softwareID string, dirs []string) ([]string, error) {
+	if len(dirs) == 0 {
+		return nil, errors.New("请至少选择一个要注册到用户 Path 的目录")
+	}
+	cleaned := make([]string, 0, len(dirs))
+	for _, raw := range dirs {
+		c, err := winutil.ValidatePathEntry(raw)
+		if err != nil {
+			return nil, err
+		}
+		if !winutil.PathListContains(cleaned, c) {
+			cleaned = append(cleaned, c)
+		}
+	}
+	if len(cleaned) == 0 {
+		return nil, errors.New("请至少选择一个有效目录")
+	}
+
+	list, err := s.LoadManagedSoftware()
+	if err != nil {
+		return nil, err
+	}
+	idx := -1
+	for i := range list {
+		if list[i].ID == softwareID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return nil, fmt.Errorf("未找到 ID 为 %s 的软件", softwareID)
+	}
+
+	var stale []string
+	for _, oldDir := range list[idx].PathEntries {
+		if !winutil.PathListContains(cleaned, oldDir) {
+			stale = append(stale, oldDir)
+		}
+	}
+	stale = excludeReferencedPathDirs(stale, list, softwareID)
+	if len(stale) > 0 {
+		if _, rmErr := s.userPath.RemoveUserPathDirs(stale); rmErr != nil {
+			return nil, rmErr
+		}
+	}
+
+	if _, addErr := s.userPath.AddUserPathDirs(cleaned); addErr != nil {
+		return nil, addErr
+	}
+
+	list[idx].PathEntries = cleaned
+	if err := s.saveManagedSoftware(list); err != nil {
+		return nil, err
+	}
+	logger.Info("已注册软件目录到系统用户 Path: 软件=%s, 目录=%v", list[idx].Name, cleaned)
+	return slices.Clone(cleaned), nil
+}
+
+// UnregisterSoftwarePath 从系统用户 Path 中移除该软件已注册的目录并清空记录。
+func (s *Service) UnregisterSoftwarePath(softwareID string) ([]string, error) {
+	list, err := s.LoadManagedSoftware()
+	if err != nil {
+		return nil, err
+	}
+	idx := -1
+	for i := range list {
+		if list[i].ID == softwareID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return nil, fmt.Errorf("未找到 ID 为 %s 的软件", softwareID)
+	}
+
+	toRemove := excludeReferencedPathDirs(list[idx].PathEntries, list, softwareID)
+	var removed []string
+	if len(toRemove) > 0 {
+		removed, err = s.userPath.RemoveUserPathDirs(toRemove)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	list[idx].PathEntries = nil
+	if err := s.saveManagedSoftware(list); err != nil {
+		return nil, err
+	}
+	logger.Info("已从系统用户 Path 移除软件目录: 软件=%s, 移除=%v", list[idx].Name, removed)
+	return removed, nil
+}
+
+// QuerySoftwareUserPathPresence 查询一组目录当前是否真实存在于系统用户 Path 中（键为小写标准化路径）。
+func (s *Service) QuerySoftwareUserPathPresence(dirs []string) (map[string]bool, error) {
+	entries, err := s.userPath.ListUserPath()
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]bool, len(dirs))
+	for _, d := range dirs {
+		norm := winutil.NormalizePathEntry(d)
+		if norm == "" {
+			continue
+		}
+		result[strings.ToLower(norm)] = winutil.PathListContains(entries, norm)
+	}
+	return result, nil
 }
 
 // UpdateManagedSoftwareOrder 按给定 ID 顺序更新已托管软件排序。
@@ -1457,12 +1810,23 @@ func (s *Service) UpdateManagedSoftwareOrder(orderedIDs []string) error {
 	return s.saveManagedSoftware(list)
 }
 
-// DeleteSoftware 删除软件记录，并按选项删除安装目录或归档文件。
+// DeleteSoftware 删除软件记录，并按选项删除安装目录或归档文件，同时自动清理该软件注册的系统用户 Path。
 func (s *Service) DeleteSoftware(sw model.Software, deleteInstallDir, deleteArchive bool) error {
 	logger.Info("删除软件: 名称=%s (删除安装目录=%v, 删除归档=%v)", sw.Name, deleteInstallDir, deleteArchive)
 	list, err := s.LoadManagedSoftware()
 	if err != nil {
 		return err
+	}
+
+	var dirsToClean []string
+	appendUniqueClean := func(d string) {
+		norm := winutil.NormalizePathEntry(d)
+		if norm != "" && !winutil.PathListContains(dirsToClean, norm) {
+			dirsToClean = append(dirsToClean, norm)
+		}
+	}
+	for _, d := range sw.PathEntries {
+		appendUniqueClean(d)
 	}
 
 	if deleteInstallDir && sw.InstallPath != "" && dirExists(sw.InstallPath) {
@@ -1476,16 +1840,34 @@ func (s *Service) DeleteSoftware(sw model.Software, deleteInstallDir, deleteArch
 		}
 	}
 
-	// 若该条目在托管列表中存在，移除并保存。
+	// 若该条目在托管列表中存在，移除并收集持久化 PathEntries。
 	filtered := make([]model.Software, 0, len(list))
 	removed := false
 	for _, item := range list {
 		if item.ID == sw.ID {
+			for _, d := range item.PathEntries {
+				appendUniqueClean(d)
+			}
 			removed = true
 			continue
 		}
 		filtered = append(filtered, item)
 	}
+
+	// 若安装目录已删除或已不存在，一并扫描用户 Path 中落在该目录下的失效条目进行兜底清理。
+	if sw.InstallPath != "" && (deleteInstallDir || !dirExists(sw.InstallPath)) {
+		if userEntries, listErr := s.userPath.ListUserPath(); listErr == nil {
+			for _, entry := range userEntries {
+				if winutil.IsPathUnderOrEqual(entry, sw.InstallPath) {
+					appendUniqueClean(entry)
+				}
+			}
+		}
+	}
+
+	dirsToClean = excludeReferencedPathDirs(dirsToClean, filtered, "")
+	s.removeUserPathDirsQuiet(dirsToClean, sw.Name)
+
 	if removed {
 		return s.saveManagedSoftware(filtered)
 	}
@@ -1870,13 +2252,23 @@ func (s *Service) findManagedByPaths(installPath, archivePath string) (*model.So
 	return nil, nil
 }
 
-func (s *Service) prepareForOverride(installPath, archivePath, sourcePath string, replaceTarget *model.Software) (*int, error) {
+type overrideCarryover struct {
+	preferredOrder *int
+	launchArgs     string
+	launchEnv      map[string]string
+	pathEntries    []string
+	oldInstallPath string
+}
+
+func (s *Service) prepareForOverride(installPath, archivePath, sourcePath string, replaceTarget *model.Software) (overrideCarryover, error) {
 	list, err := s.LoadManagedSoftware()
 	if err != nil {
-		return nil, err
+		return overrideCarryover{}, err
 	}
 	var removedOrder *int
 	var targetOrder *int
+	var carryover overrideCarryover
+	var removedItems []model.Software
 	retained := make([]model.Software, 0, len(list))
 	removed := false
 	for _, item := range list {
@@ -1888,9 +2280,14 @@ func (s *Service) prepareForOverride(installPath, archivePath, sourcePath string
 			order := item.SortOrder
 			if matchTarget {
 				targetOrder = &order
+				carryover.launchArgs = item.LaunchArgs
+				carryover.launchEnv = cloneStringMap(item.LaunchEnv)
+				carryover.pathEntries = slices.Clone(item.PathEntries)
+				carryover.oldInstallPath = item.InstallPath
 			} else if removedOrder == nil {
 				removedOrder = &order
 			}
+			removedItems = append(removedItems, item)
 			removed = true
 			continue
 		}
@@ -1899,21 +2296,41 @@ func (s *Service) prepareForOverride(installPath, archivePath, sourcePath string
 	if targetOrder != nil {
 		removedOrder = targetOrder
 	}
+	if len(removedItems) > 0 && carryover.oldInstallPath == "" && carryover.launchArgs == "" && len(carryover.launchEnv) == 0 && len(carryover.pathEntries) == 0 {
+		first := removedItems[0]
+		carryover.launchArgs = first.LaunchArgs
+		carryover.launchEnv = cloneStringMap(first.LaunchEnv)
+		carryover.pathEntries = slices.Clone(first.PathEntries)
+		carryover.oldInstallPath = first.InstallPath
+	}
+	carryover.preferredOrder = removedOrder
+
 	if removed {
+		var oldPathDirs []string
+		for _, item := range removedItems {
+			for _, d := range item.PathEntries {
+				if !winutil.PathListContains(oldPathDirs, d) {
+					oldPathDirs = append(oldPathDirs, d)
+				}
+			}
+		}
+		oldPathDirs = excludeReferencedPathDirs(oldPathDirs, retained, "")
+		s.removeUserPathDirsQuiet(oldPathDirs, "")
+
 		if err := s.saveManagedSoftware(retained); err != nil {
-			return nil, err
+			return overrideCarryover{}, err
 		}
 	}
 
 	if installPath != "" && dirExists(installPath) {
 		if err := os.RemoveAll(installPath); err != nil {
-			return nil, fmt.Errorf("清理旧安装目录失败: %w", err)
+			return overrideCarryover{}, fmt.Errorf("清理旧安装目录失败: %w", err)
 		}
 	}
 	if replaceTarget != nil && replaceTarget.InstallPath != "" &&
 		!winutil.SamePath(replaceTarget.InstallPath, installPath) && dirExists(replaceTarget.InstallPath) {
 		if err := os.RemoveAll(replaceTarget.InstallPath); err != nil {
-			return nil, fmt.Errorf("清理旧版本安装目录失败: %w", err)
+			return overrideCarryover{}, fmt.Errorf("清理旧版本安装目录失败: %w", err)
 		}
 	}
 
@@ -1932,14 +2349,14 @@ func (s *Service) prepareForOverride(installPath, archivePath, sourcePath string
 		return nil
 	}
 	if err := removeOldArchive(archivePath); err != nil {
-		return nil, err
+		return overrideCarryover{}, err
 	}
 	if replaceTarget != nil && replaceTarget.ArchivePath != "" && !winutil.SamePath(replaceTarget.ArchivePath, archivePath) {
 		if err := removeOldArchive(replaceTarget.ArchivePath); err != nil {
-			return nil, err
+			return overrideCarryover{}, err
 		}
 	}
-	return removedOrder, nil
+	return carryover, nil
 }
 
 func matchPreviousExecutable(mappedExecs []string, newInstallDir, oldInstallDir, oldExePath string) string {
@@ -2634,4 +3051,95 @@ func newUUID() string {
 	b[6] = (b[6] & 0x0f) | 0x40
 	b[8] = (b[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+func cloneStringMap(src map[string]string) map[string]string {
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make(map[string]string, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+func remapPathEntries(entries []string, oldRoot, newRoot string) []string {
+	if len(entries) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		norm := winutil.NormalizePathEntry(entry)
+		if norm == "" {
+			continue
+		}
+		mapped := norm
+		if oldRoot != "" && newRoot != "" && winutil.IsPathUnderOrEqual(norm, oldRoot) {
+			if rel, err := filepath.Rel(winutil.NormalizePathEntry(oldRoot), norm); err == nil && !strings.HasPrefix(rel, "..") {
+				if rel == "." {
+					mapped = winutil.NormalizePathEntry(newRoot)
+				} else {
+					mapped = winutil.NormalizePathEntry(filepath.Join(newRoot, rel))
+				}
+			}
+		}
+		if mapped != "" && !winutil.PathListContains(out, mapped) {
+			out = append(out, mapped)
+		}
+	}
+	return out
+}
+
+func excludeReferencedPathDirs(dirs []string, list []model.Software, ignoreID string) []string {
+	if len(dirs) == 0 {
+		return nil
+	}
+	var retained []string
+	for _, item := range list {
+		if ignoreID != "" && item.ID == ignoreID {
+			continue
+		}
+		retained = append(retained, item.PathEntries...)
+	}
+	var out []string
+	for _, d := range dirs {
+		if !winutil.PathListContains(retained, d) && !winutil.PathListContains(out, d) {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+func (s *Service) removeUserPathDirsQuiet(dirs []string, softwareName string) {
+	if len(dirs) == 0 {
+		return
+	}
+	removed, err := s.userPath.RemoveUserPathDirs(dirs)
+	if err != nil {
+		if !errors.Is(err, errors.ErrUnsupported) {
+			logger.Warn("清理系统用户 Path 失败 (%s): %v", softwareName, err)
+		}
+		return
+	}
+	if len(removed) > 0 {
+		logger.Info("已自动从系统用户 Path 清理失效目录 (%s): %v", softwareName, removed)
+	}
+}
+
+func hasDirectExecutableInDir(dir string, exts []string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, ent := range entries {
+		if ent.IsDir() {
+			continue
+		}
+		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(ent.Name())), ".")
+		if ext != "" && slices.Contains(exts, ext) {
+			return true
+		}
+	}
+	return false
 }

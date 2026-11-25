@@ -3,6 +3,7 @@
 package winutil
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -56,8 +57,30 @@ func ExtractIconPNG(exePath string, preferredSize int) ([]byte, error) {
 
 // LaunchExecutable 在非 Windows 平台直接启动程序。
 func LaunchExecutable(exePath, fallbackWorkDir string) error {
-	cmd := exec.Command(exePath)
-	cmd.Dir = filepath.Dir(exePath)
+	return LaunchExecutableWithOptions(exePath, fallbackWorkDir, LaunchOptions{})
+}
+
+// LaunchExecutableWithOptions 在非 Windows 平台按附加参数和临时环境变量启动程序。
+func LaunchExecutableWithOptions(exePath, fallbackWorkDir string, opts LaunchOptions) error {
+	var args []string
+	if trimmed := strings.TrimSpace(opts.Args); trimmed != "" {
+		args = strings.Fields(trimmed)
+	}
+	cmd := exec.Command(exePath, args...)
+	workDir := filepath.Dir(exePath)
+	if workDir == "" || workDir == "." {
+		workDir = fallbackWorkDir
+	}
+	cmd.Dir = workDir
+	if len(opts.Env) > 0 {
+		builtins := map[string]string{
+			"EXE_DIR": filepath.Dir(exePath),
+		}
+		if strings.TrimSpace(opts.InstallDir) != "" {
+			builtins["INSTALL_DIR"] = filepath.Clean(strings.TrimSpace(opts.InstallDir))
+		}
+		cmd.Env = MergeEnv(os.Environ(), opts.Env, builtins, false)
+	}
 	return cmd.Start()
 }
 
@@ -86,7 +109,27 @@ func StartMenuDir() (string, error) {
 
 // CreateShortcut 非 Windows 平台返回不支持错误。
 func CreateShortcut(targetPath, shortcutPath, description string) error {
-	return fmt.Errorf("仅 Windows 平台支持创建快捷方式")
+	return CreateShortcutWithArgs(targetPath, shortcutPath, description, "")
+}
+
+// CreateShortcutWithArgs 非 Windows 平台返回不支持错误。
+func CreateShortcutWithArgs(targetPath, shortcutPath, description, args string) error {
+	return fmt.Errorf("仅 Windows 平台支持创建快捷方式: %w", errors.ErrUnsupported)
+}
+
+// ListUserPath 非 Windows 平台返回不支持错误。
+func ListUserPath() ([]string, error) {
+	return nil, fmt.Errorf("仅 Windows 平台支持用户 Path 管理: %w", errors.ErrUnsupported)
+}
+
+// AddUserPathDirs 非 Windows 平台返回不支持错误。
+func AddUserPathDirs(dirs []string) ([]string, error) {
+	return nil, fmt.Errorf("仅 Windows 平台支持用户 Path 管理: %w", errors.ErrUnsupported)
+}
+
+// RemoveUserPathDirs 非 Windows 平台返回不支持错误。
+func RemoveUserPathDirs(dirs []string) ([]string, error) {
+	return nil, fmt.Errorf("仅 Windows 平台支持用户 Path 管理: %w", errors.ErrUnsupported)
 }
 
 // Read7ZipRegistryPaths 非 Windows 平台返回空切片。

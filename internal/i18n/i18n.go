@@ -156,6 +156,40 @@ type Strings struct {
 	TileMigrating            string
 	TileMigrateSuccess       string
 	TileMigrateFailedFmt     string
+	TileSoftwareSettings     string
+	TileAddToPath            string
+	TileRemoveFromPath       string
+	TilePathBadge            string
+	TileArgsBadge            string
+	TileEnvBadge             string
+	TilePathTooltipFmt       string
+	TileLaunchConfigTipFmt   string
+
+	// Software Settings Modal
+	SwSetTitleFmt           string
+	SwSetPathSection        string
+	SwSetPathDesc           string
+	SwSetPathRegistered     string
+	SwSetPathOutOfSync      string
+	SwSetPathUnregistered   string
+	SwSetPathRootTag        string
+	SwSetPathExeDirTag      string
+	SwSetPathMissingTag     string
+	SwSetPathAddSubdir      string
+	SwSetPathRegisterBtn    string
+	SwSetPathUpdateBtn      string
+	SwSetPathUnregisterBtn  string
+	SwSetPathSelectAtLeast1 string
+	SwSetPathRegisteredFmt  string
+	SwSetPathRemovedFmt     string
+	SwSetArgsSection        string
+	SwSetArgsPlaceholder    string
+	SwSetArgsHint           string
+	SwSetEnvSection         string
+	SwSetEnvPlaceholder     string
+	SwSetEnvHint            string
+	SwSetClearLaunchConfig  string
+	SwSetSavedToast         string
 
 	// Duplicate dialog
 	DupDetected           string
@@ -184,12 +218,13 @@ type Strings struct {
 	DupBackupReplace      string
 
 	// Delete dialog
-	DeleteSoftwareFmt   string
-	DeleteUnmanagedFmt  string
-	DeleteManagedHint   string
-	DeleteInstallDir    string
-	DeleteArchive       string
-	DeleteBackupHintMsg string
+	DeleteSoftwareFmt        string
+	DeleteUnmanagedFmt       string
+	DeleteManagedHint        string
+	DeleteInstallDir         string
+	DeleteArchive            string
+	DeleteBackupHintMsg      string
+	DeletePathCleanupHintFmt string
 
 	// Scan & Assoc
 	ScanArchiveTitle       string
@@ -540,6 +575,39 @@ var zhStrings = Strings{
 	TileMigrating:            "正在迁移文件...",
 	TileMigrateSuccess:       "软件文件夹已成功迁移。",
 	TileMigrateFailedFmt:     "修改软件文件夹失败：%s",
+	TileSoftwareSettings:     "软件设置",
+	TileAddToPath:            "注册到用户 Path",
+	TileRemoveFromPath:       "从用户 Path 移除",
+	TilePathBadge:            "PATH",
+	TileArgsBadge:            "ARGS",
+	TileEnvBadge:             "ENV",
+	TilePathTooltipFmt:       "已注册到系统用户 Path：\n%s",
+	TileLaunchConfigTipFmt:   "启动配置：%s",
+
+	SwSetTitleFmt:           "软件设置 — %s",
+	SwSetPathSection:        "系统用户 Path",
+	SwSetPathDesc:           "将 CLI 工具目录写入当前 Windows 用户 Path（新开终端生效）；移除托管时将自动清理失效条目。",
+	SwSetPathRegistered:     "已注册",
+	SwSetPathOutOfSync:      "需同步",
+	SwSetPathUnregistered:   "未注册",
+	SwSetPathRootTag:        "根目录",
+	SwSetPathExeDirTag:      "主程序目录",
+	SwSetPathMissingTag:     "目录不存在",
+	SwSetPathAddSubdir:      "添加子目录...",
+	SwSetPathRegisterBtn:    "一键注册到用户 Path",
+	SwSetPathUpdateBtn:      "更新用户 Path",
+	SwSetPathUnregisterBtn:  "从用户 Path 移除",
+	SwSetPathSelectAtLeast1: "请至少勾选一个要注册的目录。",
+	SwSetPathRegisteredFmt:  "已将 %d 个目录同步至系统用户 Path（新终端生效）。",
+	SwSetPathRemovedFmt:     "已从系统用户 Path 移除 %s。",
+	SwSetArgsSection:        "自定义命令行启动参数",
+	SwSetArgsPlaceholder:    "例如：--port 8080 --profile dev",
+	SwSetArgsHint:           "启动主程序（及添加到开始菜单的快捷方式）时将自动附加以上参数。",
+	SwSetEnvSection:         "临时注入环境变量",
+	SwSetEnvPlaceholder:     "每行一条 KEY=VALUE（支持 # 注释及 %INSTALL_DIR% / %EXE_DIR% / %PATH%）\n例如：JAVA_HOME=%INSTALL_DIR%",
+	SwSetEnvHint:            "仅对通过 CarryDock 启动的子进程临时生效，不会污染系统或 CarryDock 自身环境。",
+	SwSetClearLaunchConfig:  "清空启动配置",
+	SwSetSavedToast:         "软件启动配置已保存。",
 
 	DupDetected:           "检测到重复",
 	DupHelpFmt:            "软件名称「%s」与现有项目冲突。请选择如何继续：",
@@ -566,12 +634,13 @@ var zhStrings = Strings{
 	DupReplace:            "替换旧版本",
 	DupBackupReplace:      "备份并替换",
 
-	DeleteSoftwareFmt:   "删除 %s",
-	DeleteUnmanagedFmt:  "您确定要删除这个%s吗？此操作不可恢复。",
-	DeleteManagedHint:   "您确定要删除此软件吗？此操作将从托管列表中移除该软件。",
-	DeleteInstallDir:    "同时删除安装目录",
-	DeleteArchive:       "同时删除归档文件",
-	DeleteBackupHintMsg: "确定要删除此备份吗？它可能已关联到已托管软件。",
+	DeleteSoftwareFmt:        "删除 %s",
+	DeleteUnmanagedFmt:       "您确定要删除这个%s吗？此操作不可恢复。",
+	DeleteManagedHint:        "您确定要删除此软件吗？此操作将从托管列表中移除该软件。",
+	DeleteInstallDir:         "同时删除安装目录",
+	DeleteArchive:            "同时删除归档文件",
+	DeleteBackupHintMsg:      "确定要删除此备份吗？它可能已关联到已托管软件。",
+	DeletePathCleanupHintFmt: "移除托管时将自动从系统用户 Path 清理该软件已注册的 %d 个目录。",
 
 	ScanArchiveTitle:       "扫描并归档",
 	ScanArchiveHintFmt:     "扫描「%s」中的所有子目录并将其纳入托管？",
@@ -916,6 +985,39 @@ var enStrings = Strings{
 	TileMigrating:            "Migrating folder...",
 	TileMigrateSuccess:       "Software folder renamed successfully.",
 	TileMigrateFailedFmt:     "Failed to rename software folder: %s",
+	TileSoftwareSettings:     "Software Settings",
+	TileAddToPath:            "Add to User Path",
+	TileRemoveFromPath:       "Remove from User Path",
+	TilePathBadge:            "PATH",
+	TileArgsBadge:            "ARGS",
+	TileEnvBadge:             "ENV",
+	TilePathTooltipFmt:       "Registered in Windows User Path:\n%s",
+	TileLaunchConfigTipFmt:   "Launch config: %s",
+
+	SwSetTitleFmt:           "Software Settings — %s",
+	SwSetPathSection:        "Windows User Path",
+	SwSetPathDesc:           "Register CLI directories to HKCU User Path (effective in new terminals). Automatically cleaned up when removing management.",
+	SwSetPathRegistered:     "Registered",
+	SwSetPathOutOfSync:      "Out of Sync",
+	SwSetPathUnregistered:   "Not Registered",
+	SwSetPathRootTag:        "Root",
+	SwSetPathExeDirTag:      "Exe Dir",
+	SwSetPathMissingTag:     "Missing",
+	SwSetPathAddSubdir:      "Add Subdir...",
+	SwSetPathRegisterBtn:    "Add to User Path",
+	SwSetPathUpdateBtn:      "Update User Path",
+	SwSetPathUnregisterBtn:  "Remove from User Path",
+	SwSetPathSelectAtLeast1: "Select at least one directory to register.",
+	SwSetPathRegisteredFmt:  "Synced %d directory(s) to User Path (open a new terminal to use).",
+	SwSetPathRemovedFmt:     "Removed %s from User Path.",
+	SwSetArgsSection:        "Custom Launch Arguments",
+	SwSetArgsPlaceholder:    "e.g. --port 8080 --profile dev",
+	SwSetArgsHint:           "Appended automatically when launching the main executable or creating Start Menu shortcuts.",
+	SwSetEnvSection:         "Temporary Environment Variables",
+	SwSetEnvPlaceholder:     "One KEY=VALUE per line (# comments and %INSTALL_DIR% / %EXE_DIR% / %PATH% supported)\ne.g. JAVA_HOME=%INSTALL_DIR%",
+	SwSetEnvHint:            "Injected only into the launched child process without polluting system or CarryDock environment.",
+	SwSetClearLaunchConfig:  "Clear Launch Config",
+	SwSetSavedToast:         "Launch settings saved.",
 
 	DupDetected:           "Duplicate Detected",
 	DupHelpFmt:            "Software name '%s' conflicts with existing items. Choose how to proceed:",
@@ -942,12 +1044,13 @@ var enStrings = Strings{
 	DupReplace:            "Replace",
 	DupBackupReplace:      "Backup & Replace",
 
-	DeleteSoftwareFmt:   "Delete %s",
-	DeleteUnmanagedFmt:  "Are you sure you want to delete this %s? This cannot be undone.",
-	DeleteManagedHint:   "Are you sure you want to remove this software from the managed list?",
-	DeleteInstallDir:    "Also delete installation directory",
-	DeleteArchive:       "Also delete archive file",
-	DeleteBackupHintMsg: "Are you sure you want to delete this backup? Its associations will be cleared.",
+	DeleteSoftwareFmt:        "Delete %s",
+	DeleteUnmanagedFmt:       "Are you sure you want to delete this %s? This cannot be undone.",
+	DeleteManagedHint:        "Are you sure you want to remove this software from the managed list?",
+	DeleteInstallDir:         "Also delete installation directory",
+	DeleteArchive:            "Also delete archive file",
+	DeleteBackupHintMsg:      "Are you sure you want to delete this backup? Its associations will be cleared.",
+	DeletePathCleanupHintFmt: "Removing management will automatically clean up %d registered User Path entry(s).",
 
 	ScanArchiveTitle:       "Scan & Archive",
 	ScanArchiveHintFmt:     "Scan subdirectories in '%s' and register them as managed software?",

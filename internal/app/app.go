@@ -188,6 +188,18 @@ type App struct {
 	renameTarget    model.Software
 	renameInput     string
 
+	// 软件设置弹窗（启动参数 / 环境变量 / 系统用户 Path）
+	swSettingsModalOpen bool
+	swSetTarget         model.Software
+	swSetArgs           string
+	swSetEnvText        string
+	swSetEnvError       string
+	swSetPathCandidates []string
+	swSetPathChecked    map[string]bool
+	swSetPathInSystem   map[string]bool
+	swSetPathLoading    bool
+	swSetPathBusy       bool
+
 	// 批量扫描与统一关联弹窗
 	scanConfirmOpen   bool
 	scanCreateBackup  bool
@@ -443,6 +455,7 @@ func (a *App) anyModalOpen() bool {
 		a.dupModalOpen ||
 		a.deleteModalOpen ||
 		a.renameModalOpen ||
+		a.swSettingsModalOpen ||
 		a.scanConfirmOpen ||
 		a.scanProgressOpen ||
 		a.assocModalOpen ||

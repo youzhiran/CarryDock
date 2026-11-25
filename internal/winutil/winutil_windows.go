@@ -5,6 +5,7 @@ package winutil
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"image"
 	"image/png"
@@ -46,6 +47,7 @@ var (
 	procDestroyIcon          = modUser32.NewProc("DestroyIcon")
 	procGetDC                = modUser32.NewProc("GetDC")
 	procReleaseDC            = modUser32.NewProc("ReleaseDC")
+	procSendMessageTimeoutW  = modUser32.NewProc("SendMessageTimeoutW")
 
 	procGetObjectW   = modGdi32.NewProc("GetObjectW")
 	procGetDIBits    = modGdi32.NewProc("GetDIBits")
@@ -62,6 +64,10 @@ const (
 	sOK                     = 0x00000000
 	sFalse                  = 0x00000001
 	rpcEChangedMode         = 0x80010106
+	hwndBroadcast           = 0xFFFF
+	wmSettingChange         = 0x001A
+	smtoAbortIfHung         = 0x0002
+	errorElevationRequired  = syscall.Errno(740)
 
 	vsFixedFileInfoSignature = 0xFEEF04BD
 )
@@ -643,11 +649,72 @@ func readBitmapBGRA(hdc, hbm uintptr, width, height int) ([]byte, error) {
 // LaunchExecutable 使用 Win32 ShellExecuteW 启动可执行文件。
 // 相比 cmd.exe /c start，能正确处理空格、特殊字符、UAC 提权请求并避免控制台闪现。
 func LaunchExecutable(exePath, fallbackWorkDir string) error {
+	return LaunchExecutableWithOptions(exePath, fallbackWorkDir, LaunchOptions{})
+}
+
+// LaunchExecutableWithOptions 按给定的启动参数和临时环境变量启动可执行文件或脚本。
+// 未配置临时环境变量时保留 ShellExecuteW 原生启动路径；存在临时环境变量时通过隔离的子进程环境启动。
+func LaunchExecutableWithOptions(exePath, fallbackWorkDir string, opts LaunchOptions) error {
 	workDir := filepath.Dir(exePath)
 	if workDir == "" || workDir == "." {
 		workDir = fallbackWorkDir
 	}
-	return shellExecuteW("open", exePath, "", workDir)
+	args := strings.TrimSpace(opts.Args)
+	if len(opts.Env) == 0 {
+		return shellExecuteW("open", exePath, args, workDir)
+	}
+
+	absExe := filepath.Clean(strings.TrimSpace(exePath))
+	if abs, err := filepath.Abs(absExe); err == nil {
+		absExe = abs
+	}
+	builtins := map[string]string{
+		"EXE_DIR": filepath.Dir(absExe),
+	}
+	if strings.TrimSpace(opts.InstallDir) != "" {
+		builtins["INSTALL_DIR"] = filepath.Clean(strings.TrimSpace(opts.InstallDir))
+	}
+	mergedEnv := MergeEnv(os.Environ(), opts.Env, builtins, true)
+
+	ext := strings.ToLower(filepath.Ext(absExe))
+	var cmd *exec.Cmd
+	switch ext {
+	case ".bat", ".cmd":
+		cmdExe := strings.TrimSpace(os.Getenv("ComSpec"))
+		if cmdExe == "" {
+			cmdExe = "cmd.exe"
+		}
+		cmd = exec.Command(cmdExe)
+		cmd.Dir = workDir
+		cmd.Env = mergedEnv
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			CreationFlags: windows.CREATE_NEW_CONSOLE,
+			CmdLine:       BuildBatchCmdLineWithArgs(cmdExe, absExe, args),
+		}
+	case ".ps1":
+		psExe := "powershell.exe"
+		cmd = exec.Command(psExe)
+		cmd.Dir = workDir
+		cmd.Env = mergedEnv
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			CreationFlags: windows.CREATE_NEW_CONSOLE,
+			CmdLine:       BuildPowershellCmdLine(psExe, absExe, args),
+		}
+	default:
+		cmd = exec.Command(absExe)
+		cmd.Dir = workDir
+		cmd.Env = mergedEnv
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			CmdLine: BuildExeCmdLine(absExe, args),
+		}
+	}
+	if err := cmd.Start(); err != nil {
+		if errors.Is(err, errorElevationRequired) {
+			return fmt.Errorf("程序需要管理员权限提权，无法通过子进程注入临时环境变量，请清空临时环境变量或以管理员身份运行: %w", err)
+		}
+		return err
+	}
+	return nil
 }
 
 func shellExecuteW(verb, file, params, workDir string) error {
@@ -701,8 +768,7 @@ func HideConsole(cmd *exec.Cmd) {
 }
 
 func buildBatchCmdLine(cmdExe, scriptPath string) string {
-	clean := filepath.Clean(strings.TrimSpace(scriptPath))
-	return fmt.Sprintf(`"%s" /c ""%s""`, cmdExe, clean)
+	return BuildBatchCmdLineWithArgs(cmdExe, scriptPath, "")
 }
 
 // LaunchBatchScript 在独立新控制台窗口中异步启动批处理脚本，避免路径含空格或特殊字符时 cmd /c start 解析失败。
@@ -916,17 +982,27 @@ func escapePSQuote(s string) string {
 
 // CreateShortcut 创建 Windows 快捷方式 (.lnk)，正确转义路径并设置工作目录。
 func CreateShortcut(targetPath, shortcutPath, description string) error {
+	return CreateShortcutWithArgs(targetPath, shortcutPath, description, "")
+}
+
+// CreateShortcutWithArgs 创建 Windows 快捷方式 (.lnk)，并可选写入启动命令行参数。
+func CreateShortcutWithArgs(targetPath, shortcutPath, description, args string) error {
 	if description == "" {
 		base := filepath.Base(targetPath)
 		description = strings.TrimSuffix(base, filepath.Ext(base))
 	}
 	workDir := filepath.Dir(targetPath)
+	argsClause := ""
+	if trimmedArgs := strings.TrimSpace(args); trimmedArgs != "" {
+		argsClause = fmt.Sprintf(" $s.Arguments = '%s';", escapePSQuote(trimmedArgs))
+	}
 	ps := fmt.Sprintf(
-		"$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%s'); $s.TargetPath = '%s'; $s.WorkingDirectory = '%s'; $s.Description = '%s'; $s.Save();",
+		"$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%s'); $s.TargetPath = '%s'; $s.WorkingDirectory = '%s'; $s.Description = '%s';%s $s.Save();",
 		escapePSQuote(shortcutPath),
 		escapePSQuote(targetPath),
 		escapePSQuote(workDir),
 		escapePSQuote(description),
+		argsClause,
 	)
 	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ps)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
@@ -935,6 +1011,154 @@ func CreateShortcut(targetPath, shortcutPath, description string) error {
 		return fmt.Errorf("创建快捷方式失败: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// ListUserPath 读取当前 Windows 用户环境变量 HKCU\Environment 中的 Path 条目列表。
+func ListUserPath() ([]string, error) {
+	k, err := registry.OpenKey(registry.CURRENT_USER, `Environment`, registry.QUERY_VALUE)
+	if err != nil {
+		if errors.Is(err, registry.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("读取用户环境变量失败: %w", err)
+	}
+	defer func() { _ = k.Close() }()
+
+	val, _, err := k.GetStringValue("Path")
+	if err != nil {
+		if errors.Is(err, registry.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("读取用户 Path 失败: %w", err)
+	}
+	return SplitPathEntries(val), nil
+}
+
+// AddUserPathDirs 将指定目录写入当前用户的系统 Path（若已存在则跳过），并广播环境变量变更。
+func AddUserPathDirs(dirs []string) ([]string, error) {
+	if len(dirs) == 0 {
+		return nil, nil
+	}
+	cleaned := make([]string, 0, len(dirs))
+	for _, d := range dirs {
+		c, err := ValidatePathEntry(d)
+		if err != nil {
+			return nil, err
+		}
+		cleaned = append(cleaned, c)
+	}
+
+	k, _, err := registry.CreateKey(registry.CURRENT_USER, `Environment`, registry.QUERY_VALUE|registry.SET_VALUE)
+	if err != nil {
+		return nil, fmt.Errorf("打开用户环境变量注册表失败: %w", err)
+	}
+	defer func() { _ = k.Close() }()
+
+	raw, valType, err := k.GetStringValue("Path")
+	if err != nil {
+		if !errors.Is(err, registry.ErrNotExist) {
+			return nil, fmt.Errorf("读取用户 Path 失败: %w", err)
+		}
+		raw = ""
+		valType = registry.EXPAND_SZ
+	}
+
+	existing := SplitPathEntries(raw)
+	updated, added, changed := AddDirsToPathList(existing, cleaned)
+	if !changed {
+		return nil, nil
+	}
+
+	joined := strings.Join(updated, ";")
+	if valType == registry.EXPAND_SZ || strings.ContainsRune(joined, '%') {
+		err = k.SetExpandStringValue("Path", joined)
+	} else {
+		err = k.SetStringValue("Path", joined)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("写入用户 Path 失败: %w", err)
+	}
+	BroadcastEnvironmentChange()
+	syncProcessPath(added, nil)
+	return added, nil
+}
+
+// RemoveUserPathDirs 从当前用户的系统 Path 中移除指定目录，并广播环境变量变更。
+func RemoveUserPathDirs(dirs []string) ([]string, error) {
+	if len(dirs) == 0 {
+		return nil, nil
+	}
+	k, err := registry.OpenKey(registry.CURRENT_USER, `Environment`, registry.QUERY_VALUE|registry.SET_VALUE)
+	if err != nil {
+		if errors.Is(err, registry.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("打开用户环境变量注册表失败: %w", err)
+	}
+	defer func() { _ = k.Close() }()
+
+	raw, valType, err := k.GetStringValue("Path")
+	if err != nil {
+		if errors.Is(err, registry.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("读取用户 Path 失败: %w", err)
+	}
+
+	existing := SplitPathEntries(raw)
+	updated, removed, changed := RemoveDirsFromPathList(existing, dirs)
+	if !changed {
+		return nil, nil
+	}
+
+	joined := strings.Join(updated, ";")
+	if valType == registry.EXPAND_SZ || strings.ContainsRune(joined, '%') {
+		err = k.SetExpandStringValue("Path", joined)
+	} else {
+		err = k.SetStringValue("Path", joined)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("更新用户 Path 失败: %w", err)
+	}
+	BroadcastEnvironmentChange()
+	syncProcessPath(nil, removed)
+	return removed, nil
+}
+
+// BroadcastEnvironmentChange 向顶层窗口广播 WM_SETTINGCHANGE ("Environment")，通知资源管理器和新终端刷新环境变量。
+func BroadcastEnvironmentChange() {
+	envPtr, err := windows.UTF16PtrFromString("Environment")
+	if err != nil {
+		return
+	}
+	var res uintptr
+	_, _, _ = procSendMessageTimeoutW.Call(
+		hwndBroadcast,
+		wmSettingChange,
+		0,
+		uintptr(unsafe.Pointer(envPtr)),
+		smtoAbortIfHung,
+		3000,
+		uintptr(unsafe.Pointer(&res)),
+	)
+}
+
+func syncProcessPath(added, removed []string) {
+	cur := SplitPathEntries(os.Getenv("PATH"))
+	changed := false
+	if len(removed) > 0 {
+		var c bool
+		cur, _, c = RemoveDirsFromPathList(cur, removed)
+		changed = changed || c
+	}
+	if len(added) > 0 {
+		var c bool
+		cur, _, c = AddDirsToPathList(cur, added)
+		changed = changed || c
+	}
+	if changed {
+		_ = os.Setenv("PATH", strings.Join(cur, ";"))
+	}
 }
 
 // Read7ZipRegistryPaths 从 64 位、32 位及当前用户注册表读取 7-Zip 安装目录。

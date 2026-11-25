@@ -11,7 +11,30 @@ import (
 	"carrydock/internal/model"
 	"carrydock/internal/settings"
 	"carrydock/internal/storage"
+	"carrydock/internal/winutil"
 )
+
+type mockUserPathManager struct {
+	entries []string
+}
+
+func (m *mockUserPathManager) ListUserPath() ([]string, error) {
+	out := make([]string, len(m.entries))
+	copy(out, m.entries)
+	return out, nil
+}
+
+func (m *mockUserPathManager) AddUserPathDirs(dirs []string) ([]string, error) {
+	updated, added, _ := winutil.AddDirsToPathList(m.entries, dirs)
+	m.entries = updated
+	return added, nil
+}
+
+func (m *mockUserPathManager) RemoveUserPathDirs(dirs []string) ([]string, error) {
+	updated, removed, _ := winutil.RemoveDirsFromPathList(m.entries, dirs)
+	m.entries = updated
+	return removed, nil
+}
 
 func newTestService(t *testing.T) (*Service, *settings.Service, string) {
 	t.Helper()
@@ -25,7 +48,9 @@ func newTestService(t *testing.T) (*Service, *settings.Service, string) {
 	if err := setSvc.SaveInstallPath(installDir); err != nil {
 		t.Fatal(err)
 	}
-	return NewService(setSvc), setSvc, installDir
+	svc := NewService(setSvc)
+	svc.SetUserPathManager(&mockUserPathManager{})
+	return svc, setSvc, installDir
 }
 
 func makeZip(t *testing.T, zipPath string, files map[string]string) {
@@ -662,6 +687,7 @@ func TestRelativePathsUSBMigrationEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	svcA := NewService(setSvcA)
+	svcA.SetUserPathManager(&mockUserPathManager{})
 
 	srcZip := filepath.Join(t.TempDir(), "NotePad.zip")
 	makeZip(t, srcZip, map[string]string{
@@ -713,6 +739,7 @@ func TestRelativePathsUSBMigrationEndToEnd(t *testing.T) {
 	storeB := storage.NewAtBaseDir(rootB)
 	setSvcB := settings.NewService(storeB)
 	svcB := NewService(setSvcB)
+	svcB.SetUserPathManager(&mockUserPathManager{})
 
 	wantInstallB := filepath.Join(rootB, "Apps")
 	if got := setSvcB.GetInstallPath(); got != wantInstallB {
@@ -807,5 +834,166 @@ func TestInstallPathDotExcludesDataDirectory(t *testing.T) {
 		if strings.EqualFold(name, "data") {
 			t.Fatalf("expected CarryDock data directory not to be archived as software")
 		}
+	}
+}
+
+func TestDeveloperLaunchConfigAndUserPathLifecycle(t *testing.T) {
+	svc, _, installDir := newTestService(t)
+	mockPath := &mockUserPathManager{
+		entries: []string{`%USERPROFILE%\.cargo\bin`},
+	}
+	svc.SetUserPathManager(mockPath)
+
+	// 1. 准备 JDK 风格（主程序在 bin\java.exe）与 Git 风格（cmd\git.exe）软件
+	jdkZip := filepath.Join(t.TempDir(), "OpenJDK21.zip")
+	makeZip(t, jdkZip, map[string]string{
+		"OpenJDK21/bin/java.exe": "bin",
+		"OpenJDK21/lib/rt.jar":   "lib",
+	})
+	if res := svc.AddSoftwareFromFile(jdkZip); res.Type != AddSuccess {
+		t.Fatalf("AddSoftwareFromFile(jdk) failed: %+v", res)
+	}
+	gitZip := filepath.Join(t.TempDir(), "PortableGit.zip")
+	makeZip(t, gitZip, map[string]string{
+		"PortableGit/cmd/git.exe":     "bin",
+		"PortableGit/usr/bin/awk.exe": "bin",
+	})
+	if res := svc.AddSoftwareFromFile(gitZip); res.Type != AddNeedsSelection {
+		t.Fatalf("expected AddNeedsSelection for git, got %+v", res)
+	} else if err := svc.CompleteSoftwareAddition(*res.PendingAddition, res.PendingAddition.ExecutablePaths[0]); err != nil {
+		t.Fatalf("CompleteSoftwareAddition(git) failed: %v", err)
+	}
+
+	list, err := svc.LoadManagedSoftware()
+	if err != nil || len(list) != 2 {
+		t.Fatalf("LoadManagedSoftware = %v, len=%d", err, len(list))
+	}
+	var jdk, git model.Software
+	for _, item := range list {
+		if strings.Contains(item.Name, "OpenJDK") {
+			jdk = item
+		} else {
+			git = item
+		}
+	}
+
+	// 2. 验证 SuggestPathCandidates 推荐 bin / cmd
+	jdkCands, jdkDef := svc.SuggestPathCandidates(jdk)
+	if len(jdkCands) < 2 || len(jdkDef) != 1 || !winutil.SamePath(jdkDef[0], filepath.Join(jdk.InstallPath, "bin")) {
+		t.Fatalf("unexpected JDK path suggestion: cands=%v def=%v", jdkCands, jdkDef)
+	}
+	gitCands, gitDef := svc.SuggestPathCandidates(git)
+	if len(gitCands) < 3 || len(gitDef) != 1 || !winutil.SamePath(gitDef[0], filepath.Join(git.InstallPath, "cmd")) {
+		t.Fatalf("unexpected Git path suggestion: cands=%v def=%v", gitCands, gitDef)
+	}
+
+	// 3. 保存启动参数与环境变量
+	if err := svc.UpdateSoftwareLaunchConfig(jdk.ID, "-Xmx2g -jar app.jar", map[string]string{
+		"JAVA_HOME": "%INSTALL_DIR%",
+	}); err != nil {
+		t.Fatalf("UpdateSoftwareLaunchConfig failed: %v", err)
+	}
+	// 注册 Path
+	synced, err := svc.RegisterSoftwarePath(jdk.ID, []string{filepath.Join(jdk.InstallPath, "bin")})
+	if err != nil || len(synced) != 1 {
+		t.Fatalf("RegisterSoftwarePath failed: synced=%v err=%v", synced, err)
+	}
+	presence, err := svc.QuerySoftwareUserPathPresence(synced)
+	if err != nil || !presence[strings.ToLower(winutil.NormalizePathEntry(synced[0]))] {
+		t.Fatalf("expected registered dir present in mock user path, presence=%v err=%v", presence, err)
+	}
+
+	// 4. 重命名文件夹应自动迁移 PathEntries 与系统用户 Path
+	if err := svc.RenameSoftwareFolder(jdk, "JDK21"); err != nil {
+		t.Fatalf("RenameSoftwareFolder failed: %v", err)
+	}
+	newBin := filepath.Join(installDir, "JDK21", "bin")
+	if winutil.PathListContains(mockPath.entries, filepath.Join(installDir, "OpenJDK21", "bin")) {
+		t.Fatalf("expected old bin path removed after rename, got %v", mockPath.entries)
+	}
+	if !winutil.PathListContains(mockPath.entries, newBin) {
+		t.Fatalf("expected new bin path %q registered after rename, got %v", newBin, mockPath.entries)
+	}
+
+	// 5. 开启相对路径模式时 PathEntries 应转为相对路径并可还原解析
+	if _, err := svc.SetRelativePathsMode(true); err != nil {
+		t.Fatalf("SetRelativePathsMode(true) failed: %v", err)
+	}
+	reloaded, err := svc.LoadManagedSoftware()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var jdkReloaded model.Software
+	for _, item := range reloaded {
+		if item.ID == jdk.ID {
+			jdkReloaded = item
+		}
+	}
+	if jdkReloaded.LaunchArgs != "-Xmx2g -jar app.jar" || jdkReloaded.LaunchEnv["JAVA_HOME"] != "%INSTALL_DIR%" {
+		t.Fatalf("launch config lost after reload: %+v", jdkReloaded)
+	}
+	if len(jdkReloaded.PathEntries) != 1 || !winutil.SamePath(jdkReloaded.PathEntries[0], newBin) {
+		t.Fatalf("expected resolved PathEntries [%q], got %v", newBin, jdkReloaded.PathEntries)
+	}
+
+	// 6. 移除托管（不删除安装目录）时，仍应自动从用户 Path 清理该软件注册的目录，并保留原有 %USERPROFILE% 条目
+	if err := svc.DeleteSoftware(jdkReloaded, false, false); err != nil {
+		t.Fatalf("DeleteSoftware failed: %v", err)
+	}
+	if winutil.PathListContains(mockPath.entries, newBin) {
+		t.Fatalf("expected user Path cleaned up on DeleteSoftware, got %v", mockPath.entries)
+	}
+	if len(mockPath.entries) != 1 || mockPath.entries[0] != `%USERPROFILE%\.cargo\bin` {
+		t.Fatalf("expected unrelated user Path entries intact, got %v", mockPath.entries)
+	}
+}
+
+func TestOverridePreservesLaunchConfigAndUpdatesPath(t *testing.T) {
+	svc, _, installDir := newTestService(t)
+	mockPath := &mockUserPathManager{}
+	svc.SetUserPathManager(mockPath)
+
+	v1Zip := filepath.Join(t.TempDir(), "Node-v20.0.zip")
+	makeZip(t, v1Zip, map[string]string{
+		"Node-v20.0/node.exe": "bin",
+	})
+	if res := svc.AddSoftwareFromFile(v1Zip); res.Type != AddSuccess {
+		t.Fatalf("add v1 failed: %+v", res)
+	}
+	list, _ := svc.LoadManagedSoftware()
+	v1 := list[0]
+	if err := svc.UpdateSoftwareLaunchConfig(v1.ID, "--inspect", map[string]string{"NODE_ENV": "development"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.RegisterSoftwarePath(v1.ID, []string{v1.InstallPath}); err != nil {
+		t.Fatal(err)
+	}
+
+	v2Zip := filepath.Join(t.TempDir(), "Node-v22.0.zip")
+	makeZip(t, v2Zip, map[string]string{
+		"Node-v22.0/node.exe": "bin",
+	})
+	dup := svc.AddSoftwareFromFile(v2Zip)
+	if dup.Type != AddDuplicate || dup.DuplicateInfo == nil {
+		t.Fatalf("expected AddDuplicate for v2, got %+v", dup)
+	}
+	if res := svc.ResolveDuplicateAddition(*dup.DuplicateInfo, true, ""); res.Type != AddSuccess {
+		t.Fatalf("ResolveDuplicateAddition overwrite failed: %+v", res)
+	}
+
+	after, err := svc.LoadManagedSoftware()
+	if err != nil || len(after) != 1 {
+		t.Fatalf("LoadManagedSoftware after override failed: %v len=%d", err, len(after))
+	}
+	v2 := after[0]
+	wantV2Dir := filepath.Join(installDir, "Node-v22.0")
+	if v2.LaunchArgs != "--inspect" || v2.LaunchEnv["NODE_ENV"] != "development" {
+		t.Fatalf("expected launch config preserved on override, got %+v", v2)
+	}
+	if len(v2.PathEntries) != 1 || !winutil.SamePath(v2.PathEntries[0], wantV2Dir) {
+		t.Fatalf("expected PathEntries remapped to %q, got %v", wantV2Dir, v2.PathEntries)
+	}
+	if winutil.PathListContains(mockPath.entries, v1.InstallPath) || !winutil.PathListContains(mockPath.entries, wantV2Dir) {
+		t.Fatalf("expected mock user Path updated to %q, got %v", wantV2Dir, mockPath.entries)
 	}
 }

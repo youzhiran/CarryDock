@@ -647,6 +647,39 @@ func (a *App) softwareListRow(c *ui.Context, sw model.Software) {
 					if statusBadge != "" {
 						pillBadge(c, statusBadge, p.warningTint, t.Warning)
 					}
+					if sw.Status == model.StatusManaged {
+						ui.Row(c).Gap(4).Shrink(0).AlignItems(ui.Center).Children(func() {
+							// 归档状态徽章（绿/红）
+							archColor := t.Danger
+							archTip := tr.TileArchiveNotExists
+							if sw.ArchiveExists {
+								archColor = t.Success
+								archTip = tr.TileArchiveExists
+							}
+							statusPill(c, iconArchive, archColor, archTip)
+
+							// 备份状态徽章（蓝/灰）
+							bakColor := t.TextMuted
+							bakTip := tr.TileBackupNotDetected
+							if sw.IsBackupArchive {
+								bakColor = t.Accent
+								bakTip = tr.TileBackupDetected
+							}
+							statusPill(c, iconRestore, bakColor, bakTip)
+						})
+					}
+					if len(sw.PathEntries) > 0 {
+						pillBadgeWithTip(c, tr.TilePathBadge, p.successTint, t.Success,
+							i18n.Fmt(tr.TilePathTooltipFmt, strings.Join(sw.PathEntries, "\n")))
+					}
+					if strings.TrimSpace(sw.LaunchArgs) != "" {
+						pillBadgeWithTip(c, tr.TileArgsBadge, p.accentTint, t.Accent,
+							i18n.Fmt(tr.TileLaunchConfigTipFmt, sw.LaunchArgs))
+					}
+					if len(sw.LaunchEnv) > 0 {
+						pillBadgeWithTip(c, tr.TileEnvBadge, p.accentTint, t.Accent,
+							winutil.FormatEnvText(sw.LaunchEnv))
+					}
 				})
 				ui.Row(c).Gap(6).MinWidth(0).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, subtitle).FontSize(12).TextColor(t.TextMuted).SingleLine().Shrink(0)
@@ -661,31 +694,13 @@ func (a *App) softwareListRow(c *ui.Context, sw model.Software) {
 			a.launchSoftware(sw, "")
 		}
 
-		// 右侧状态徽章 + 快捷操作
+		// 右侧快捷操作
 		ui.Row(c).Gap(6).Shrink(0).AlignItems(ui.Center).Children(func() {
 			canRehost := (sw.Status == model.StatusUnknownInstall ||
 				(sw.Status == model.StatusManaged && !sw.InstallExists)) &&
 				(sw.ArchiveExists || sw.IsBackupArchive)
 
 			if sw.Status == model.StatusManaged {
-				// 归档状态徽章（绿/红）
-				archColor := t.Danger
-				archTip := tr.TileArchiveNotExists
-				if sw.ArchiveExists {
-					archColor = t.Success
-					archTip = tr.TileArchiveExists
-				}
-				statusPill(c, iconArchive, archColor, archTip)
-
-				// 备份状态徽章（蓝/灰）
-				bakColor := t.TextMuted
-				bakTip := tr.TileBackupNotDetected
-				if sw.IsBackupArchive {
-					bakColor = t.Accent
-					bakTip = tr.TileBackupDetected
-				}
-				statusPill(c, iconRestore, bakColor, bakTip)
-
 				// 备选程序启动按钮
 				var alternatives []string
 				altLoading := false
@@ -750,6 +765,12 @@ func (a *App) softwareListRow(c *ui.Context, sw model.Software) {
 				green := t.Success
 				if iconButton(c, "rehost-"+sw.ID, iconRefresh, tr.HomeRehost, false, false, &green).Clicked() {
 					a.startRehostSoftware(sw)
+				}
+			}
+
+			if sw.Status == model.StatusManaged {
+				if iconButton(c, "sw-set-"+sw.ID, iconSliders, tr.TileSoftwareSettings, false, false, nil).Clicked() {
+					a.openSoftwareSettingsModal(sw)
 				}
 			}
 
@@ -838,6 +859,10 @@ func (a *App) softwareGridCard(c *ui.Context, sw model.Software) {
 					bakTip = tr.TileBackupDetected
 				}
 				statusMiniPill(c, iconRestore, bakColor, bakTip)
+
+				if len(sw.PathEntries) > 0 {
+					statusMiniPill(c, iconPathEnv, t.Success, i18n.Fmt(tr.TilePathTooltipFmt, strings.Join(sw.PathEntries, "\n")))
+				}
 			})
 		}
 
@@ -873,10 +898,10 @@ func statusMiniPill(c *ui.Context, ico *ui.SVG, color ui.Color, tooltip string) 
 }
 
 func statusPill(c *ui.Context, ico *ui.SVG, color ui.Color, tooltip string) {
-	ui.Box(c).Height(24).Padding(0, 7).Radius(6).
+	ui.Box(c).Height(20).Padding(0, 6).Radius(5).Shrink(0).
 		Background(color.Alpha(0.12)).Border(1, color.Alpha(0.36)).
 		Center().Tooltip(tooltip).Children(func() {
-		ui.Icon(c, ico).FontSize(12).TextColor(color)
+		ui.Icon(c, ico).FontSize(11).TextColor(color)
 	})
 }
 
@@ -895,6 +920,19 @@ func (a *App) buildSoftwareContextMenu(m *ui.Menu, sw model.Software) {
 		a.openSoftwareInstallDir(swCopy)
 	}
 	if swCopy.Status == model.StatusManaged {
+		if m.Item(tr.TileSoftwareSettings).Icon(menuIconSliders).Chosen() {
+			a.openSoftwareSettingsModal(swCopy)
+		}
+		if len(swCopy.PathEntries) > 0 {
+			if m.Item(tr.TileRemoveFromPath).Icon(menuIconPathEnv).Chosen() {
+				a.quickRemoveFromUserPath(swCopy)
+			}
+		} else {
+			if m.Item(tr.TileAddToPath).Icon(menuIconPathEnv).Disabled(!swCopy.InstallExists).Chosen() {
+				a.quickAddToUserPath(swCopy)
+			}
+		}
+		m.Separator()
 		if m.Item(tr.TileChangeFolder).Icon(menuIconEdit).Disabled(!swCopy.InstallExists).Chosen() {
 			a.openRenameFolderModal(swCopy)
 		}
@@ -1125,8 +1163,15 @@ func (a *App) launchSoftware(sw model.Software, altExePath string) {
 		a.showInfo(tr.HomeCannotLaunchTitle, tr.HomeCannotLaunchNoExe)
 		return
 	}
-	logger.Info("启动软件: %s -> %s", sw.Name, target)
-	if err := winutil.LaunchExecutable(target, sw.InstallPath); err != nil {
+	logger.Info("启动软件: %s -> %s (参数=%q, 环境变量=%d项)", sw.Name, target, sw.LaunchArgs, len(sw.LaunchEnv))
+	opts := winutil.LaunchOptions{
+		InstallDir: sw.InstallPath,
+		Env:        sw.LaunchEnv,
+	}
+	if altExePath == "" {
+		opts.Args = sw.LaunchArgs
+	}
+	if err := winutil.LaunchExecutableWithOptions(target, sw.InstallPath, opts); err != nil {
 		logger.Error("启动软件失败 (%s): %v", sw.Name, err)
 		a.showInfo(tr.HomeLaunchFailedTitle, err.Error())
 	}
@@ -1185,6 +1230,84 @@ func (a *App) openRenameFolderModal(sw model.Software) {
 	a.renameModalOpen = true
 }
 
+func (a *App) openSoftwareSettingsModal(sw model.Software) {
+	candidates, defaults := a.softwareSvc.SuggestPathCandidates(sw)
+	checked := make(map[string]bool, len(candidates))
+	for _, d := range defaults {
+		norm := winutil.NormalizePathEntry(d)
+		if norm != "" {
+			checked[strings.ToLower(norm)] = true
+		}
+	}
+	a.swSetTarget = sw
+	a.swSetArgs = sw.LaunchArgs
+	a.swSetEnvText = winutil.FormatEnvText(sw.LaunchEnv)
+	a.swSetEnvError = ""
+	a.swSetPathCandidates = candidates
+	a.swSetPathChecked = checked
+	a.swSetPathInSystem = make(map[string]bool)
+	a.swSetPathBusy = false
+	a.swSettingsModalOpen = true
+	a.refreshSoftwareUserPathPresence()
+}
+
+func (a *App) refreshSoftwareUserPathPresence() {
+	dirs := slices.Clone(a.swSetPathCandidates)
+	if len(dirs) == 0 {
+		a.swSetPathLoading = false
+		return
+	}
+	a.swSetPathLoading = true
+	targetID := a.swSetTarget.ID
+	go func() {
+		presence, err := a.softwareSvc.QuerySoftwareUserPathPresence(dirs)
+		a.update(func() {
+			if a.swSetTarget.ID != targetID {
+				return
+			}
+			a.swSetPathLoading = false
+			if err == nil && presence != nil {
+				a.swSetPathInSystem = presence
+			}
+		})
+	}()
+}
+
+func (a *App) quickAddToUserPath(sw model.Software) {
+	_, defaultDirs := a.softwareSvc.SuggestPathCandidates(sw)
+	if len(defaultDirs) == 0 {
+		a.openSoftwareSettingsModal(sw)
+		return
+	}
+	go func() {
+		synced, err := a.softwareSvc.RegisterSoftwarePath(sw.ID, defaultDirs)
+		a.update(func() {
+			tr := a.tr()
+			if err != nil {
+				a.showInfo(tr.Error, err.Error())
+				return
+			}
+			a.toast(tr.Success, i18n.Fmt(tr.SwSetPathRegisteredFmt, len(synced)))
+			a.reloadHome()
+		})
+	}()
+}
+
+func (a *App) quickRemoveFromUserPath(sw model.Software) {
+	go func() {
+		_, err := a.softwareSvc.UnregisterSoftwarePath(sw.ID)
+		a.update(func() {
+			tr := a.tr()
+			if err != nil {
+				a.showInfo(tr.Error, err.Error())
+				return
+			}
+			a.toast(tr.Success, i18n.Fmt(tr.SwSetPathRemovedFmt, a.displayNameFor(sw)))
+			a.reloadHome()
+		})
+	}()
+}
+
 func (a *App) openDeleteSoftwareModal(sw model.Software) {
 	a.deleteTarget = sw
 	a.deleteIsArchiveMgr = false
@@ -1238,7 +1361,7 @@ func (a *App) runAddToStartMenu(sw model.Software) {
 
 		safeName := software.SanitizeSoftwareName(displayName)
 		lnkPath := filepath.Join(startMenuDir, safeName+".lnk")
-		err = winutil.CreateShortcut(sw.ExecutablePath, lnkPath, displayName)
+		err = winutil.CreateShortcutWithArgs(sw.ExecutablePath, lnkPath, displayName, sw.LaunchArgs)
 		a.update(func() {
 			if err != nil {
 				a.showInfo(tr.Error, i18n.Fmt(tr.TileAddToStartMenuErrFmt, err.Error()))

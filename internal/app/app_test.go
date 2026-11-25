@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,6 +23,7 @@ import (
 	"carrydock/internal/storage"
 	"carrydock/internal/updater"
 	"carrydock/internal/version"
+	"carrydock/internal/winutil"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
@@ -98,11 +100,41 @@ func TestAppNativeUIViewsAndNavigation(t *testing.T) {
 	}
 }
 
+type mockAppUserPath struct {
+	mu      sync.Mutex
+	entries []string
+}
+
+func (m *mockAppUserPath) ListUserPath() ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]string, len(m.entries))
+	copy(out, m.entries)
+	return out, nil
+}
+
+func (m *mockAppUserPath) AddUserPathDirs(dirs []string) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	updated, added, _ := winutil.AddDirsToPathList(m.entries, dirs)
+	m.entries = updated
+	return added, nil
+}
+
+func (m *mockAppUserPath) RemoveUserPathDirs(dirs []string) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	updated, removed, _ := winutil.RemoveDirsFromPathList(m.entries, dirs)
+	m.entries = updated
+	return removed, nil
+}
+
 func newTestApp(t *testing.T) *App {
 	t.Helper()
 	store := storage.NewAtDir(filepath.Join(t.TempDir(), "data"))
 	setSvc := settings.NewService(store)
 	swSvc := software.NewService(setSvc)
+	swSvc.SetUserPathManager(&mockAppUserPath{})
 	updSvc := updater.NewService()
 	return New(setSvc, swSvc, updSvc, nil)
 }
@@ -515,6 +547,8 @@ func TestSoftwareContextMenuIcons(t *testing.T) {
 		{"menuIconTerminal", menuIconTerminal},
 		{"menuIconTrash", menuIconTrash},
 		{"menuIconSearch", menuIconSearch},
+		{"menuIconSliders", menuIconSliders},
+		{"menuIconPathEnv", menuIconPathEnv},
 	}
 	for _, tc := range menuIcons {
 		if tc.icon == nil {
@@ -551,6 +585,8 @@ func TestSoftwareContextMenuIcons(t *testing.T) {
 
 	wantItems := []string{
 		"打开",
+		"软件设置",
+		"注册到用户 Path",
 		"打开软件文件夹",
 		"修改软件文件夹",
 		"创建备份",
@@ -1304,5 +1340,138 @@ func TestSettingsRelativePathsModeToggleAndPreview(t *testing.T) {
 	}
 	if !tt.HasText("实际路径：" + installDir) {
 		t.Fatalf("expected resolved install path preview, texts: %q", tt.Texts())
+	}
+}
+
+func TestSoftwareSettingsModalAndPathActions(t *testing.T) {
+	tmp := t.TempDir()
+	store := storage.NewAtDir(filepath.Join(tmp, "data"))
+	setSvc := settings.NewService(store)
+	installDir := filepath.Join(tmp, "Portable")
+	if err := os.MkdirAll(installDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := setSvc.SaveInstallPath(installDir); err != nil {
+		t.Fatal(err)
+	}
+
+	swSvc := software.NewService(setSvc)
+	mockPath := &mockAppUserPath{}
+	swSvc.SetUserPathManager(mockPath)
+
+	nodeDir := filepath.Join(installDir, "NodeJS")
+	nodeExe := filepath.Join(nodeDir, "node.exe")
+	if err := os.MkdirAll(nodeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(nodeExe, []byte("exe"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := swSvc.CompleteSoftwareAddition(software.PendingAddition{
+		SoftwareName: "NodeJS",
+		InstallPath:  nodeDir,
+	}, nodeExe); err != nil {
+		t.Fatal(err)
+	}
+	list, err := swSvc.LoadManagedSoftware()
+	if err != nil || len(list) != 1 {
+		t.Fatalf("LoadManagedSoftware failed: %v, len=%d", err, len(list))
+	}
+
+	a := New(setSvc, swSvc, updater.NewService(), nil)
+	a.exeCache[strings.ToLower(nodeExe)] = &exeMeta{desc: "Node.js"}
+	a.altCache[strings.ToLower(nodeDir)] = &altExecEntry{}
+	a.managed = list
+
+	tt := ui.NewTester(a.View, 1020, 720)
+	if !tt.HasText("Node.js") {
+		t.Fatalf("expected Node.js on home view, texts: %q", tt.Texts())
+	}
+
+	// 1. 打开软件设置弹窗，校验非法环境变量格式会提示错误
+	a.openSoftwareSettingsModal(a.managed[0])
+	a.swSetEnvText = "INVALID_LINE_WITHOUT_EQ"
+	tt.Frame()
+	if !tt.HasText("软件设置 — Node.js") {
+		t.Fatalf("expected software settings modal title, texts: %q", tt.Texts())
+	}
+	clickLabel(t, tt, "保存")
+	if !a.swSettingsModalOpen || a.swSetEnvError == "" || !tt.HasText("第 1 行格式无效") {
+		t.Fatalf("expected env validation error and modal to stay open, err=%q texts=%q", a.swSetEnvError, tt.Texts())
+	}
+
+	// 2. 输入合法参数与环境变量并保存
+	a.swSetArgs = "--experimental-strip-types"
+	a.swSetEnvText = "NODE_ENV=development\nAPP_HOME=%INSTALL_DIR%"
+	tt.Frame()
+	clickLabel(t, tt, "保存")
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		cur, _ := swSvc.LoadManagedSoftware()
+		if len(cur) == 1 && cur[0].LaunchArgs == "--experimental-strip-types" {
+			a.managed = cur
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	tt.Frame()
+	if !tt.HasText("ARGS") || !tt.HasText("ENV") {
+		t.Fatalf("expected ARGS and ENV badges on software row, texts: %q", tt.Texts())
+	}
+
+	// 3. 再次打开设置弹窗，一键注册到用户 Path
+	a.openSoftwareSettingsModal(a.managed[0])
+	tt.Frame()
+	clickLabel(t, tt, "一键注册到用户 Path")
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		entries, _ := mockPath.ListUserPath()
+		if winutil.PathListContains(entries, nodeDir) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	entries, _ := mockPath.ListUserPath()
+	if !winutil.PathListContains(entries, nodeDir) {
+		t.Fatalf("expected %q in mock user path, got %v", nodeDir, entries)
+	}
+	cur, _ := swSvc.LoadManagedSoftware()
+	a.managed = cur
+	a.swSettingsModalOpen = false
+	tt.Frame()
+	if !tt.HasText("PATH") {
+		t.Fatalf("expected PATH badge on software row, texts: %q", tt.Texts())
+	}
+
+	// 4. 打开删除弹窗，应提示自动清理用户 Path；确认删除后 mockPath 应被清空
+	a.openDeleteSoftwareModal(a.managed[0])
+	tt.Frame()
+	if !tt.HasText("移除托管时将自动从系统用户 Path 清理该软件已注册的 1 个目录。") {
+		t.Fatalf("expected path cleanup hint in delete modal, texts: %q", tt.Texts())
+	}
+	var delConfirm *ui.AccessInfo
+	for i := len(tt.AccessAll()) - 1; i >= 0; i-- {
+		info := tt.AccessAll()[i]
+		if info.Role == ui.RoleButton && info.Name == "删除" {
+			delConfirm = &info
+			break
+		}
+	}
+	if delConfirm == nil {
+		t.Fatalf("expected delete confirm button in modal")
+	}
+	tt.ClickAt(delConfirm.Bounds.X+delConfirm.Bounds.W/2, delConfirm.Bounds.Y+delConfirm.Bounds.H/2)
+	tt.Frame()
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		left, _ := mockPath.ListUserPath()
+		if len(left) == 0 && !a.busyOpen {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if left, _ := mockPath.ListUserPath(); len(left) != 0 {
+		t.Fatalf("expected user Path cleaned after DeleteSoftware, got %v", left)
 	}
 }
