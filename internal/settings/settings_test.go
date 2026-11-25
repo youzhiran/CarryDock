@@ -227,3 +227,26 @@ func TestLogLevelSettings(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckUpdateOnStartupSetting(t *testing.T) {
+	store := storage.NewAtDir(filepath.Join(t.TempDir(), "data"))
+	svc := NewService(store)
+
+	if !svc.GetCheckUpdateOnStartup() {
+		t.Fatalf("expected default CheckUpdateOnStartup to be true")
+	}
+
+	if err := svc.SaveCheckUpdateOnStartup(false); err != nil {
+		t.Fatalf("SaveCheckUpdateOnStartup(false) failed: %v", err)
+	}
+	if svc.GetCheckUpdateOnStartup() {
+		t.Fatalf("expected CheckUpdateOnStartup to be false after saving false")
+	}
+
+	if err := svc.SaveCheckUpdateOnStartup(true); err != nil {
+		t.Fatalf("SaveCheckUpdateOnStartup(true) failed: %v", err)
+	}
+	if !svc.GetCheckUpdateOnStartup() {
+		t.Fatalf("expected CheckUpdateOnStartup to be true after saving true")
+	}
+}

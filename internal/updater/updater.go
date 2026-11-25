@@ -38,12 +38,24 @@ type Service struct {
 
 // NewService 创建一个自动跟随系统代理的更新服务实例。
 func NewService() *Service {
-	return &Service{
-		client: &http.Client{
+	return NewServiceWithEndpoint(defaultGitHubReleaseURL, nil)
+}
+
+// NewServiceWithEndpoint 创建指定发布源 URL 与 HTTP 客户端的更新服务实例。
+// 当 repoURL 为空时使用默认 GitHub Releases 地址；当 client 为 nil 时使用跟随系统代理的默认客户端。
+func NewServiceWithEndpoint(repoURL string, client *http.Client) *Service {
+	if strings.TrimSpace(repoURL) == "" {
+		repoURL = defaultGitHubReleaseURL
+	}
+	if client == nil {
+		client = &http.Client{
 			Transport: netproxy.Transport(),
 			Timeout:   30 * time.Second,
-		},
-		repoURL: defaultGitHubReleaseURL,
+		}
+	}
+	return &Service{
+		client:  client,
+		repoURL: repoURL,
 	}
 }
 

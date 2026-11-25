@@ -1,6 +1,9 @@
 package updater
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -220,5 +223,60 @@ func TestFindDirWithExe(t *testing.T) {
 	emptyRoot := t.TempDir()
 	if got := findDirWithExe(emptyRoot); got != "" {
 		t.Fatalf("empty findDirWithExe = %q, want empty", got)
+	}
+}
+
+func TestCheckForUpdateWithMockEndpoint(t *testing.T) {
+	var mode string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch mode {
+		case "newer":
+			_, _ = w.Write([]byte(`{
+				"tag_name": "v99.0.0+9999",
+				"body": "新版本更新日志",
+				"assets": [
+					{"name": "CarryDock-windows-amd64.zip", "browser_download_url": "https://example.com/CarryDock.zip"}
+				]
+			}`))
+		case "uptodate":
+			_, _ = w.Write([]byte(`{
+				"tag_name": "v0.0.1+0",
+				"body": "旧版本",
+				"assets": [
+					{"name": "CarryDock-windows-amd64.zip", "browser_download_url": "https://example.com/CarryDock.zip"}
+				]
+			}`))
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"message": "internal server error"}`))
+		}
+	}))
+	defer srv.Close()
+
+	svc := NewServiceWithEndpoint(srv.URL, srv.Client())
+
+	mode = "newer"
+	hasUpdate, info, err := svc.CheckForUpdate(context.Background(), false)
+	if err != nil {
+		t.Fatalf("CheckForUpdate(newer) unexpected error: %v", err)
+	}
+	if !hasUpdate || info == nil || info.Version != "v99.0.0+9999" || info.Changelog != "新版本更新日志" {
+		t.Fatalf("unexpected newer result: hasUpdate=%v info=%+v", hasUpdate, info)
+	}
+
+	mode = "uptodate"
+	hasUpdate, info, err = svc.CheckForUpdate(context.Background(), false)
+	if err != nil {
+		t.Fatalf("CheckForUpdate(uptodate) unexpected error: %v", err)
+	}
+	if hasUpdate || info == nil {
+		t.Fatalf("expected up-to-date result, got hasUpdate=%v info=%+v", hasUpdate, info)
+	}
+
+	mode = "error"
+	hasUpdate, info, err = svc.CheckForUpdate(context.Background(), false)
+	if err == nil || hasUpdate || info != nil {
+		t.Fatalf("expected error result, got hasUpdate=%v info=%+v err=%v", hasUpdate, info, err)
 	}
 }

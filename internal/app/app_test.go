@@ -6,11 +6,15 @@ import (
 	"image/color"
 	"image/png"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"carrydock/internal/model"
 	"carrydock/internal/settings"
@@ -1051,4 +1055,203 @@ func TestSoftwareNativeVersionDisplaySearchAndModals(t *testing.T) {
 	if !tt.HasText("检测到已安装软件") || !tt.HasText("版本对比：v1.4.1.1024 → v1.4.1.1020（低于当前版本）") {
 		t.Fatalf("expected downgrade prompt in replace modal, texts: %q", tt.Texts())
 	}
+}
+
+func TestStartupUpdateCheckBehavior(t *testing.T) {
+	newAppWithMockServer := func(t *testing.T, handler http.HandlerFunc) (*App, *settings.Service) {
+		t.Helper()
+		srv := httptest.NewServer(handler)
+		t.Cleanup(srv.Close)
+
+		store := storage.NewAtDir(filepath.Join(t.TempDir(), "data"))
+		setSvc := settings.NewService(store)
+		swSvc := software.NewService(setSvc)
+		updSvc := updater.NewServiceWithEndpoint(srv.URL, srv.Client())
+		return New(setSvc, swSvc, updSvc, nil), setSvc
+	}
+
+	waitCheckDone := func(t *testing.T, ch <-chan struct{}) {
+		t.Helper()
+		select {
+		case <-ch:
+		case <-time.After(3 * time.Second):
+			t.Fatal("timed out waiting for startup update check")
+		}
+	}
+
+	// Case A: 启用且存在新版本，无弹窗阻塞时自动打开更新弹窗并展示侧边栏角标
+	a, _ := newAppWithMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"tag_name": "v99.0.0+9999",
+			"body": "启动自动检查更新内容",
+			"assets": [{"name": "CarryDock-windows.zip", "browser_download_url": "https://example.com/CarryDock.zip"}]
+		}`))
+	})
+	doneA := make(chan struct{}, 2)
+	a.onUpdateCheckDone = func() { doneA <- struct{}{} }
+	a.checkUpdateOnStartupIfEnabled()
+	waitCheckDone(t, doneA)
+
+	if a.availableUpdate == nil || a.availableUpdate.Version != "v99.0.0+9999" {
+		t.Fatalf("expected availableUpdate v99.0.0+9999, got %+v", a.availableUpdate)
+	}
+	if !a.updateModalOpen || a.updateInfo == nil {
+		t.Fatalf("expected updateModalOpen to be true, open=%v info=%+v", a.updateModalOpen, a.updateInfo)
+	}
+	tt := ui.NewTester(a.View, 1020, 680)
+	if !tt.HasText("发现新版本：v99.0.0+9999") || !tt.HasText("启动自动检查更新内容") {
+		t.Fatalf("expected update modal text, got %q", tt.Texts())
+	}
+
+	// 关闭弹窗后侧边栏仍保留更新徽标，点击可重新打开更新弹窗
+	clickLabel(t, tt, "取消")
+	if a.updateModalOpen {
+		t.Fatalf("expected update modal closed after clicking cancel")
+	}
+	if !tt.HasText("有新版本") {
+		t.Fatalf("expected sidebar update badge '有新版本', texts: %q", tt.Texts())
+	}
+	clickLabel(t, tt, "有新版本")
+	if !a.updateModalOpen {
+		t.Fatalf("expected clicking sidebar badge to reopen update modal")
+	}
+
+	// Case B: 已有弹窗打开时仅发 Toast 提示，不打断当前弹窗
+	b, _ := newAppWithMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"tag_name": "v99.1.0+10000",
+			"body": "后台更新",
+			"assets": [{"name": "CarryDock-windows.zip", "browser_download_url": "https://example.com/CarryDock.zip"}]
+		}`))
+	})
+	b.infoModalOpen = true
+	doneB := make(chan struct{}, 1)
+	b.onUpdateCheckDone = func() { doneB <- struct{}{} }
+	b.checkUpdateOnStartupIfEnabled()
+	waitCheckDone(t, doneB)
+	if b.updateModalOpen {
+		t.Fatalf("expected update modal NOT to steal focus when another modal is open")
+	}
+	if b.availableUpdate == nil || len(b.pendingToasts) == 0 {
+		t.Fatalf("expected availableUpdate and pending toast, available=%+v toasts=%d", b.availableUpdate, len(b.pendingToasts))
+	}
+
+	// Case C: 已是最新版本时静默，不弹窗也不提示 Toast
+	cApp, _ := newAppWithMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"tag_name": "v0.0.1+0",
+			"body": "旧版本",
+			"assets": [{"name": "CarryDock-windows.zip", "browser_download_url": "https://example.com/CarryDock.zip"}]
+		}`))
+	})
+	doneC := make(chan struct{}, 1)
+	cApp.onUpdateCheckDone = func() { doneC <- struct{}{} }
+	cApp.checkUpdateOnStartupIfEnabled()
+	waitCheckDone(t, doneC)
+	if cApp.updateModalOpen || cApp.availableUpdate != nil || len(cApp.pendingToasts) != 0 {
+		t.Fatalf("expected silent no-op when up to date, modal=%v avail=%+v toasts=%d", cApp.updateModalOpen, cApp.availableUpdate, len(cApp.pendingToasts))
+	}
+
+	// Case D: 网络/HTTP 错误时静默，不弹窗也不弹出错误 Toast
+	dApp, _ := newAppWithMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	doneD := make(chan struct{}, 1)
+	dApp.onUpdateCheckDone = func() { doneD <- struct{}{} }
+	dApp.checkUpdateOnStartupIfEnabled()
+	waitCheckDone(t, doneD)
+	if dApp.updateModalOpen || len(dApp.pendingToasts) != 0 {
+		t.Fatalf("expected silent failure on startup check, modal=%v toasts=%d", dApp.updateModalOpen, len(dApp.pendingToasts))
+	}
+
+	// Case E: 关闭启动检查更新时不发起请求
+	var disabledHits atomic.Int32
+	storeE := storage.NewAtDir(filepath.Join(t.TempDir(), "data"))
+	setSvcE := settings.NewService(storeE)
+	if err := setSvcE.SaveCheckUpdateOnStartup(false); err != nil {
+		t.Fatal(err)
+	}
+	srvE := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		disabledHits.Add(1)
+	}))
+	defer srvE.Close()
+	eApp := New(setSvcE, software.NewService(setSvcE), updater.NewServiceWithEndpoint(srvE.URL, srvE.Client()), nil)
+	eApp.checkUpdateOnStartupIfEnabled()
+	time.Sleep(50 * time.Millisecond)
+	if disabledHits.Load() != 0 {
+		t.Fatalf("expected 0 HTTP requests when startup update check disabled, got %d", disabledHits.Load())
+	}
+
+	// Case F: 重复调用 checkUpdateOnStartupIfEnabled 仅执行一次
+	var idemHits atomic.Int32
+	fApp, _ := newAppWithMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		idemHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"tag_name": "v0.0.1+0",
+			"body": "",
+			"assets": [{"name": "CarryDock-windows.zip", "browser_download_url": "https://example.com/CarryDock.zip"}]
+		}`))
+	})
+	doneF := make(chan struct{}, 2)
+	fApp.onUpdateCheckDone = func() { doneF <- struct{}{} }
+	fApp.checkUpdateOnStartupIfEnabled()
+	fApp.checkUpdateOnStartupIfEnabled()
+	waitCheckDone(t, doneF)
+	time.Sleep(50 * time.Millisecond)
+	if idemHits.Load() != 1 {
+		t.Fatalf("expected exactly 1 HTTP request across repeated startup calls, got %d", idemHits.Load())
+	}
+}
+
+func TestSettingsCheckUpdateOnStartupToggle(t *testing.T) {
+	a := newTestApp(t)
+	a.page = pageSettings
+
+	if !a.setCheckUpdateOnStartup {
+		t.Fatalf("expected startup update check enabled by default")
+	}
+
+	tt := ui.NewTester(a.View, 1020, 760)
+	// 向下滚动设置页直到「关于」卡片中的开关进入可视区域
+	tt.Scroll(500, 300, 0, 1400)
+	tt.Frame()
+
+	if !tt.HasText("启动时检查更新") {
+		t.Fatalf("expected '启动时检查更新' setting in Settings view, texts: %q", tt.Texts())
+	}
+
+	sw, ok := tt.AccessByRole(ui.RoleSwitch, "启动时检查更新")
+	if !ok {
+		t.Fatalf("expected RoleSwitch '启动时检查更新' in accessibility tree")
+	}
+
+	waitPersisted := func(want bool) {
+		t.Helper()
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			if a.settingsSvc.GetCheckUpdateOnStartup() == want {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatalf("timed out waiting for persisted CheckUpdateOnStartup=%v, got %v", want, a.settingsSvc.GetCheckUpdateOnStartup())
+	}
+
+	tt.ClickAt(sw.Bounds.X+sw.Bounds.W/2, sw.Bounds.Y+sw.Bounds.H/2)
+	tt.Frame()
+	if a.setCheckUpdateOnStartup {
+		t.Fatalf("expected setCheckUpdateOnStartup to toggle off")
+	}
+	waitPersisted(false)
+
+	tt.ClickAt(sw.Bounds.X+sw.Bounds.W/2, sw.Bounds.Y+sw.Bounds.H/2)
+	tt.Frame()
+	if !a.setCheckUpdateOnStartup {
+		t.Fatalf("expected setCheckUpdateOnStartup to toggle back on")
+	}
+	waitPersisted(true)
 }

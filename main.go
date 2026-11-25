@@ -30,10 +30,11 @@ func main() {
 	defer logger.Close()
 
 	logger.Info(
-		"CarryDock (MyGo 原生 UI) 启动: logLevel=%s, fileLogging=%v, logPath=%s",
+		"CarryDock (MyGo 原生 UI) 启动: logLevel=%s, fileLogging=%v, logPath=%s, checkUpdateOnStartup=%v",
 		settingsSvc.GetLogLevel(),
 		settingsSvc.GetEnableFileLogging(),
 		settingsSvc.GetLogFilePath(),
+		settingsSvc.GetCheckUpdateOnStartup(),
 	)
 	go updater.CleanupLegacyFilesForCurrentApp()
 

@@ -954,7 +954,7 @@ func (a *App) reinstallConfirmModalView(c *ui.Context) {
 		tr.SettingsReinstallConfirm, tr.SettingsReinstallMessage,
 		tr.Cancel, tr.SettingsReinstallButton) {
 	case 1:
-		a.startCheckForUpdate(true)
+		a.startCheckForUpdate(true, false)
 	}
 }
 

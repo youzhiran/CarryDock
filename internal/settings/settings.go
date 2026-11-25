@@ -24,6 +24,7 @@ const (
 	KeyLanguage                = "language"
 	KeyThemeMode               = "theme_mode"
 	KeyThemeColor              = "theme_color"
+	KeyCheckUpdateOnStartup    = "check_update_on_startup"
 
 	DefaultExecutableSearchMaxDepth = 3
 	MinSearchDepth                  = 1
@@ -33,6 +34,7 @@ const (
 	DefaultEnableFileLogging        = false
 	DefaultLanguage                 = "zh_CN"
 	DefaultFontFamily               = ""
+	DefaultCheckUpdateOnStartup     = true
 
 	LogLevelDebug   = "debug"
 	LogLevelInfo    = "info"
@@ -458,4 +460,16 @@ func (s *Service) GetThemeColor() string {
 
 func (s *Service) SaveThemeColor(color string) error {
 	return s.store.Set(KeyThemeColor, NormalizeThemeColor(color))
+}
+
+func (s *Service) GetCheckUpdateOnStartup() bool {
+	v, ok := s.store.GetBool(KeyCheckUpdateOnStartup)
+	if !ok {
+		return DefaultCheckUpdateOnStartup
+	}
+	return v
+}
+
+func (s *Service) SaveCheckUpdateOnStartup(enabled bool) error {
+	return s.store.Set(KeyCheckUpdateOnStartup, enabled)
 }

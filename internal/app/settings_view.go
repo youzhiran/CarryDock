@@ -63,6 +63,7 @@ func (a *App) loadSettingsSnapshot() {
 	a.setLogFilePath = a.settingsSvc.GetLogFilePath()
 	a.setLogLevel = a.settingsSvc.GetLogLevel()
 	logger.SetLevel(a.setLogLevel)
+	a.setCheckUpdateOnStartup = a.settingsSvc.GetCheckUpdateOnStartup()
 
 	a.devEnabled = a.settingsSvc.GetDeveloperOptionsEnabled()
 	a.useGrid = a.settingsSvc.GetUseGridLayout()
@@ -535,7 +536,31 @@ func (a *App) settingsView(c *ui.Context) {
 
 					ui.Divider(c).Background(p.cardBorder)
 
-					ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+					ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+						ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+							ui.Text(c, tr.SettingsCheckUpdateOnStartup).FontSize(13).Bold()
+							ui.Text(c, tr.SettingsCheckUpdateOnStartupMsg).FontSize(12).TextColor(t.TextMuted)
+						})
+						if ui.Switch(c.Key("set-check-update-startup"), &a.setCheckUpdateOnStartup).Label(tr.SettingsCheckUpdateOnStartup).Changed() {
+							enabled := a.setCheckUpdateOnStartup
+							go func() {
+								if err := a.settingsSvc.SaveCheckUpdateOnStartup(enabled); err != nil {
+									a.update(func() {
+										a.logAndToastError(a.tr().Error, err)
+									})
+									return
+								}
+								logger.Info("启动检查更新开关变更: enabled=%v", enabled)
+								a.update(func() {
+									a.toast(a.tr().Success, a.tr().SettingsUpdateSettingsSaved)
+								})
+							}()
+						}
+					})
+
+					ui.Divider(c).Background(p.cardBorder)
+
+					ui.Row(c).Gap(10).AlignItems(ui.Center).Wrap().Children(func() {
 						if ui.Button(c.Key("set-check-update"), "").Disabled(a.updateChecking).Children(func() {
 							if a.updateChecking {
 								ui.Spinner(c).Size(14, 14)
@@ -544,7 +569,7 @@ func (a *App) settingsView(c *ui.Context) {
 							}
 							ui.Text(c, tr.SettingsCheckUpdate).SingleLine()
 						}).Clicked() {
-							a.startCheckForUpdate(false)
+							a.startCheckForUpdate(false, false)
 						}
 
 						if ui.Button(c.Key("set-reinstall"), "").Disabled(a.updateChecking).Children(func() {
@@ -552,6 +577,12 @@ func (a *App) settingsView(c *ui.Context) {
 							ui.Text(c, tr.SettingsReinstallLatest).SingleLine()
 						}).Clicked() {
 							a.reinstallConfirmOpen = true
+						}
+
+						if a.availableUpdate != nil {
+							if ui.PrimaryButton(c.Key("set-open-update"), i18n.Fmt(tr.UpdateAvailableBtnFmt, a.availableUpdate.Version)).Clicked() {
+								a.openAvailableUpdateModal()
+							}
 						}
 					})
 				})
@@ -1098,29 +1129,60 @@ func (a *App) handleVersionTap() {
 	}
 }
 
-func (a *App) startCheckForUpdate(forceReinstall bool) {
-	if a.updateChecking {
+func (a *App) startCheckForUpdate(forceReinstall, silent bool) {
+	if a.updateChecking || a.updateDownloading || a.updateInstalling || a.updaterSvc == nil {
 		return
 	}
 	a.updateChecking = true
-	a.updateFailed = false
+	if !silent {
+		a.updateFailed = false
+	}
+
+	timeout := 20 * time.Second
+	if silent {
+		timeout = 15 * time.Second
+	}
 
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		hasUpdate, info, err := a.updaterSvc.CheckForUpdate(ctx, forceReinstall)
 		a.update(func() {
+			defer func() {
+				if cb := a.onUpdateCheckDone; cb != nil {
+					cb()
+				}
+			}()
 			a.updateChecking = false
 			tr := a.tr()
 			if err != nil {
+				if silent {
+					logger.Warn("启动自动检查更新失败: %v", err)
+					return
+				}
 				a.toast(tr.Error, err.Error())
 				return
 			}
 			if !hasUpdate || info == nil {
-				a.toast(tr.Success, tr.UpdateUpToDate)
+				if !forceReinstall {
+					a.availableUpdate = nil
+				}
+				if !silent {
+					a.toast(tr.Success, tr.UpdateUpToDate)
+				}
 				return
 			}
-			a.updateInfo = info
+
+			infoCopy := *info
+			if !forceReinstall {
+				a.availableUpdate = &infoCopy
+			}
+			if silent && a.anyModalOpen() {
+				a.toast(tr.UpdateAvailableTitle, i18n.Fmt(tr.UpdateNewVersionFmt, info.Version))
+				return
+			}
+
+			a.updateInfo = &infoCopy
 			a.updateStatus = ""
 			a.updateProgress = 0
 			a.updateDownloading = false

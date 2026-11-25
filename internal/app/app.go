@@ -118,24 +118,25 @@ type App struct {
 	backupScrollState    ui.ScrollState
 
 	// 设置页表单状态
-	setInstallPath       string
-	setSavedInstallPath  string
-	setArchivePath       string
-	setSavedArchivePath  string
-	setConfigFilePath    string
-	setRemoveNested      bool
-	setSavedRemoveNested bool
-	setMaxDepth          int
-	setSavedMaxDepth     int
-	setExts              []string
-	setSavedExts         []string
-	setFontFamily        string
-	setLanguage          string
-	setSavedLanguage     string
-	setFileLogging       bool
-	setLogFilePath       string
-	setLogLevel          string
-	setScrollState       ui.ScrollState
+	setInstallPath          string
+	setSavedInstallPath     string
+	setArchivePath          string
+	setSavedArchivePath     string
+	setConfigFilePath       string
+	setRemoveNested         bool
+	setSavedRemoveNested    bool
+	setMaxDepth             int
+	setSavedMaxDepth        int
+	setExts                 []string
+	setSavedExts            []string
+	setFontFamily           string
+	setLanguage             string
+	setSavedLanguage        string
+	setFileLogging          bool
+	setLogFilePath          string
+	setLogLevel             string
+	setCheckUpdateOnStartup bool
+	setScrollState          ui.ScrollState
 
 	// 5 连击版本解锁开发者选项
 	versionTapCount int
@@ -222,6 +223,8 @@ type App struct {
 	extError     string
 
 	// 更新与重装弹窗
+	startupUpdateChecked bool
+	availableUpdate      *updater.ReleaseInfo
 	updateChecking       bool
 	updateModalOpen      bool
 	updateInfo           *updater.ReleaseInfo
@@ -232,6 +235,7 @@ type App struct {
 	updateFailed         bool
 	updateCancel         context.CancelFunc
 	reinstallConfirmOpen bool
+	onUpdateCheckDone    func()
 }
 
 // New 创建并初始化 CarryDock 应用状态。
@@ -266,6 +270,30 @@ func (a *App) AttachWindow(win *mygo.Window) {
 	a.loadSystemFontsAsync()
 	a.reloadHome()
 	a.reloadArchives()
+	a.checkUpdateOnStartupIfEnabled()
+}
+
+func (a *App) checkUpdateOnStartupIfEnabled() {
+	if a.startupUpdateChecked || !a.setCheckUpdateOnStartup || a.updaterSvc == nil {
+		return
+	}
+	a.startupUpdateChecked = true
+	logger.Info("已启用启动检查更新，开始后台静默检查")
+	a.startCheckForUpdate(false, true)
+}
+
+func (a *App) openAvailableUpdateModal() {
+	if a.availableUpdate == nil {
+		return
+	}
+	if !a.updateDownloading && !a.updateInstalling {
+		infoCopy := *a.availableUpdate
+		a.updateInfo = &infoCopy
+		a.updateStatus = ""
+		a.updateProgress = 0
+		a.updateFailed = false
+	}
+	a.updateModalOpen = true
 }
 
 func (a *App) loadSystemFontsAsync() {
@@ -591,8 +619,32 @@ func (a *App) sidebarView(c *ui.Context) {
 		a.navButton(c, pageSettings, iconSettings, tr.NavSettings, -1, a.hasUnsavedSettings())
 
 		if a.sidebarOpen {
-			ui.Row(c).Padding(6, 12, 2, 12).AlignItems(ui.Center).Children(func() {
+			ui.Row(c).Padding(6, 12, 2, 12).AlignItems(ui.Center).Gap(6).Children(func() {
 				ui.Text(c, version.Version).FontSize(11).TextColor(t.TextMuted.Alpha(0.75)).SingleLine()
+				if a.availableUpdate != nil {
+					ui.Spacer(c)
+					badge := ui.ButtonBase(c.Key("sidebar-update-badge")).Padding(2, 7).Radius(999).
+						Background(p.accentTint).Cursor(ui.CursorPointer).
+						Label(tr.UpdateAvailableBadge).
+						Tooltip(i18n.Fmt(tr.UpdateNewVersionFmt, a.availableUpdate.Version))
+					if badge.Hovered() {
+						badge.Background(t.Accent.Alpha(0.22))
+					}
+					badge.Children(func() {
+						ui.Text(c, tr.UpdateAvailableBadge).FontSize(10).Bold().TextColor(t.Accent).SingleLine()
+					})
+					if badge.Clicked() {
+						a.openAvailableUpdateModal()
+					}
+				}
+			})
+		} else if a.availableUpdate != nil {
+			accent := t.Accent
+			ui.Row(c).Center().Children(func() {
+				if iconButton(c, "sidebar-update-icon", iconDownload,
+					i18n.Fmt(tr.UpdateNewVersionFmt, a.availableUpdate.Version), false, false, &accent).Clicked() {
+					a.openAvailableUpdateModal()
+				}
 			})
 		}
 	})
