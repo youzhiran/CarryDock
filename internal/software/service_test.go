@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"carrydock/internal/model"
@@ -262,8 +263,13 @@ func TestResidualBackupAutoAssociationAndFallback(t *testing.T) {
 	if res := svc.AddSoftwareFromFile(srcExe25); res.Type != AddSuccess {
 		t.Fatalf("add 2.5.358 failed: %v", res.Err)
 	}
-	if res := svc.AddSoftwareFromFile(srcExe27); res.Type != AddSuccess {
-		t.Fatalf("add 2.7.4428 failed: %v", res.Err)
+	res27 := svc.AddSoftwareFromFile(srcExe27)
+	if res27.Type != AddDuplicate || res27.DuplicateInfo == nil || !res27.DuplicateInfo.IsVersionUpdate {
+		t.Fatalf("expected version-update AddDuplicate for 2.7.4428 over 2.5.358, got %+v", res27)
+	}
+	// 选择「保留旧版并添加」，验证共存场景下的残留备份自动关联逻辑
+	if res := svc.ResolveDuplicateAddition(*res27.DuplicateInfo, false, res27.DuplicateInfo.IntendedName); res.Type != AddSuccess {
+		t.Fatalf("keep-both add 2.7.4428 failed: %v", res.Err)
 	}
 
 	// 1. 验证重新添加后，2.7.4428 自动关联最新的残留备份并写回 BackupPath，且 2.5.358 不会误关联
@@ -344,5 +350,277 @@ func TestResidualBackupAutoAssociationAndFallback(t *testing.T) {
 		if item.Name == "OnboardMemoryManager_2.7.4428" && item.IsBackupArchive {
 			t.Fatalf("expected 2.7.4428 IsBackupArchive=false after all backups deleted")
 		}
+	}
+}
+
+func TestCompareVersionsAndNormalizeSoftwareIdentityName(t *testing.T) {
+	cmpCases := []struct {
+		a, b string
+		want int
+	}{
+		{"1.4.1.1026", "1.4.1.1024", 1},
+		{"24.10", "24.9", 1},
+		{"v1.2.0", "1.2", 0},
+		{"1.2.0", "1.2.0-beta.1", 1},
+		{"1.2.0-beta.1", "1.2.0", -1},
+		{"4.5", "4.6", -1},
+		{"", "1.0", 0},
+	}
+	for _, tc := range cmpCases {
+		if got := CompareVersions(tc.a, tc.b); got != tc.want {
+			t.Errorf("CompareVersions(%q, %q) = %d, want %d", tc.a, tc.b, got, tc.want)
+		}
+	}
+
+	normCases := []struct {
+		in      string
+		want    string
+		wantVer bool
+	}{
+		{"7-Zip", "7 zip", false},
+		{"7-Zip-24.08-x64", "7 zip", true},
+		{"Everything-1.4.1.1026.x64-Portable", "everything", true},
+		{"rufus-4.6p", "rufus", true},
+		{"MyApp-Client-1.0", "myapp client", true},
+		{"MyApp-Server-1.0", "myapp server", true},
+		{"Office_Tool_with_runtime_v10.26.36.0_x64", "office tool", true},
+	}
+	for _, tc := range normCases {
+		got, hasVer := normalizeSoftwareIdentityName(tc.in)
+		if got != tc.want || hasVer != tc.wantVer {
+			t.Errorf("normalizeSoftwareIdentityName(%q) = (%q, %v), want (%q, %v)", tc.in, got, hasVer, tc.want, tc.wantVer)
+		}
+	}
+}
+
+func TestAddNewVersionArchivePromptsAndReplacesOldVersion(t *testing.T) {
+	svc, _, installDir := newTestService(t)
+	archDir, err := svc.ResolveArchiveDirectoryPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 0. 预先安装一个置顶占位软件，验证替换后原 SortOrder 保持不变
+	otherZip := filepath.Join(t.TempDir(), "FirstApp.zip")
+	makeZip(t, otherZip, map[string]string{"FirstApp/first.exe": "1"})
+	if res := svc.AddSoftwareFromFile(otherZip); res.Type != AddSuccess {
+		t.Fatalf("add FirstApp failed: %+v", res)
+	}
+
+	// 1. 安装 MyTool-1.0.0.zip
+	oldZip := filepath.Join(t.TempDir(), "MyTool-1.0.0.zip")
+	makeZip(t, oldZip, map[string]string{"MyTool/mytool.exe": "v1"})
+	if res := svc.AddSoftwareFromFile(oldZip); res.Type != AddSuccess {
+		t.Fatalf("add MyTool-1.0.0 failed: %+v", res)
+	}
+
+	// 再加第三个软件以验证 SortOrder=1 的位置保留
+	thirdZip := filepath.Join(t.TempDir(), "ThirdApp.zip")
+	makeZip(t, thirdZip, map[string]string{"ThirdApp/third.exe": "3"})
+	if res := svc.AddSoftwareFromFile(thirdZip); res.Type != AddSuccess {
+		t.Fatalf("add ThirdApp failed: %+v", res)
+	}
+
+	managedBefore, _ := svc.LoadManagedSoftware()
+	var oldSw model.Software
+	for _, s := range managedBefore {
+		if s.Name == "MyTool-1.0.0" {
+			oldSw = s
+			break
+		}
+	}
+	if oldSw.ID == "" {
+		t.Fatalf("expected MyTool-1.0.0 in managed list: %+v", managedBefore)
+	}
+
+	// 2. 放入新版本 MyTool-2.0.0.zip -> 应识别为旧版本替换提示且不残留 staging 目录
+	newZip := filepath.Join(t.TempDir(), "MyTool-2.0.0.zip")
+	makeZip(t, newZip, map[string]string{"MyTool/mytool.exe": "v2"})
+	dupRes := svc.AddSoftwareFromFile(newZip)
+	if dupRes.Type != AddDuplicate || dupRes.DuplicateInfo == nil {
+		t.Fatalf("expected AddDuplicate for MyTool-2.0.0.zip, got %+v", dupRes)
+	}
+	info := *dupRes.DuplicateInfo
+	if !info.IsVersionUpdate || info.TargetPathCollides {
+		t.Fatalf("expected IsVersionUpdate=true TargetPathCollides=false, got %+v", info)
+	}
+	if info.ExistingManagedSoftware == nil || info.ExistingManagedSoftware.ID != oldSw.ID {
+		t.Fatalf("expected matched ExistingManagedSoftware ID %q, got %+v", oldSw.ID, info.ExistingManagedSoftware)
+	}
+	entries, _ := os.ReadDir(installDir)
+	for _, ent := range entries {
+		if strings.HasPrefix(ent.Name(), ".carrydock_staging_") {
+			t.Fatalf("expected staging dir cleaned up after duplicate prompt, found %s", ent.Name())
+		}
+	}
+
+	// 3. 模拟「备份并替换」：先为旧版创建备份，再调用 ResolveDuplicateAddition(overwrite=true)
+	bakPath, err := svc.CreateBackupForSoftware(*info.ExistingManagedSoftware)
+	if err != nil {
+		t.Fatalf("CreateBackupForSoftware failed: %v", err)
+	}
+	cp := *info.ExistingManagedSoftware
+	cp.BackupPath = bakPath
+	info.ExistingManagedSoftware = &cp
+
+	repRes := svc.ResolveDuplicateAddition(info, true, "")
+	if repRes.Type != AddSuccess {
+		t.Fatalf("expected AddSuccess after replace, got %+v", repRes)
+	}
+
+	if _, err := os.Stat(oldSw.InstallPath); !os.IsNotExist(err) {
+		t.Fatalf("expected old install dir %s to be removed", oldSw.InstallPath)
+	}
+	if _, err := os.Stat(oldSw.ArchivePath); !os.IsNotExist(err) {
+		t.Fatalf("expected old archive %s to be removed", oldSw.ArchivePath)
+	}
+	if _, err := os.Stat(bakPath); err != nil {
+		t.Fatalf("expected backup %s to remain intact: %v", bakPath, err)
+	}
+
+	managedAfter, _ := svc.LoadManagedSoftware()
+	var replacedSw model.Software
+	for _, s := range managedAfter {
+		if s.ID == oldSw.ID || s.Name == "MyTool-1.0.0" {
+			t.Fatalf("old software entry should be replaced, still found %+v", s)
+		}
+		if s.Name == "MyTool-2.0.0" {
+			replacedSw = s
+		}
+	}
+	if replacedSw.ID == "" {
+		t.Fatalf("expected MyTool-2.0.0 in managed list: %+v", managedAfter)
+	}
+	if replacedSw.SortOrder != oldSw.SortOrder {
+		t.Fatalf("expected preserved SortOrder=%d, got %d", oldSw.SortOrder, replacedSw.SortOrder)
+	}
+	if replacedSw.BackupPath != bakPath {
+		t.Fatalf("expected preserved BackupPath=%q, got %q", bakPath, replacedSw.BackupPath)
+	}
+	if replacedSw.ArchivePath != filepath.Join(archDir, "MyTool-2.0.0.zip") {
+		t.Fatalf("unexpected ArchivePath: %q", replacedSw.ArchivePath)
+	}
+
+	// 4. 验证无版本号的干净目录名（CoolTool）：原地升级并自动匹配多可执行文件中的原主程序
+	cleanZip := filepath.Join(t.TempDir(), "CoolTool.zip")
+	makeZip(t, cleanZip, map[string]string{
+		"CoolTool/cool.exe":  "v1",
+		"CoolTool/extra.exe": "e1",
+	})
+	pendingClean := svc.AddSoftwareFromFile(cleanZip)
+	if pendingClean.Type != AddNeedsSelection || pendingClean.PendingAddition == nil {
+		t.Fatalf("expected AddNeedsSelection for CoolTool, got %+v", pendingClean)
+	}
+	var chosenCoolExe string
+	for _, ex := range pendingClean.PendingAddition.ExecutablePaths {
+		if strings.EqualFold(filepath.Base(ex), "cool.exe") {
+			chosenCoolExe = ex
+			break
+		}
+	}
+	if err := svc.CompleteSoftwareAddition(*pendingClean.PendingAddition, chosenCoolExe); err != nil {
+		t.Fatal(err)
+	}
+
+	cleanNewZip := filepath.Join(t.TempDir(), "CoolTool-2.0.0.zip")
+	makeZip(t, cleanNewZip, map[string]string{
+		"CoolTool-2.0.0/cool.exe":  "v2",
+		"CoolTool-2.0.0/extra.exe": "e2",
+	})
+	dupClean := svc.AddSoftwareFromFile(cleanNewZip)
+	if dupClean.Type != AddDuplicate || dupClean.DuplicateInfo == nil || !dupClean.DuplicateInfo.IsVersionUpdate {
+		t.Fatalf("expected version update duplicate for CoolTool-2.0.0.zip, got %+v", dupClean)
+	}
+	repClean := svc.ResolveDuplicateAddition(*dupClean.DuplicateInfo, true, "")
+	if repClean.Type != AddSuccess {
+		t.Fatalf("expected CoolTool in-place upgrade to auto-match cool.exe and return AddSuccess, got %+v", repClean)
+	}
+	managedClean, _ := svc.LoadManagedSoftware()
+	var coolSw model.Software
+	for _, s := range managedClean {
+		if s.Name == "CoolTool" {
+			coolSw = s
+			break
+		}
+	}
+	if coolSw.ID == "" || !strings.EqualFold(filepath.Base(coolSw.ExecutablePath), "cool.exe") {
+		t.Fatalf("expected CoolTool directory preserved with cool.exe selected, got %+v", coolSw)
+	}
+	content, err := os.ReadFile(coolSw.ExecutablePath)
+	if err != nil || string(content) != "v2" {
+		t.Fatalf("expected CoolTool/cool.exe updated to v2, got %q (err=%v)", string(content), err)
+	}
+
+	// 5. 验证「保留旧版并添加」后新旧版本共存
+	bothZip := filepath.Join(t.TempDir(), "CoolTool-3.0.0.zip")
+	makeZip(t, bothZip, map[string]string{"CoolTool/cool.exe": "v3"})
+	dupBoth := svc.AddSoftwareFromFile(bothZip)
+	if dupBoth.Type != AddDuplicate || dupBoth.DuplicateInfo == nil {
+		t.Fatalf("expected AddDuplicate for CoolTool-3.0.0.zip, got %+v", dupBoth)
+	}
+	keepRes := svc.ResolveDuplicateAddition(*dupBoth.DuplicateInfo, false, dupBoth.DuplicateInfo.IntendedName)
+	if keepRes.Type != AddSuccess {
+		t.Fatalf("expected Keep Both AddSuccess, got %+v", keepRes)
+	}
+	finalList, _ := svc.LoadManagedSoftware()
+	hasV2Clean, hasV3 := false, false
+	for _, s := range finalList {
+		if s.Name == "CoolTool" {
+			hasV2Clean = true
+		}
+		if s.Name == "CoolTool-3.0.0" {
+			hasV3 = true
+		}
+	}
+	if !hasV2Clean || !hasV3 {
+		t.Fatalf("expected both CoolTool and CoolTool-3.0.0 to coexist, got %+v", finalList)
+	}
+}
+
+func TestAddNewVersionExecutablePromptsAndReplacesOldVersion(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	tmpDir := t.TempDir()
+	oldExe := filepath.Join(tmpDir, "rufus-4.5.exe")
+	newExe := filepath.Join(tmpDir, "rufus-4.6.exe")
+	if err := os.WriteFile(oldExe, []byte("exe-4.5"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(newExe, []byte("exe-4.6"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if res := svc.AddSoftwareFromFile(oldExe); res.Type != AddSuccess {
+		t.Fatalf("add rufus-4.5.exe failed: %+v", res)
+	}
+	managedBefore, _ := svc.LoadManagedSoftware()
+	if len(managedBefore) != 1 {
+		t.Fatalf("expected 1 managed item, got %d", len(managedBefore))
+	}
+	oldSw := managedBefore[0]
+
+	dupRes := svc.AddSoftwareFromFile(newExe)
+	if dupRes.Type != AddDuplicate || dupRes.DuplicateInfo == nil {
+		t.Fatalf("expected AddDuplicate for rufus-4.6.exe, got %+v", dupRes)
+	}
+	if !dupRes.DuplicateInfo.IsVersionUpdate || dupRes.DuplicateInfo.TargetPathCollides {
+		t.Fatalf("expected IsVersionUpdate=true TargetPathCollides=false, got %+v", dupRes.DuplicateInfo)
+	}
+	if dupRes.DuplicateInfo.ExistingManagedSoftware == nil || dupRes.DuplicateInfo.ExistingManagedSoftware.ID != oldSw.ID {
+		t.Fatalf("expected matched old rufus, got %+v", dupRes.DuplicateInfo.ExistingManagedSoftware)
+	}
+
+	repRes := svc.ResolveDuplicateAddition(*dupRes.DuplicateInfo, true, "")
+	if repRes.Type != AddSuccess {
+		t.Fatalf("expected replace success for rufus-4.6.exe, got %+v", repRes)
+	}
+	if _, err := os.Stat(oldSw.InstallPath); !os.IsNotExist(err) {
+		t.Fatalf("expected old rufus-4.5 install dir removed")
+	}
+	if _, err := os.Stat(oldSw.ArchivePath); !os.IsNotExist(err) {
+		t.Fatalf("expected old rufus-4.5 archive removed")
+	}
+	managedAfter, _ := svc.LoadManagedSoftware()
+	if len(managedAfter) != 1 || managedAfter[0].Name != "rufus-4.6" {
+		t.Fatalf("expected only rufus-4.6 in managed list, got %+v", managedAfter)
 	}
 }

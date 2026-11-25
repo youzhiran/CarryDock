@@ -11,8 +11,10 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"carrydock/internal/archive"
 	"carrydock/internal/logger"
@@ -64,7 +66,7 @@ type PendingAddition struct {
 	CreatedArchive bool
 }
 
-// DuplicateInfo 描述添加或还原时检测到的重复冲突信息。
+// DuplicateInfo 描述添加或还原时检测到的重复冲突或版本更新信息。
 type DuplicateInfo struct {
 	SourceType              SourceType
 	SourcePath              string
@@ -75,6 +77,10 @@ type DuplicateInfo struct {
 	InstallDirExists        bool
 	ArchiveExists           bool
 	ExistingManagedSoftware *model.Software
+	IsVersionUpdate         bool
+	TargetPathCollides      bool
+	CurrentVersion          string
+	IncomingVersion         string
 }
 
 // AddResult 为添加/重新托管操作的统一返回结构。
@@ -558,22 +564,26 @@ func (s *Service) AddSoftwareFromFile(filePath string) AddResult {
 	}
 
 	if format := archive.DetectFormat(filePath); format != archive.FormatUnknown {
-		return s.addFromArchiveFile(filePath, installPath, format, false, "")
+		return s.addFromArchiveFile(filePath, installPath, format, false, "", nil)
 	}
 
 	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(filePath)), ".")
 	allowed := s.settings.GetExecutableExtensions()
 	if slices.Contains(allowed, ext) {
-		return s.addFromExecutableFile(filePath, installPath, false, "")
+		return s.addFromExecutableFile(filePath, installPath, false, "", nil)
 	}
 	return AddResult{Type: AddError, Err: fmt.Errorf("不支持的文件类型: %s", filepath.Ext(filePath))}
 }
 
-// ResolveDuplicateAddition 根据用户的冲突解决决定（覆盖或重命名）继续添加软件。
+// ResolveDuplicateAddition 根据用户的冲突解决决定（覆盖/替换旧版本或重命名）继续添加软件。
 func (s *Service) ResolveDuplicateAddition(info DuplicateInfo, overwrite bool, renameTo string) AddResult {
 	renameTo = strings.TrimSpace(renameTo)
 	if !overwrite && renameTo == "" {
 		return AddResult{Type: AddError, Err: errors.New("未提供有效的重复处理指令")}
+	}
+	var replaceTarget *model.Software
+	if overwrite {
+		replaceTarget = info.ExistingManagedSoftware
 	}
 	switch info.SourceType {
 	case SourceArchive:
@@ -584,12 +594,12 @@ func (s *Service) ResolveDuplicateAddition(info DuplicateInfo, overwrite bool, r
 		if format == archive.FormatUnknown {
 			return AddResult{Type: AddError, Err: fmt.Errorf("不支持的压缩格式: %s", filepath.Ext(info.SourcePath))}
 		}
-		return s.addFromArchiveFile(info.SourcePath, info.InstallRootPath, format, overwrite, renameTo)
+		return s.addFromArchiveFile(info.SourcePath, info.InstallRootPath, format, overwrite, renameTo, replaceTarget)
 	case SourceExecutable:
 		if !fileExists(info.SourcePath) {
 			return AddResult{Type: AddError, Err: errors.New("原始可执行文件已不存在，请重新选择文件")}
 		}
-		return s.addFromExecutableFile(info.SourcePath, info.InstallRootPath, overwrite, renameTo)
+		return s.addFromExecutableFile(info.SourcePath, info.InstallRootPath, overwrite, renameTo, replaceTarget)
 	default:
 		return AddResult{Type: AddError, Err: errors.New("未知来源类型")}
 	}
@@ -600,6 +610,7 @@ func (s *Service) addFromArchiveFile(
 	format archive.Format,
 	allowOverride bool,
 	customName string,
+	replaceTarget *model.Software,
 ) AddResult {
 	isFromBackup := s.isBackupFilePath(archivePath)
 	fallbackName := archive.StripArchiveExtension(archivePath)
@@ -611,6 +622,12 @@ func (s *Service) addFromArchiveFile(
 		nameInput = fallbackName
 	}
 	softwareName := SanitizeSoftwareName(nameInput)
+	// 若是替换旧版本且旧软件名称本身不含版本号（如 7-Zip、Everything），沿用旧目录名以原地升级
+	if allowOverride && replaceTarget != nil && customName == "" {
+		if _, oldHasVer := normalizeSoftwareIdentityName(replaceTarget.Name); !oldHasVer && strings.TrimSpace(replaceTarget.Name) != "" {
+			softwareName = SanitizeSoftwareName(replaceTarget.Name)
+		}
+	}
 
 	archDir, err := s.ResolveArchiveDirectoryPath()
 	if err != nil {
@@ -642,6 +659,10 @@ func (s *Service) addFromArchiveFile(
 		if conflictArchive == "" {
 			conflictArchive = backupPath
 		}
+		var curVer string
+		if existingManaged != nil && existingManaged.ExecutablePath != "" {
+			curVer = winutil.GetFileVersion(existingManaged.ExecutablePath)
+		}
 		return AddResult{
 			Type: AddDuplicate,
 			DuplicateInfo: &DuplicateInfo{
@@ -654,12 +675,14 @@ func (s *Service) addFromArchiveFile(
 				InstallDirExists:        installExists,
 				ArchiveExists:           archiveExists,
 				ExistingManagedSoftware: existingManaged,
+				TargetPathCollides:      installExists || archiveExists,
+				CurrentVersion:          curVer,
 			},
 		}
 	}
 
 	// 先解压到临时 staging 目录，验证确实包含可执行文件后再替换目标目录，
-	// 防止覆盖模式在解压失败时毁掉旧软件。
+	// 防止覆盖/替换模式在解压失败时毁掉旧软件。
 	stagingDir, err := os.MkdirTemp(installPath, ".carrydock_staging_")
 	if err != nil {
 		return AddResult{Type: AddError, Err: fmt.Errorf("创建临时解压目录失败: %w", err)}
@@ -687,14 +710,38 @@ func (s *Service) addFromArchiveFile(
 		return AddResult{Type: AddError, Err: errors.New("在压缩包中未找到可执行文件")}
 	}
 
-	// 验证通过后执行覆盖准备与归档复制。
+	// 非覆盖且未指定自定义名时，检查是否属于已托管旧版本软件的新包/新版本
+	if !allowOverride && customName == "" && !isFromBackup {
+		if matched, curVer, inVer := s.findMatchingManagedForIncoming(softwareName, executables); matched != nil {
+			return AddResult{
+				Type: AddDuplicate,
+				DuplicateInfo: &DuplicateInfo{
+					SourceType:              SourceArchive,
+					SourcePath:              archivePath,
+					InstallRootPath:         installPath,
+					IntendedName:            softwareName,
+					TargetInstallPath:       destDir,
+					TargetArchivePath:       targetArchivePath,
+					InstallDirExists:        dirExists(matched.InstallPath),
+					ArchiveExists:           false,
+					ExistingManagedSoftware: matched,
+					IsVersionUpdate:         true,
+					TargetPathCollides:      false,
+					CurrentVersion:          curVer,
+					IncomingVersion:         inVer,
+				},
+			}
+		}
+	}
+
+	// 验证通过后执行覆盖/替换准备与归档复制。
 	var preferredOrder *int
 	if allowOverride {
 		overrideArchive := targetArchivePath
 		if sameSourceAsDest {
 			overrideArchive = ""
 		}
-		preferredOrder, err = s.prepareForOverride(destDir, overrideArchive)
+		preferredOrder, err = s.prepareForOverride(destDir, overrideArchive, archivePath, replaceTarget)
 		if err != nil {
 			return AddResult{Type: AddError, Err: err}
 		}
@@ -732,11 +779,22 @@ func (s *Service) addFromArchiveFile(
 	if isFromBackup && existingManaged != nil && existingManaged.ArchivePath != "" && fileExists(existingManaged.ArchivePath) {
 		finalArchivePath = existingManaged.ArchivePath
 	}
-	if !isFromBackup && backupPath == "" && existingManaged != nil && existingManaged.BackupPath != "" && fileExists(existingManaged.BackupPath) {
-		backupPath = existingManaged.BackupPath
+	if !isFromBackup && backupPath == "" {
+		if replaceTarget != nil && replaceTarget.BackupPath != "" && fileExists(replaceTarget.BackupPath) {
+			backupPath = replaceTarget.BackupPath
+		} else if existingManaged != nil && existingManaged.BackupPath != "" && fileExists(existingManaged.BackupPath) {
+			backupPath = existingManaged.BackupPath
+		}
 	}
 
+	selectedExe := ""
 	if len(mappedExecs) == 1 {
+		selectedExe = mappedExecs[0]
+	} else if allowOverride && replaceTarget != nil && replaceTarget.ExecutablePath != "" {
+		selectedExe = matchPreviousExecutable(mappedExecs, destDir, replaceTarget.InstallPath, replaceTarget.ExecutablePath)
+	}
+
+	if selectedExe != "" {
 		if err := s.CompleteSoftwareAddition(PendingAddition{
 			SoftwareName:       softwareName,
 			InstallPath:        destDir,
@@ -744,7 +802,7 @@ func (s *Service) addFromArchiveFile(
 			BackupPath:         backupPath,
 			PreferredSortOrder: preferredOrder,
 			CreatedArchive:     createdArchive,
-		}, mappedExecs[0]); err != nil {
+		}, selectedExe); err != nil {
 			return AddResult{Type: AddError, Err: err}
 		}
 		return AddResult{Type: AddSuccess}
@@ -768,6 +826,7 @@ func (s *Service) addFromExecutableFile(
 	exePath, installPath string,
 	allowOverride bool,
 	customName string,
+	replaceTarget *model.Software,
 ) AddResult {
 	base := filepath.Base(exePath)
 	fallback := strings.TrimSuffix(base, filepath.Ext(base))
@@ -779,6 +838,11 @@ func (s *Service) addFromExecutableFile(
 		nameInput = fallback
 	}
 	softwareName := SanitizeSoftwareName(nameInput)
+	if allowOverride && replaceTarget != nil && customName == "" {
+		if _, oldHasVer := normalizeSoftwareIdentityName(replaceTarget.Name); !oldHasVer && strings.TrimSpace(replaceTarget.Name) != "" {
+			softwareName = SanitizeSoftwareName(replaceTarget.Name)
+		}
+	}
 
 	archDir, err := s.ResolveArchiveDirectoryPath()
 	if err != nil {
@@ -794,7 +858,17 @@ func (s *Service) addFromExecutableFile(
 	archiveExists := !sameSourceAsDest && fileExists(targetArchivePath)
 	existingManaged, _ := s.findManagedByPaths(destDir, targetArchivePath)
 
+	var inMeta winutil.FileMetadata
+	if !allowOverride {
+		inMeta = winutil.GetFileMetadata(exePath)
+	}
+
 	if !allowOverride && (installExists || archiveExists || existingManaged != nil) {
+		var curVer string
+		if existingManaged != nil && existingManaged.ExecutablePath != "" {
+			curVer = winutil.GetFileVersion(existingManaged.ExecutablePath)
+		}
+		isUpdate := existingManaged != nil && curVer != "" && inMeta.Version != "" && CompareVersions(inMeta.Version, curVer) > 0
 		return AddResult{
 			Type: AddDuplicate,
 			DuplicateInfo: &DuplicateInfo{
@@ -807,7 +881,37 @@ func (s *Service) addFromExecutableFile(
 				InstallDirExists:        installExists,
 				ArchiveExists:           archiveExists,
 				ExistingManagedSoftware: existingManaged,
+				IsVersionUpdate:         isUpdate,
+				TargetPathCollides:      installExists || archiveExists,
+				CurrentVersion:          curVer,
+				IncomingVersion:         inMeta.Version,
 			},
+		}
+	}
+
+	if !allowOverride && customName == "" {
+		if matched, curVer, inVer := s.findMatchingManagedForIncoming(softwareName, []string{exePath}); matched != nil {
+			if inVer == "" {
+				inVer = inMeta.Version
+			}
+			return AddResult{
+				Type: AddDuplicate,
+				DuplicateInfo: &DuplicateInfo{
+					SourceType:              SourceExecutable,
+					SourcePath:              exePath,
+					InstallRootPath:         installPath,
+					IntendedName:            softwareName,
+					TargetInstallPath:       destDir,
+					TargetArchivePath:       targetArchivePath,
+					InstallDirExists:        dirExists(matched.InstallPath),
+					ArchiveExists:           false,
+					ExistingManagedSoftware: matched,
+					IsVersionUpdate:         true,
+					TargetPathCollides:      false,
+					CurrentVersion:          curVer,
+					IncomingVersion:         inVer,
+				},
+			}
 		}
 	}
 
@@ -817,7 +921,7 @@ func (s *Service) addFromExecutableFile(
 		if sameSourceAsDest {
 			overrideArchive = ""
 		}
-		preferredOrder, err = s.prepareForOverride(destDir, overrideArchive)
+		preferredOrder, err = s.prepareForOverride(destDir, overrideArchive, exePath, replaceTarget)
 		if err != nil {
 			return AddResult{Type: AddError, Err: err}
 		}
@@ -847,7 +951,9 @@ func (s *Service) addFromExecutableFile(
 	}
 
 	backupPath := ""
-	if existingManaged != nil && existingManaged.BackupPath != "" && fileExists(existingManaged.BackupPath) {
+	if replaceTarget != nil && replaceTarget.BackupPath != "" && fileExists(replaceTarget.BackupPath) {
+		backupPath = replaceTarget.BackupPath
+	} else if existingManaged != nil && existingManaged.BackupPath != "" && fileExists(existingManaged.BackupPath) {
 		backupPath = existingManaged.BackupPath
 	}
 
@@ -1620,41 +1726,493 @@ func (s *Service) findManagedByPaths(installPath, archivePath string) (*model.So
 	return nil, nil
 }
 
-func (s *Service) prepareForOverride(installPath, archivePath string) (*int, error) {
+func (s *Service) prepareForOverride(installPath, archivePath, sourcePath string, replaceTarget *model.Software) (*int, error) {
 	list, err := s.LoadManagedSoftware()
 	if err != nil {
 		return nil, err
 	}
 	var removedOrder *int
+	var targetOrder *int
 	retained := make([]model.Software, 0, len(list))
 	removed := false
 	for _, item := range list {
 		matchInstall := installPath != "" && winutil.SamePath(item.InstallPath, installPath)
 		matchArchive := archivePath != "" && winutil.SamePath(item.ArchivePath, archivePath)
-		if matchInstall || matchArchive {
+		matchTarget := replaceTarget != nil && ((replaceTarget.ID != "" && item.ID == replaceTarget.ID) ||
+			(replaceTarget.InstallPath != "" && winutil.SamePath(item.InstallPath, replaceTarget.InstallPath)))
+		if matchInstall || matchArchive || matchTarget {
 			order := item.SortOrder
-			removedOrder = &order
+			if matchTarget {
+				targetOrder = &order
+			} else if removedOrder == nil {
+				removedOrder = &order
+			}
 			removed = true
 			continue
 		}
 		retained = append(retained, item)
+	}
+	if targetOrder != nil {
+		removedOrder = targetOrder
 	}
 	if removed {
 		if err := s.saveManagedSoftware(retained); err != nil {
 			return nil, err
 		}
 	}
+
 	if installPath != "" && dirExists(installPath) {
 		if err := os.RemoveAll(installPath); err != nil {
 			return nil, fmt.Errorf("清理旧安装目录失败: %w", err)
 		}
 	}
-	if archivePath != "" && fileExists(archivePath) {
-		if err := os.Remove(archivePath); err != nil {
-			return nil, fmt.Errorf("清理旧归档文件失败: %w", err)
+	if replaceTarget != nil && replaceTarget.InstallPath != "" &&
+		!winutil.SamePath(replaceTarget.InstallPath, installPath) && dirExists(replaceTarget.InstallPath) {
+		if err := os.RemoveAll(replaceTarget.InstallPath); err != nil {
+			return nil, fmt.Errorf("清理旧版本安装目录失败: %w", err)
+		}
+	}
+
+	removeOldArchive := func(p string) error {
+		if p == "" || s.isBackupFilePath(p) {
+			return nil
+		}
+		if sourcePath != "" && winutil.SamePath(p, sourcePath) {
+			return nil
+		}
+		if fileExists(p) {
+			if err := os.Remove(p); err != nil {
+				return fmt.Errorf("清理旧归档文件失败: %w", err)
+			}
+		}
+		return nil
+	}
+	if err := removeOldArchive(archivePath); err != nil {
+		return nil, err
+	}
+	if replaceTarget != nil && replaceTarget.ArchivePath != "" && !winutil.SamePath(replaceTarget.ArchivePath, archivePath) {
+		if err := removeOldArchive(replaceTarget.ArchivePath); err != nil {
+			return nil, err
 		}
 	}
 	return removedOrder, nil
+}
+
+func matchPreviousExecutable(mappedExecs []string, newInstallDir, oldInstallDir, oldExePath string) string {
+	if len(mappedExecs) == 0 || oldExePath == "" {
+		return ""
+	}
+	if oldInstallDir != "" {
+		if oldRel, err := filepath.Rel(oldInstallDir, oldExePath); err == nil && !strings.HasPrefix(oldRel, "..") {
+			var relMatches []string
+			for _, ex := range mappedExecs {
+				if newRel, relErr := filepath.Rel(newInstallDir, ex); relErr == nil && strings.EqualFold(newRel, oldRel) {
+					relMatches = append(relMatches, ex)
+				}
+			}
+			if len(relMatches) == 1 {
+				return relMatches[0]
+			}
+		}
+	}
+	oldBase := filepath.Base(oldExePath)
+	var baseMatches []string
+	for _, ex := range mappedExecs {
+		if strings.EqualFold(filepath.Base(ex), oldBase) {
+			baseMatches = append(baseMatches, ex)
+		}
+	}
+	if len(baseMatches) == 1 {
+		return baseMatches[0]
+	}
+	return ""
+}
+
+func (s *Service) findMatchingManagedForIncoming(incomingName string, incomingExes []string) (*model.Software, string, string) {
+	managed, err := s.LoadManagedSoftware()
+	if err != nil || len(managed) == 0 {
+		return nil, "", ""
+	}
+
+	// 只使用最浅相对深度的主候选可执行文件，防止子目录附带工具误匹配其他软件
+	shallowExes := filterShallowestExecutables(incomingExes)
+	inMetaMap := make(map[string]winutil.FileMetadata, len(shallowExes))
+	firstInVer := ""
+	for _, ex := range shallowExes {
+		m := winutil.GetFileMetadata(ex)
+		inMetaMap[ex] = m
+		if firstInVer == "" && m.Version != "" {
+			firstInVer = m.Version
+		}
+	}
+	inStem, _ := normalizeSoftwareIdentityName(incomingName)
+
+	type matchCandidate struct {
+		sw    model.Software
+		tier  int
+		curV  string
+		inV   string
+		alive bool
+	}
+	var best *matchCandidate
+
+	for i := range managed {
+		sw := managed[i]
+		if sw.Status != model.StatusManaged {
+			continue
+		}
+		var swMeta winutil.FileMetadata
+		if sw.ExecutablePath != "" {
+			swMeta = winutil.GetFileMetadata(sw.ExecutablePath)
+		}
+		swNameStem, _ := normalizeSoftwareIdentityName(sw.Name)
+		swDirStem, _ := normalizeSoftwareIdentityName(filepath.Base(sw.InstallPath))
+
+		bestTier := 0
+		bestInVer := firstInVer
+
+		// 按各最浅候选可执行文件评估 Tier 4 -> Tier 2
+		for _, ex := range shallowExes {
+			exMeta := inMetaMap[ex]
+			exBase := filepath.Base(ex)
+			swBase := filepath.Base(sw.ExecutablePath)
+
+			tier := 0
+			// Tier 4: PE OriginalFilename 匹配
+			if exMeta.OriginalFilename != "" && swMeta.OriginalFilename != "" &&
+				strings.EqualFold(exMeta.OriginalFilename, swMeta.OriginalFilename) &&
+				!isGenericExeName(exMeta.OriginalFilename) {
+				if exMeta.Description == "" || swMeta.Description == "" ||
+					strings.EqualFold(exMeta.Description, swMeta.Description) ||
+					(exMeta.ProductName != "" && swMeta.ProductName != "" && strings.EqualFold(exMeta.ProductName, swMeta.ProductName)) ||
+					(inStem != "" && (inStem == swNameStem || inStem == swDirStem)) {
+					tier = 4
+				}
+			}
+
+			// Tier 3: PE FileDescription 匹配
+			if tier == 0 && exMeta.Description != "" && swMeta.Description != "" &&
+				!isGenericDescription(exMeta.Description) && !isGenericDescription(swMeta.Description) &&
+				strings.EqualFold(exMeta.Description, swMeta.Description) {
+				if exMeta.OriginalFilename == "" || swMeta.OriginalFilename == "" ||
+					strings.EqualFold(exMeta.OriginalFilename, swMeta.OriginalFilename) ||
+					(sw.ExecutablePath != "" && strings.EqualFold(exBase, swBase)) ||
+					(inStem != "" && (inStem == swNameStem || inStem == swDirStem)) {
+					tier = 3
+				}
+			}
+
+			// Tier 2: 非通用主程序文件名匹配
+			if tier == 0 && sw.ExecutablePath != "" &&
+				strings.EqualFold(exBase, swBase) && !isGenericExeName(exBase) {
+				if exMeta.Description == "" || swMeta.Description == "" ||
+					isGenericDescription(exMeta.Description) || isGenericDescription(swMeta.Description) ||
+					strings.EqualFold(exMeta.Description, swMeta.Description) {
+					tier = 2
+				}
+			}
+
+			if tier > bestTier {
+				bestTier = tier
+				if exMeta.Version != "" {
+					bestInVer = exMeta.Version
+				}
+			}
+		}
+
+		// Tier 1: 归一化软件名 stem 匹配
+		if bestTier == 0 && len([]rune(inStem)) >= 2 && (inStem == swNameStem || inStem == swDirStem) {
+			contradicts := false
+			for _, ex := range shallowExes {
+				exMeta := inMetaMap[ex]
+				if exMeta.Description != "" && swMeta.Description != "" &&
+					!isGenericDescription(exMeta.Description) && !isGenericDescription(swMeta.Description) &&
+					!strings.EqualFold(exMeta.Description, swMeta.Description) {
+					contradicts = true
+					break
+				}
+			}
+			if !contradicts {
+				bestTier = 1
+			}
+		}
+
+		if bestTier == 0 {
+			continue
+		}
+
+		cand := matchCandidate{
+			sw:    sw,
+			tier:  bestTier,
+			curV:  swMeta.Version,
+			inV:   bestInVer,
+			alive: dirExists(sw.InstallPath),
+		}
+		if best == nil ||
+			cand.tier > best.tier ||
+			(cand.tier == best.tier && cand.alive && !best.alive) ||
+			(cand.tier == best.tier && cand.alive == best.alive && CompareVersions(cand.curV, best.curV) > 0) {
+			cp := cand
+			best = &cp
+		}
+	}
+
+	if best == nil {
+		return nil, "", ""
+	}
+	cp := best.sw
+	return &cp, best.curV, best.inV
+}
+
+func filterShallowestExecutables(execs []string) []string {
+	if len(execs) <= 1 {
+		return execs
+	}
+	minDepth := -1
+	depths := make([]int, len(execs))
+	for i, ex := range execs {
+		d := strings.Count(filepath.ToSlash(filepath.Clean(ex)), "/")
+		depths[i] = d
+		if minDepth < 0 || d < minDepth {
+			minDepth = d
+		}
+	}
+	out := make([]string, 0, len(execs))
+	for i, ex := range execs {
+		if depths[i] == minDepth {
+			out = append(out, ex)
+		}
+	}
+	return out
+}
+
+var (
+	identTokenSplitRe = regexp.MustCompile(`[-_.\s()\[\]]+`)
+	identReplacer     = strings.NewReplacer("x86_64", "x8664", "x86-64", "x8664")
+)
+
+func normalizeSoftwareIdentityName(name string) (string, bool) {
+	cleaned := identReplacer.Replace(strings.ToLower(strings.TrimSpace(name)))
+	rawTokens := identTokenSplitRe.Split(cleaned, -1)
+	tokens := make([]string, 0, len(rawTokens))
+	for _, tok := range rawTokens {
+		if tok != "" {
+			tokens = append(tokens, tok)
+		}
+	}
+	if len(tokens) == 0 {
+		return "", false
+	}
+
+	hasVer := false
+	for len(tokens) > 1 {
+		last := tokens[len(tokens)-1]
+		if isVersionToken(last) {
+			hasVer = true
+			tokens = tokens[:len(tokens)-1]
+			continue
+		}
+		if isModifierToken(last) {
+			tokens = tokens[:len(tokens)-1]
+			continue
+		}
+		break
+	}
+	return strings.Join(tokens, " "), hasVer
+}
+
+func isVersionToken(tok string) bool {
+	if tok == "" {
+		return false
+	}
+	allDigits := true
+	for i := 0; i < len(tok); i++ {
+		if tok[i] < '0' || tok[i] > '9' {
+			allDigits = false
+			break
+		}
+	}
+	if allDigits {
+		return true
+	}
+	// v/r/b + 数字，如 v10, r2, b102
+	if len(tok) >= 2 && (tok[0] == 'v' || tok[0] == 'r' || tok[0] == 'b') {
+		restDigits := true
+		for i := 1; i < len(tok); i++ {
+			if tok[i] < '0' || tok[i] > '9' {
+				restDigits = false
+				break
+			}
+		}
+		if restDigits {
+			return true
+		}
+	}
+	// 数字 + 单字母后缀，如 6p（rufus-4.6p）
+	if len(tok) >= 2 && tok[len(tok)-1] >= 'a' && tok[len(tok)-1] <= 'z' {
+		headDigits := true
+		for i := 0; i < len(tok)-1; i++ {
+			if tok[i] < '0' || tok[i] > '9' {
+				headDigits = false
+				break
+			}
+		}
+		if headDigits {
+			return true
+		}
+	}
+	for _, prefix := range []string{"beta", "alpha", "rc", "pre", "dev", "build"} {
+		if strings.HasPrefix(tok, prefix) {
+			rest := tok[len(prefix):]
+			if rest == "" {
+				return true
+			}
+			restDigits := true
+			for i := 0; i < len(rest); i++ {
+				if rest[i] < '0' || rest[i] > '9' {
+					restDigits = false
+					break
+				}
+			}
+			if restDigits {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isModifierToken(tok string) bool {
+	switch tok {
+	case "x64", "x86", "x8664", "amd64", "arm64", "aarch64", "i386", "i686",
+		"win", "win32", "win64", "windows", "64bit", "32bit",
+		"portable", "green", "setup", "installer", "standalone",
+		"release", "final", "preview", "nightly", "canary", "snapshot",
+		"zh", "cn", "en", "us", "chs", "cht", "enu", "with", "runtime":
+		return true
+	default:
+		return false
+	}
+}
+
+func isGenericExeName(base string) bool {
+	switch strings.ToLower(filepath.Base(strings.TrimSpace(base))) {
+	case "", "app.exe", "main.exe", "run.exe", "start.exe", "launcher.exe",
+		"setup.exe", "install.exe", "uninstall.exe", "unins000.exe",
+		"update.exe", "updater.exe", "cli.exe", "gui.exe", "client.exe",
+		"server.exe", "electron.exe", "nw.exe", "java.exe", "javaw.exe",
+		"python.exe", "pythonw.exe", "node.exe", "cmd.exe", "powershell.exe",
+		"helper.exe", "crashpad_handler.exe":
+		return true
+	default:
+		return false
+	}
+}
+
+func isGenericDescription(desc string) bool {
+	d := strings.ToLower(strings.TrimSpace(desc))
+	if len([]rune(d)) < 2 {
+		return true
+	}
+	switch d {
+	case "application", "launcher", "installer", "setup", "updater", "windows", "executable":
+		return true
+	default:
+		return false
+	}
+}
+
+// CompareVersions 比较两个软件版本号字符串，返回 1（a > b）、-1（a < b）或 0（相等或不可比较）。
+func CompareVersions(a, b string) int {
+	aNums, aPre, aOK := parseVersionParts(a)
+	bNums, bPre, bOK := parseVersionParts(b)
+	if !aOK || !bOK {
+		return 0
+	}
+	maxLen := max(len(aNums), len(bNums))
+	for i := range maxLen {
+		var av, bv int
+		if i < len(aNums) {
+			av = aNums[i]
+		}
+		if i < len(bNums) {
+			bv = bNums[i]
+		}
+		if av > bv {
+			return 1
+		}
+		if av < bv {
+			return -1
+		}
+	}
+	if aPre == "" && bPre != "" {
+		return 1
+	}
+	if aPre != "" && bPre == "" {
+		return -1
+	}
+	if aPre != "" && bPre != "" {
+		la := strings.ToLower(aPre)
+		lb := strings.ToLower(bPre)
+		if la > lb {
+			return 1
+		}
+		if la < lb {
+			return -1
+		}
+	}
+	return 0
+}
+
+func parseVersionParts(raw string) ([]int, string, bool) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return nil, "", false
+	}
+	if len(s) >= 2 && (s[0] == 'v' || s[0] == 'V') && s[1] >= '0' && s[1] <= '9' {
+		s = s[1:]
+	}
+	// 忽略 +build 元数据与括号附注
+	if idx := strings.IndexByte(s, '+'); idx >= 0 {
+		s = s[:idx]
+	}
+	if idx := strings.IndexAny(s, " \t("); idx >= 0 {
+		s = s[:idx]
+	}
+	var prerelease string
+	if idx := strings.IndexByte(s, '-'); idx >= 0 {
+		prerelease = strings.TrimSpace(s[idx+1:])
+		s = s[:idx]
+	}
+	// 剥离尾部单字母后缀（如 4.6p）
+	if len(s) >= 2 {
+		last := rune(s[len(s)-1])
+		prev := s[len(s)-2]
+		if unicode.IsLetter(last) && prev >= '0' && prev <= '9' {
+			if prerelease == "" {
+				prerelease = string(last)
+			}
+			s = s[:len(s)-1]
+		}
+	}
+
+	parts := strings.Split(s, ".")
+	nums := make([]int, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			return nil, "", false
+		}
+		n, err := strconv.Atoi(part)
+		if err != nil {
+			return nil, "", false
+		}
+		nums = append(nums, n)
+	}
+	if len(nums) == 0 {
+		return nil, "", false
+	}
+	return nums, prerelease, true
 }
 
 func (s *Service) isBackupFilePath(p string) bool {

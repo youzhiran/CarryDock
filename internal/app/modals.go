@@ -128,7 +128,12 @@ func (a *App) selectExecutableModalView(c *ui.Context) {
 									}
 								})
 								ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-									ui.Text(c, label).FontSize(13).Bold().SingleLine()
+									ui.Row(c).Gap(6).MinWidth(0).AlignItems(ui.Center).Children(func() {
+										ui.Text(c, label).FontSize(13).Bold().SingleLine().MinWidth(0)
+										if meta != nil && meta.version != "" {
+											versionPillBadge(c, formatVersionBadge(meta.version), i18n.Fmt(tr.HomeVersionTooltipFmt, meta.version))
+										}
+									})
 									ui.Text(c, pCopy).FontSize(11).TextColor(t.TextMuted).TruncateMiddle().SingleLine()
 								})
 							})
@@ -197,32 +202,90 @@ func (a *App) duplicateModalView(c *ui.Context) {
 	tr := a.tr()
 	info := *a.dupInfo
 
+	isReplaceFlow := info.IsVersionUpdate && info.ExistingManagedSoftware != nil
+	var curVer, newVer string
+	if info.CurrentVersion != "" {
+		curVer = info.CurrentVersion
+	} else if info.ExistingManagedSoftware != nil {
+		curVer = a.versionForPath(info.ExistingManagedSoftware.ExecutablePath)
+	}
+	if info.IncomingVersion != "" {
+		newVer = info.IncomingVersion
+	} else if info.SourceType == software.SourceExecutable && info.SourcePath != "" {
+		newVer = a.versionForPath(info.SourcePath)
+	}
+	verCmp := software.CompareVersions(newVer, curVer)
+
+	modalTitle := tr.DupDetected
+	modalHelp := i18n.Fmt(tr.DupHelpFmt, info.IntendedName)
+	renameHint := tr.DupRenameHint
+	renameBtnText := tr.DupRenameAdd
+	backupOverwriteBtnText := tr.DupBackupOverwrite
+	overwriteBtnText := tr.DupOverwrite
+	if isReplaceFlow {
+		oldDisplayName := a.displayNameFor(*info.ExistingManagedSoftware)
+		if verCmp > 0 {
+			modalTitle = tr.DupUpdateTitle
+			modalHelp = i18n.Fmt(tr.DupUpdateHelpFmt, oldDisplayName)
+		} else {
+			modalTitle = tr.DupReplaceTitle
+			modalHelp = i18n.Fmt(tr.DupReplaceHelpFmt, oldDisplayName)
+		}
+		renameHint = tr.DupKeepBothHint
+		renameBtnText = tr.DupKeepBothAdd
+		backupOverwriteBtnText = tr.DupBackupReplace
+		overwriteBtnText = tr.DupReplace
+	}
+
 	ui.Modal(c.Key("modal-dup"), &a.dupModalOpen, func() {
-		ui.Column(c).Width(480).Gap(12).Children(func() {
-			ui.Text(c, tr.DupDetected).FontSize(16).Bold()
-			ui.Text(c, i18n.Fmt(tr.DupHelpFmt, info.IntendedName)).FontSize(13)
+		ui.Column(c).Width(520).Gap(12).Children(func() {
+			ui.Text(c, modalTitle).FontSize(16).Bold()
+			ui.Text(c, modalHelp).FontSize(13)
 
 			ui.Column(c).Padding(12, 14).Radius(10).Background(paletteOf(t).subtleBg).Border(1, paletteOf(t).cardBorder).Gap(4).Children(func() {
 				if info.ExistingManagedSoftware != nil {
 					ui.Text(c, "• "+i18n.Fmt(tr.DupExistingFmt, info.ExistingManagedSoftware.Name, filepath.Base(info.ExistingManagedSoftware.InstallPath))).FontSize(12)
 				}
-				if info.InstallDirExists {
-					ui.Text(c, "• "+i18n.Fmt(tr.DupInstallDirFmt, info.TargetInstallPath)).FontSize(12)
+				switch {
+				case curVer != "" && newVer != "":
+					line := "• " + i18n.Fmt(tr.DupVersionCompareFmt, formatVersionBadge(curVer), formatVersionBadge(newVer))
+					verColor := t.Accent
+					if verCmp < 0 {
+						line += tr.DupVersionOlderSuffix
+						verColor = t.Warning
+					} else if strings.EqualFold(curVer, newVer) || verCmp == 0 && strings.EqualFold(formatVersionBadge(curVer), formatVersionBadge(newVer)) {
+						line += tr.DupVersionSameSuffix
+					}
+					ui.Text(c, line).FontSize(12).TextColor(verColor)
+				case curVer != "":
+					ui.Text(c, "• "+i18n.Fmt(tr.DupCurrentVersionFmt, formatVersionBadge(curVer))).FontSize(12)
+				case newVer != "":
+					ui.Text(c, "• "+i18n.Fmt(tr.DupIncomingVersionFmt, formatVersionBadge(newVer))).FontSize(12)
 				}
-				if info.ArchiveExists {
-					ui.Text(c, "• "+i18n.Fmt(tr.DupArchiveFmt, filepath.Base(info.TargetArchivePath))).FontSize(12)
+				if isReplaceFlow && info.SourcePath != "" {
+					ui.Text(c, "• "+i18n.Fmt(tr.DupIncomingFileFmt, filepath.Base(info.SourcePath))).FontSize(12)
+				}
+				if isReplaceFlow && info.ExistingManagedSoftware != nil && info.ExistingManagedSoftware.InstallPath != "" {
+					ui.Text(c, "• "+i18n.Fmt(tr.DupOldInstallDirFmt, info.ExistingManagedSoftware.InstallPath)).FontSize(12)
+				} else {
+					if info.InstallDirExists {
+						ui.Text(c, "• "+i18n.Fmt(tr.DupInstallDirFmt, info.TargetInstallPath)).FontSize(12)
+					}
+					if info.ArchiveExists {
+						ui.Text(c, "• "+i18n.Fmt(tr.DupArchiveFmt, filepath.Base(info.TargetArchivePath))).FontSize(12)
+					}
 				}
 			})
 
-			ui.Text(c, tr.DupRenameHint).FontSize(13)
+			ui.Text(c, renameHint).FontSize(13)
 			ui.TextInput(c.Key("dup-rename-input"), &a.dupRename).AutoFocus()
 
-			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
+			ui.Row(c).Gap(8).Justify(ui.End).Wrap().Children(func() {
 				if ui.Button(c.Key("dup-cancel"), tr.Cancel).Clicked() {
 					a.dupModalOpen = false
 					a.dupInfo = nil
 				}
-				if ui.Button(c.Key("dup-rename-btn"), tr.DupRenameAdd).
+				if ui.Button(c.Key("dup-rename-btn"), renameBtnText).
 					Disabled(strings.TrimSpace(a.dupRename) == "").Clicked() {
 					newName := strings.TrimSpace(a.dupRename)
 					fromMgr := a.dupFromArchiveManager
@@ -239,7 +302,7 @@ func (a *App) duplicateModalView(c *ui.Context) {
 					}()
 				}
 				if info.InstallDirExists {
-					if ui.Button(c.Key("dup-bak-over"), tr.DupBackupOverwrite).Clicked() {
+					if ui.Button(c.Key("dup-bak-over"), backupOverwriteBtnText).Clicked() {
 						fromMgr := a.dupFromArchiveManager
 						a.dupModalOpen = false
 						a.dupInfo = nil
@@ -273,7 +336,7 @@ func (a *App) duplicateModalView(c *ui.Context) {
 						}()
 					}
 				}
-				if ui.PrimaryButton(c.Key("dup-overwrite"), tr.DupOverwrite).Clicked() {
+				if ui.PrimaryButton(c.Key("dup-overwrite"), overwriteBtnText).Clicked() {
 					fromMgr := a.dupFromArchiveManager
 					a.dupModalOpen = false
 					a.dupInfo = nil
@@ -910,6 +973,9 @@ func (a *App) devIconTestModalView(c *ui.Context) {
 				ui.Text(c, tr.DevFileName+filepath.Base(a.devIconPath)).FontSize(13).Bold()
 				if a.devIconDesc != "" {
 					ui.Text(c, tr.DevFileDesc+a.devIconDesc).FontSize(12)
+				}
+				if a.devIconVersion != "" {
+					ui.Text(c, tr.DevFileVersion+a.devIconVersion).FontSize(12)
 				}
 				ui.Text(c, a.devIconPath).FontSize(11).TextColor(t.TextMuted).Selectable()
 			})

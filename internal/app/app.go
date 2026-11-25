@@ -49,6 +49,7 @@ const (
 type exeMeta struct {
 	loading bool
 	desc    string
+	version string
 	icon    *ui.Bitmap
 }
 
@@ -148,6 +149,7 @@ type App struct {
 	devIconModalOpen bool
 	devIconPath      string
 	devIconDesc      string
+	devIconVersion   string
 	devIconBmp       *ui.Bitmap
 
 	// 全局进度与消息弹窗
@@ -662,7 +664,7 @@ func (a *App) navButton(c *ui.Context, id pageID, ico *ui.SVG, label string, bad
 	}
 }
 
-// ensureExeMeta 异步提取并缓存指定可执行文件的图标和 FileDescription。
+// ensureExeMeta 异步提取并缓存指定可执行文件的图标、FileDescription 和原生版本号。
 func (a *App) ensureExeMeta(exePath string) *exeMeta {
 	if exePath == "" {
 		return nil
@@ -675,7 +677,7 @@ func (a *App) ensureExeMeta(exePath string) *exeMeta {
 	a.exeCache[key] = m
 
 	go func(p, cacheKey string) {
-		desc := winutil.GetFileDescription(p)
+		metaInfo := winutil.GetFileMetadata(p)
 		var pngBytes []byte
 		if b, err := winutil.ExtractIconPNG(p, 64); err == nil && len(b) > 0 {
 			pngBytes = b
@@ -686,7 +688,7 @@ func (a *App) ensureExeMeta(exePath string) *exeMeta {
 		if len(pngBytes) > 0 {
 			bmp, _ = ui.DecodeBitmap(pngBytes)
 		}
-		logger.Debug("提取可执行文件元数据完成: %s (说明=%q, 图标=%v)", p, desc, bmp != nil)
+		logger.Debug("提取可执行文件元数据完成: %s (说明=%q, 版本=%q, 图标=%v)", p, metaInfo.Description, metaInfo.Version, bmp != nil)
 		a.update(func() {
 			entry, ok := a.exeCache[cacheKey]
 			if !ok {
@@ -694,7 +696,8 @@ func (a *App) ensureExeMeta(exePath string) *exeMeta {
 				a.exeCache[cacheKey] = entry
 			}
 			entry.loading = false
-			entry.desc = desc
+			entry.desc = metaInfo.Description
+			entry.version = metaInfo.Version
 			entry.icon = bmp
 		})
 	}(exePath, key)
@@ -743,6 +746,38 @@ func (a *App) displayNameFor(sw model.Software) string {
 		}
 	}
 	return sw.Name
+}
+
+func (a *App) versionFor(sw model.Software) string {
+	if sw.Status == model.StatusManaged && sw.InstallExists && sw.ExecutablePath != "" {
+		return a.versionForPath(sw.ExecutablePath)
+	}
+	return ""
+}
+
+func (a *App) versionForPath(exePath string) string {
+	if exePath == "" {
+		return ""
+	}
+	if meta := a.ensureExeMeta(exePath); meta != nil {
+		return meta.version
+	}
+	return ""
+}
+
+func formatVersionBadge(ver string) string {
+	v := strings.TrimSpace(ver)
+	if v == "" {
+		return ""
+	}
+	if v[0] >= '0' && v[0] <= '9' {
+		v = "v" + v
+	}
+	runes := []rune(v)
+	if len(runes) > 24 {
+		return string(runes[:23]) + "…"
+	}
+	return v
 }
 
 func (a *App) renderSoftwareIcon(c *ui.Context, sw model.Software, size float32) {

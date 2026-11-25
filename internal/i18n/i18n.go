@@ -122,6 +122,7 @@ type Strings struct {
 	ClearFilter                string
 	NoMatchingResults          string
 	NoMatchingResultsHint      string
+	HomeVersionTooltipFmt      string
 
 	// Tile & Context Menu
 	TileOpenFolder           string
@@ -157,15 +158,30 @@ type Strings struct {
 	TileMigrateFailedFmt     string
 
 	// Duplicate dialog
-	DupDetected        string
-	DupHelpFmt         string
-	DupExistingFmt     string
-	DupInstallDirFmt   string
-	DupArchiveFmt      string
-	DupRenameHint      string
-	DupRenameAdd       string
-	DupOverwrite       string
-	DupBackupOverwrite string
+	DupDetected           string
+	DupHelpFmt            string
+	DupExistingFmt        string
+	DupInstallDirFmt      string
+	DupArchiveFmt         string
+	DupRenameHint         string
+	DupRenameAdd          string
+	DupOverwrite          string
+	DupBackupOverwrite    string
+	DupCurrentVersionFmt  string
+	DupIncomingVersionFmt string
+	DupVersionCompareFmt  string
+	DupVersionSameSuffix  string
+	DupUpdateTitle        string
+	DupUpdateHelpFmt      string
+	DupReplaceTitle       string
+	DupReplaceHelpFmt     string
+	DupIncomingFileFmt    string
+	DupOldInstallDirFmt   string
+	DupVersionOlderSuffix string
+	DupKeepBothHint       string
+	DupKeepBothAdd        string
+	DupReplace            string
+	DupBackupReplace      string
 
 	// Delete dialog
 	DeleteSoftwareFmt   string
@@ -359,6 +375,7 @@ type Strings struct {
 	DevExtractFailedMsg string
 	DevFileName         string
 	DevFileDesc         string
+	DevFileVersion      string
 	DevMethod1          string
 	DevMethod1Desc      string
 	DevMethod2          string
@@ -469,6 +486,7 @@ var zhStrings = Strings{
 	ClearFilter:                "清除筛选",
 	NoMatchingResults:          "没有匹配的项目",
 	NoMatchingResultsHint:      "尝试更改搜索关键词或重置当前筛选条件。",
+	HomeVersionTooltipFmt:      "软件原生版本：%s",
 
 	TileOpenFolder:           "打开软件文件夹",
 	TileChangeFolder:         "修改软件文件夹",
@@ -502,15 +520,30 @@ var zhStrings = Strings{
 	TileMigrateSuccess:       "软件文件夹已成功迁移。",
 	TileMigrateFailedFmt:     "修改软件文件夹失败：%s",
 
-	DupDetected:        "检测到重复",
-	DupHelpFmt:         "软件名称「%s」与现有项目冲突。请选择如何继续：",
-	DupExistingFmt:     "已托管软件：%s（%s）",
-	DupInstallDirFmt:   "安装目录已存在：%s",
-	DupArchiveFmt:      "归档文件已存在：%s",
-	DupRenameHint:      "输入新名称以重命名并添加：",
-	DupRenameAdd:       "重命名并添加",
-	DupOverwrite:       "覆盖",
-	DupBackupOverwrite: "备份并覆盖",
+	DupDetected:           "检测到重复",
+	DupHelpFmt:            "软件名称「%s」与现有项目冲突。请选择如何继续：",
+	DupExistingFmt:        "已托管软件：%s（%s）",
+	DupInstallDirFmt:      "安装目录已存在：%s",
+	DupArchiveFmt:         "归档文件已存在：%s",
+	DupRenameHint:         "输入新名称以重命名并添加：",
+	DupRenameAdd:          "重命名并添加",
+	DupOverwrite:          "覆盖",
+	DupBackupOverwrite:    "备份并覆盖",
+	DupCurrentVersionFmt:  "当前软件版本：%s",
+	DupIncomingVersionFmt: "待导入文件版本：%s",
+	DupVersionCompareFmt:  "版本对比：%s → %s",
+	DupVersionSameSuffix:  "（版本相同）",
+	DupUpdateTitle:        "发现新版本",
+	DupUpdateHelpFmt:      "检测到「%s」的新版本，是否替换当前已安装的旧版本？",
+	DupReplaceTitle:       "检测到已安装软件",
+	DupReplaceHelpFmt:     "待导入文件与已托管软件「%s」属于同一软件，是否替换现有版本？",
+	DupIncomingFileFmt:    "待导入文件：%s",
+	DupOldInstallDirFmt:   "原安装目录：%s",
+	DupVersionOlderSuffix: "（低于当前版本）",
+	DupKeepBothHint:       "如需保留旧版本并作为独立软件添加，可修改名称：",
+	DupKeepBothAdd:        "保留旧版并添加",
+	DupReplace:            "替换旧版本",
+	DupBackupReplace:      "备份并替换",
 
 	DeleteSoftwareFmt:   "删除 %s",
 	DeleteUnmanagedFmt:  "您确定要删除这个%s吗？此操作不可恢复。",
@@ -692,11 +725,12 @@ var zhStrings = Strings{
 	DevTitle:            "开发者选项",
 	DevHint:             "隐藏调试页面，用于测试可执行文件图标和元信息提取。",
 	DevIconTest:         "图标提取测试",
-	DevIconTestHint:     "选择一个 .exe / .lnk / .ico 文件，验证图标和文件描述提取效果。",
+	DevIconTestHint:     "选择一个 .exe / .lnk / .ico 文件，验证图标、文件说明和原生版本号提取效果。",
 	DevExtractFailed:    "提取失败",
 	DevExtractFailedMsg: "无法从所选文件中提取图标。",
 	DevFileName:         "文件：",
 	DevFileDesc:         "文件说明：",
+	DevFileVersion:      "文件版本：",
 	DevMethod1:          "32 × 32 图标预览",
 	DevMethod1Desc:      "列表视图标准图标尺寸",
 	DevMethod2:          "64 × 64 图标预览",
@@ -807,6 +841,7 @@ var enStrings = Strings{
 	ClearFilter:                "Clear Filter",
 	NoMatchingResults:          "No Matching Items",
 	NoMatchingResultsHint:      "Try adjusting your search query or clearing active filters.",
+	HomeVersionTooltipFmt:      "Native version: %s",
 
 	TileOpenFolder:           "Open Software Folder",
 	TileChangeFolder:         "Rename Software Folder",
@@ -840,15 +875,30 @@ var enStrings = Strings{
 	TileMigrateSuccess:       "Software folder renamed successfully.",
 	TileMigrateFailedFmt:     "Failed to rename software folder: %s",
 
-	DupDetected:        "Duplicate Detected",
-	DupHelpFmt:         "Software name '%s' conflicts with existing items. Choose how to proceed:",
-	DupExistingFmt:     "Managed software: %s (%s)",
-	DupInstallDirFmt:   "Installation directory exists: %s",
-	DupArchiveFmt:      "Archive file exists: %s",
-	DupRenameHint:      "Enter a new name to rename and add:",
-	DupRenameAdd:       "Rename & Add",
-	DupOverwrite:       "Overwrite",
-	DupBackupOverwrite: "Backup & Overwrite",
+	DupDetected:           "Duplicate Detected",
+	DupHelpFmt:            "Software name '%s' conflicts with existing items. Choose how to proceed:",
+	DupExistingFmt:        "Managed software: %s (%s)",
+	DupInstallDirFmt:      "Installation directory exists: %s",
+	DupArchiveFmt:         "Archive file exists: %s",
+	DupRenameHint:         "Enter a new name to rename and add:",
+	DupRenameAdd:          "Rename & Add",
+	DupOverwrite:          "Overwrite",
+	DupBackupOverwrite:    "Backup & Overwrite",
+	DupCurrentVersionFmt:  "Current version: %s",
+	DupIncomingVersionFmt: "Incoming version: %s",
+	DupVersionCompareFmt:  "Version change: %s → %s",
+	DupVersionSameSuffix:  " (same version)",
+	DupUpdateTitle:        "New Version Detected",
+	DupUpdateHelpFmt:      "A newer version of '%s' was detected. Replace the currently installed version?",
+	DupReplaceTitle:       "Existing Software Detected",
+	DupReplaceHelpFmt:     "The incoming file matches managed software '%s'. Replace the existing version?",
+	DupIncomingFileFmt:    "Incoming file: %s",
+	DupOldInstallDirFmt:   "Current install directory: %s",
+	DupVersionOlderSuffix: " (older than current)",
+	DupKeepBothHint:       "To keep the existing version and add separately, edit the name below:",
+	DupKeepBothAdd:        "Keep Both & Add",
+	DupReplace:            "Replace",
+	DupBackupReplace:      "Backup & Replace",
 
 	DeleteSoftwareFmt:   "Delete %s",
 	DeleteUnmanagedFmt:  "Are you sure you want to delete this %s? This cannot be undone.",
@@ -1030,11 +1080,12 @@ var enStrings = Strings{
 	DevTitle:            "Developer Options",
 	DevHint:             "Hidden debug screen for testing executable icon and metadata extraction.",
 	DevIconTest:         "Icon Extraction Test",
-	DevIconTestHint:     "Pick an .exe, .lnk, or .ico file to inspect icon and file description extraction.",
+	DevIconTestHint:     "Pick an .exe, .lnk, or .ico file to inspect icon, file description, and native version extraction.",
 	DevExtractFailed:    "Extraction Failed",
 	DevExtractFailedMsg: "Could not extract an icon from the selected file.",
 	DevFileName:         "File: ",
 	DevFileDesc:         "Description: ",
+	DevFileVersion:      "Version: ",
 	DevMethod1:          "32 × 32 Preview",
 	DevMethod1Desc:      "Standard list view icon size",
 	DevMethod2:          "64 × 64 Preview",

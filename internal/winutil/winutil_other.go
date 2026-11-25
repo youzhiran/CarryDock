@@ -32,8 +32,22 @@ func WithFileLock(lockPath string, fn func() error) error {
 	return fn()
 }
 
+// FileMetadata 保存可执行文件的描述、产品信息与原生版本信息（非 Windows 占位）。
+type FileMetadata struct {
+	Description      string
+	ProductName      string
+	OriginalFilename string
+	Version          string
+}
+
+// GetFileMetadata 非 Windows 平台返回空元信息。
+func GetFileMetadata(exePath string) FileMetadata { return FileMetadata{} }
+
 // GetFileDescription 非 Windows 平台返回空。
 func GetFileDescription(exePath string) string { return "" }
+
+// GetFileVersion 非 Windows 平台返回空。
+func GetFileVersion(exePath string) string { return "" }
 
 // ExtractIconPNG 非 Windows 平台返回不支持错误。
 func ExtractIconPNG(exePath string, preferredSize int) ([]byte, error) {

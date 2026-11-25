@@ -61,10 +61,13 @@ func (a *App) filteredSoftware(items []model.Software) []model.Software {
 	out := make([]model.Software, 0, len(items))
 	for _, s := range items {
 		name := strings.ToLower(a.displayNameFor(s))
+		ver := strings.ToLower(a.versionFor(s))
+		verBadge := strings.ToLower(formatVersionBadge(ver))
 		if strings.Contains(name, q) ||
 			strings.Contains(strings.ToLower(s.Name), q) ||
 			strings.Contains(strings.ToLower(s.InstallPath), q) ||
-			strings.Contains(strings.ToLower(filepath.Base(s.ExecutablePath)), q) {
+			strings.Contains(strings.ToLower(filepath.Base(s.ExecutablePath)), q) ||
+			(ver != "" && (strings.Contains(ver, q) || strings.Contains(verBadge, q))) {
 			out = append(out, s)
 		}
 	}
@@ -586,6 +589,8 @@ func (a *App) softwareListRow(c *ui.Context, sw model.Software) {
 	tr := a.tr()
 
 	title := a.displayNameFor(sw)
+	ver := a.versionFor(sw)
+	verLabel := formatVersionBadge(ver)
 	var subtitle string
 	var statusBadge string
 	titleColor := t.Text
@@ -636,6 +641,9 @@ func (a *App) softwareListRow(c *ui.Context, sw model.Software) {
 			ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
 				ui.Row(c).Gap(8).MinWidth(0).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, title).FontSize(14).Bold().TextColor(titleColor).SingleLine().MinWidth(0)
+					if verLabel != "" {
+						versionPillBadge(c, verLabel, i18n.Fmt(tr.HomeVersionTooltipFmt, ver))
+					}
 					if statusBadge != "" {
 						pillBadge(c, statusBadge, p.warningTint, t.Warning)
 					}
@@ -774,6 +782,8 @@ func (a *App) softwareGridCard(c *ui.Context, sw model.Software) {
 	tr := a.tr()
 
 	title := a.displayNameFor(sw)
+	ver := a.versionFor(sw)
+	verLabel := formatVersionBadge(ver)
 	titleColor := t.Text
 	iconMedBg := p.subtleBg
 	var badgeText string
@@ -789,7 +799,7 @@ func (a *App) softwareGridCard(c *ui.Context, sw model.Software) {
 
 	card := ui.Column(c.Key("grid-"+sw.ID)).Size(176, 174).Padding(14, 14).Radius(12).
 		Background(p.card).Border(1, p.cardBorder).Shadow(0, 2, 8, 0, p.shadow).
-		Center().Gap(10).Clip().Cursor(ui.CursorPointer)
+		Center().Gap(8).Clip().Cursor(ui.CursorPointer)
 	cardHovered := card.Hovered()
 	if cardHovered {
 		card.Background(p.cardHover).Border(1, t.Accent.Alpha(0.55)).
@@ -802,7 +812,13 @@ func (a *App) softwareGridCard(c *ui.Context, sw model.Software) {
 		ui.Box(c).Size(56, 56).Radius(14).Background(iconMedBg).Center().Shrink(0).Children(func() {
 			a.renderSoftwareIcon(c, sw, 40)
 		})
-		ui.Text(c, title).FontSize(13).Bold().TextColor(titleColor).TextAlign(ui.Center).MaxLines(2).FillWidth()
+		ui.Column(c).FillWidth().Center().Gap(2).Children(func() {
+			ui.Text(c, title).FontSize(13).Bold().TextColor(titleColor).TextAlign(ui.Center).MaxLines(2).FillWidth()
+			if badgeText == "" && verLabel != "" {
+				ui.Text(c, verLabel).FontSize(11).TextColor(t.TextMuted).SingleLine().TextAlign(ui.Center).FillWidth().
+					Tooltip(i18n.Fmt(tr.HomeVersionTooltipFmt, ver))
+			}
+		})
 		if badgeText != "" {
 			pillBadge(c, badgeText, p.warningTint, t.Warning)
 		} else if sw.Status == model.StatusManaged {
@@ -1013,8 +1029,15 @@ func (a *App) handleAddResult(res software.AddResult, fromArchiveManager bool) {
 		if res.DuplicateInfo == nil {
 			return
 		}
+		if res.DuplicateInfo.SourceType == software.SourceExecutable && res.DuplicateInfo.SourcePath != "" {
+			delete(a.exeCache, strings.ToLower(filepath.Clean(res.DuplicateInfo.SourcePath)))
+		}
 		a.dupInfo = res.DuplicateInfo
-		a.dupRename = a.suggestAlternativeName(res.DuplicateInfo.IntendedName)
+		if res.DuplicateInfo.IsVersionUpdate && !res.DuplicateInfo.TargetPathCollides {
+			a.dupRename = res.DuplicateInfo.IntendedName
+		} else {
+			a.dupRename = a.suggestAlternativeName(res.DuplicateInfo.IntendedName)
+		}
 		a.dupFromArchiveManager = fromArchiveManager
 		a.dupModalOpen = true
 	case software.AddError:

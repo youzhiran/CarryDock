@@ -62,7 +62,33 @@ const (
 	sOK                     = 0x00000000
 	sFalse                  = 0x00000001
 	rpcEChangedMode         = 0x80010106
+
+	vsFixedFileInfoSignature = 0xFEEF04BD
 )
+
+// FileMetadata 保存从 Windows 可执行文件版本资源中提取的描述、产品信息与原生版本号。
+type FileMetadata struct {
+	Description      string
+	ProductName      string
+	OriginalFilename string
+	Version          string
+}
+
+type vsFixedFileInfo struct {
+	Signature        uint32
+	StrucVersion     uint32
+	FileVersionMS    uint32
+	FileVersionLS    uint32
+	ProductVersionMS uint32
+	ProductVersionLS uint32
+	FileFlagsMask    uint32
+	FileFlags        uint32
+	FileOS           uint32
+	FileType         uint32
+	FileSubtype      uint32
+	FileDateMS       uint32
+	FileDateLS       uint32
+}
 
 type shFileInfoW struct {
 	HIcon         uintptr
@@ -150,13 +176,11 @@ func WithFileLock(lockPath string, fn func() error) error {
 	return fn()
 }
 
-// GetFileDescription 从 Windows 可执行文件的版本资源中提取 FileDescription。
-// 修复了原版中 raw string 双反斜杠导致 `\VarFileInfo\Translation` 始终查询失败的缺陷，
-// 并在未声明 Translation 表时提供常见语言代码页回退。
-func GetFileDescription(exePath string) string {
+// GetFileMetadata 从 Windows 可执行文件的版本资源中一次性提取 FileDescription 与原生版本号。
+func GetFileMetadata(exePath string) FileMetadata {
 	pathPtr, err := windows.UTF16PtrFromString(exePath)
 	if err != nil {
-		return ""
+		return FileMetadata{}
 	}
 	var handle uint32
 	size, _, _ := procGetFileVersionInfoSizeW.Call(
@@ -164,7 +188,7 @@ func GetFileDescription(exePath string) string {
 		uintptr(unsafe.Pointer(&handle)),
 	)
 	if size == 0 {
-		return ""
+		return FileMetadata{}
 	}
 
 	buf := make([]byte, size)
@@ -175,11 +199,42 @@ func GetFileDescription(exePath string) string {
 		uintptr(unsafe.Pointer(&buf[0])),
 	)
 	if ok == 0 {
-		return ""
+		return FileMetadata{}
 	}
 
-	queryString := func(langCodepage string) string {
-		q, err := windows.UTF16PtrFromString(`\StringFileInfo\` + langCodepage + `\FileDescription`)
+	// 收集并去重语言代码页组合：优先 \VarFileInfo\Translation，其次常见代码页回退
+	langCodepages := make([]string, 0, 8)
+	seen := make(map[string]bool, 8)
+	addLangCodepage := func(key string) {
+		if key != "" && !seen[key] {
+			seen[key] = true
+			langCodepages = append(langCodepages, key)
+		}
+	}
+
+	transKey, _ := windows.UTF16PtrFromString(`\VarFileInfo\Translation`)
+	var transPtr unsafe.Pointer
+	var transLen uint32
+	r, _, _ := procVerQueryValueW.Call(
+		uintptr(unsafe.Pointer(&buf[0])),
+		uintptr(unsafe.Pointer(transKey)),
+		uintptr(unsafe.Pointer(&transPtr)),
+		uintptr(unsafe.Pointer(&transLen)),
+	)
+	if r != 0 && transPtr != nil && transLen >= 4 {
+		raw := unsafe.Slice((*byte)(transPtr), int(transLen))
+		for offset := 0; offset+4 <= len(raw); offset += 4 {
+			lang := binary.LittleEndian.Uint16(raw[offset : offset+2])
+			cp := binary.LittleEndian.Uint16(raw[offset+2 : offset+4])
+			addLangCodepage(fmt.Sprintf("%04x%04x", lang, cp))
+		}
+	}
+	for _, fallback := range []string{"080404b0", "040904b0", "040904e4", "000004b0"} {
+		addLangCodepage(fallback)
+	}
+
+	queryString := func(langCodepage, field string) string {
+		q, err := windows.UTF16PtrFromString(`\StringFileInfo\` + langCodepage + `\` + field)
 		if err != nil {
 			return ""
 		}
@@ -198,35 +253,166 @@ func GetFileDescription(exePath string) string {
 		return strings.TrimSpace(windows.UTF16ToString(u16))
 	}
 
-	// 1. 优先查询 \VarFileInfo\Translation 中的所有语言-代码页组合
-	transKey, _ := windows.UTF16PtrFromString(`\VarFileInfo\Translation`)
-	var transPtr unsafe.Pointer
-	var transLen uint32
-	r, _, _ := procVerQueryValueW.Call(
-		uintptr(unsafe.Pointer(&buf[0])),
-		uintptr(unsafe.Pointer(transKey)),
-		uintptr(unsafe.Pointer(&transPtr)),
-		uintptr(unsafe.Pointer(&transLen)),
-	)
-	if r != 0 && transPtr != nil && transLen >= 4 {
-		raw := unsafe.Slice((*byte)(transPtr), int(transLen))
-		for offset := 0; offset+4 <= len(raw); offset += 4 {
-			lang := binary.LittleEndian.Uint16(raw[offset : offset+2])
-			cp := binary.LittleEndian.Uint16(raw[offset+2 : offset+4])
-			key := fmt.Sprintf("%04x%04x", lang, cp)
-			if desc := queryString(key); desc != "" {
-				return desc
+	var meta FileMetadata
+	for _, key := range langCodepages {
+		if desc := queryString(key, "FileDescription"); desc != "" {
+			meta.Description = desc
+			break
+		}
+	}
+	for _, key := range langCodepages {
+		if prod := queryString(key, "ProductName"); prod != "" {
+			meta.ProductName = prod
+			break
+		}
+	}
+	for _, key := range langCodepages {
+		if orig := queryString(key, "OriginalFilename"); orig != "" {
+			meta.OriginalFilename = orig
+			break
+		}
+	}
+
+	// 版本号按 ProductVersion -> FileVersion -> VS_FIXEDFILEINFO 优先级提取
+	for _, field := range []string{"ProductVersion", "FileVersion"} {
+		for _, key := range langCodepages {
+			if ver := normalizeVersionString(queryString(key, field)); ver != "" {
+				meta.Version = ver
+				break
+			}
+		}
+		if meta.Version != "" {
+			break
+		}
+	}
+
+	if meta.Version == "" {
+		rootKey, _ := windows.UTF16PtrFromString(`\`)
+		var fixedPtr unsafe.Pointer
+		var fixedLen uint32
+		rFixed, _, _ := procVerQueryValueW.Call(
+			uintptr(unsafe.Pointer(&buf[0])),
+			uintptr(unsafe.Pointer(rootKey)),
+			uintptr(unsafe.Pointer(&fixedPtr)),
+			uintptr(unsafe.Pointer(&fixedLen)),
+		)
+		if rFixed != 0 && fixedPtr != nil && fixedLen >= uint32(unsafe.Sizeof(vsFixedFileInfo{})) {
+			fixed := (*vsFixedFileInfo)(fixedPtr)
+			if fixed.Signature == vsFixedFileInfoSignature {
+				if ver := formatFixedVersion(fixed.ProductVersionMS, fixed.ProductVersionLS); ver != "" {
+					meta.Version = ver
+				} else if ver := formatFixedVersion(fixed.FileVersionMS, fixed.FileVersionLS); ver != "" {
+					meta.Version = ver
+				}
 			}
 		}
 	}
 
-	// 2. 回退到常见语言代码页
-	for _, fallback := range []string{"080404b0", "040904b0", "040904e4", "000004b0"} {
-		if desc := queryString(fallback); desc != "" {
-			return desc
+	return meta
+}
+
+// GetFileDescription 从 Windows 可执行文件的版本资源中提取 FileDescription。
+func GetFileDescription(exePath string) string {
+	return GetFileMetadata(exePath).Description
+}
+
+// GetFileVersion 从 Windows 可执行文件的版本资源中提取原生版本号。
+func GetFileVersion(exePath string) string {
+	return GetFileMetadata(exePath).Version
+}
+
+func formatFixedVersion(ms, ls uint32) string {
+	major := ms >> 16
+	minor := ms & 0xFFFF
+	build := ls >> 16
+	rev := ls & 0xFFFF
+	if major == 0 && minor == 0 && build == 0 && rev == 0 {
+		return ""
+	}
+	if rev != 0 {
+		return fmt.Sprintf("%d.%d.%d.%d", major, minor, build, rev)
+	}
+	if build != 0 {
+		return fmt.Sprintf("%d.%d.%d", major, minor, build)
+	}
+	return fmt.Sprintf("%d.%d", major, minor)
+}
+
+func normalizeVersionString(raw string) string {
+	s := strings.TrimSpace(strings.ReplaceAll(raw, "\x00", ""))
+	if s == "" {
+		return ""
+	}
+	switch strings.ToLower(s) {
+	case "n/a", "none", "unknown", "null":
+		return ""
+	}
+
+	hasDigit := false
+	onlyCommaDotDigits := true
+	hasComma := false
+	for i := 0; i < len(s); i++ {
+		b := s[i]
+		if b >= '0' && b <= '9' {
+			hasDigit = true
+			continue
+		}
+		if b == ',' {
+			hasComma = true
+			continue
+		}
+		if b == '.' || b == ' ' || b == '\t' {
+			continue
+		}
+		onlyCommaDotDigits = false
+	}
+	if !hasDigit {
+		return ""
+	}
+
+	if len(s) >= 2 && (s[0] == 'v' || s[0] == 'V') && s[1] >= '0' && s[1] <= '9' {
+		s = s[1:]
+	}
+
+	if hasComma && onlyCommaDotDigits {
+		s = strings.ReplaceAll(s, ",", ".")
+	}
+
+	// 清理点号两侧的多余空白（如 "1 . 2 . 3" 或逗号替换后残留空格）
+	if strings.Contains(s, ".") {
+		parts := strings.Split(s, ".")
+		for i, part := range parts {
+			parts[i] = strings.TrimSpace(part)
+		}
+		s = strings.Join(parts, ".")
+	}
+
+	if s == "" {
+		return ""
+	}
+
+	// 过滤全零版本（如 "0"、"0.0"、"0.0.0.0"）
+	allZeroParts := true
+	for _, part := range strings.Split(s, ".") {
+		if part == "" {
+			allZeroParts = false
+			break
+		}
+		for i := 0; i < len(part); i++ {
+			if part[i] != '0' {
+				allZeroParts = false
+				break
+			}
+		}
+		if !allZeroParts {
+			break
 		}
 	}
-	return ""
+	if allZeroParts {
+		return ""
+	}
+
+	return s
 }
 
 // ExtractIconPNG 从 exe/ico/lnk/bat 等文件提取指定目标尺寸的主图标并编码为 PNG。

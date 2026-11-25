@@ -36,6 +36,14 @@ func TestGetFileDescriptionAndExtractIconOnSystemBinaries(t *testing.T) {
 		if desc == "" {
 			t.Errorf("expected non-empty FileDescription for %s", exe)
 		}
+		meta := GetFileMetadata(exe)
+		ver := GetFileVersion(exe)
+		if meta.Description != desc {
+			t.Errorf("GetFileMetadata(%s).Description = %q, want %q", exe, meta.Description, desc)
+		}
+		if meta.Version == "" || ver == "" || meta.Version != ver {
+			t.Errorf("expected non-empty consistent version for %s, meta=%q ver=%q", exe, meta.Version, ver)
+		}
 
 		pngBytes, err := ExtractIconPNG(exe, 64)
 		if err != nil {
@@ -63,11 +71,59 @@ func TestGetFileDescriptionAndExtractIconOnSystemBinaries(t *testing.T) {
 		if visiblePixels == 0 {
 			t.Fatalf("icon for %s has 0 visible pixels (fully transparent)", exe)
 		}
-		t.Logf("%s -> desc=%q icon=%dx%d visible=%d/%d (%d bytes)",
-			filepath.Base(exe), desc, b.Dx(), b.Dy(), visiblePixels, b.Dx()*b.Dy(), len(pngBytes))
+		t.Logf("%s -> desc=%q ver=%q icon=%dx%d visible=%d/%d (%d bytes)",
+			filepath.Base(exe), desc, ver, b.Dx(), b.Dy(), visiblePixels, b.Dx()*b.Dy(), len(pngBytes))
 	}
 	if checked == 0 {
 		t.Skip("no Windows system binaries found")
+	}
+}
+
+func TestNormalizeVersionStringAndFormatFixedVersion(t *testing.T) {
+	normCases := []struct {
+		in   string
+		want string
+	}{
+		{"", ""},
+		{"   \t\x00 ", ""},
+		{"N/A", ""},
+		{"none", ""},
+		{"Unknown", ""},
+		{"null", ""},
+		{"no version", ""},
+		{"0", ""},
+		{"0.0", ""},
+		{"0.0.0.0", ""},
+		{"1.2.3", "1.2.3"},
+		{"v1.2.3", "1.2.3"},
+		{"V24.08", "24.08"},
+		{"1, 2, 3, 4", "1.2.3.4"},
+		{"1, 0, 0, 1", "1.0.0.1"},
+		{"2 . 5 . 0", "2.5.0"},
+		{"1.2.3-beta.1", "1.2.3-beta.1"},
+		{"10.0.22621.1 (WinBuild.160101.0800)", "10.0.22621.1 (WinBuild.160101.0800)"},
+	}
+	for _, tc := range normCases {
+		if got := normalizeVersionString(tc.in); got != tc.want {
+			t.Errorf("normalizeVersionString(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+
+	fixedCases := []struct {
+		ms, ls uint32
+		want   string
+	}{
+		{0, 0, ""},
+		{(1 << 16) | 0, 0, "1.0"},
+		{(24 << 16) | 8, 0, "24.8"},
+		{(1 << 16) | 2, (3 << 16) | 0, "1.2.3"},
+		{(1 << 16) | 2, (3 << 16) | 4, "1.2.3.4"},
+		{(1 << 16) | 0, (0 << 16) | 5, "1.0.0.5"},
+	}
+	for _, tc := range fixedCases {
+		if got := formatFixedVersion(tc.ms, tc.ls); got != tc.want {
+			t.Errorf("formatFixedVersion(%#x, %#x) = %q, want %q", tc.ms, tc.ls, got, tc.want)
+		}
 	}
 }
 

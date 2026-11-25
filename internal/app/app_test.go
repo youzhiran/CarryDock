@@ -881,3 +881,174 @@ func TestSettingsLogLevelStrategySwitch(t *testing.T) {
 		t.Fatalf("expected log level error, got state=%q stored=%q", a.setLogLevel, a.settingsSvc.GetLogLevel())
 	}
 }
+
+func TestSoftwareNativeVersionDisplaySearchAndModals(t *testing.T) {
+	// 1. 验证 formatVersionBadge 格式化与超长截断
+	if got := formatVersionBadge(""); got != "" {
+		t.Fatalf("formatVersionBadge(\"\") = %q, want empty", got)
+	}
+	if got := formatVersionBadge("24.08"); got != "v24.08" {
+		t.Fatalf("formatVersionBadge(\"24.08\") = %q, want v24.08", got)
+	}
+	if got := formatVersionBadge("v1.2.3"); got != "v1.2.3" {
+		t.Fatalf("formatVersionBadge(\"v1.2.3\") = %q, want v1.2.3", got)
+	}
+	longVer := "1.2.3.45678901234567890123456"
+	gotLong := formatVersionBadge(longVer)
+	if len([]rune(gotLong)) != 24 || !strings.HasSuffix(gotLong, "…") {
+		t.Fatalf("formatVersionBadge(long) = %q (runes=%d), want 24 runes ending with …", gotLong, len([]rune(gotLong)))
+	}
+
+	a := newTestApp(t)
+	exe7z := filepath.Clean(`c:\apps\7z\7zfm.exe`)
+	dir7z := filepath.Clean(`c:\apps\7z`)
+	exeMissing := filepath.Clean(`c:\apps\missing\app.exe`)
+	dirMissing := filepath.Clean(`c:\apps\missing`)
+	exeNoVer := filepath.Clean(`c:\apps\nover\tool.exe`)
+	dirNoVer := filepath.Clean(`c:\apps\nover`)
+	exeIncoming := filepath.Clean(`c:\downloads\7zfm_new.exe`)
+
+	a.exeCache[strings.ToLower(exe7z)] = &exeMeta{desc: "7-Zip File Manager", version: "24.08"}
+	a.altCache[strings.ToLower(dir7z)] = &altExecEntry{paths: []string{exe7z}}
+	a.exeCache[strings.ToLower(exeMissing)] = &exeMeta{desc: "MissingApp", version: "9.9.9"}
+	a.exeCache[strings.ToLower(exeNoVer)] = &exeMeta{desc: "NoVerTool", version: ""}
+	a.altCache[strings.ToLower(dirNoVer)] = &altExecEntry{paths: []string{exeNoVer}}
+	a.exeCache[strings.ToLower(exeIncoming)] = &exeMeta{desc: "7-Zip File Manager", version: "24.09"}
+
+	a.managed = []model.Software{
+		{ID: "m1", Name: "7-Zip", Status: model.StatusManaged, InstallExists: true, ExecutablePath: exe7z, InstallPath: dir7z},
+		{ID: "m2", Name: "MissingApp", Status: model.StatusManaged, InstallExists: false, ExecutablePath: exeMissing, InstallPath: dirMissing},
+		{ID: "m3", Name: "NoVerTool", Status: model.StatusManaged, InstallExists: true, ExecutablePath: exeNoVer, InstallPath: dirNoVer},
+	}
+
+	tt := ui.NewTester(a.View, 1020, 720)
+
+	// 2. 列表视图展示 v24.08，且目录缺失项不展示版本号
+	if !tt.HasText("v24.08") {
+		t.Fatalf("expected version badge v24.08 in list view, texts: %q", tt.Texts())
+	}
+	if tt.HasText("v9.9.9") {
+		t.Fatalf("expected missing install directory not to show version v9.9.9, texts: %q", tt.Texts())
+	}
+
+	// 3. 网格视图正确渲染版本号且不超出卡片边界
+	clickLabel(t, tt, "网格视图")
+	rVer, ok := tt.Find("v24.08")
+	if !ok {
+		t.Fatalf("expected version v24.08 in grid view, texts: %q", tt.Texts())
+	}
+	if rVer.W > 152 {
+		t.Fatalf("grid card version overflowed card inner width: %+v", rVer)
+	}
+
+	// 4. 支持按版本号搜索（不带 v 与带 v）
+	a.searchQuery = "24.08"
+	tt.Frame()
+	if !tt.HasText("7-Zip File Manager") || tt.HasText("NoVerTool") {
+		t.Fatalf("expected search by '24.08' to match only 7-Zip File Manager, texts: %q", tt.Texts())
+	}
+	a.searchQuery = "v24.08"
+	tt.Frame()
+	if !tt.HasText("7-Zip File Manager") || tt.HasText("NoVerTool") {
+		t.Fatalf("expected search by 'v24.08' to match only 7-Zip File Manager, texts: %q", tt.Texts())
+	}
+	a.searchQuery = ""
+	tt.Frame()
+
+	// 5. 重复覆盖弹窗：归档更新显示当前软件版本；可执行文件更新显示版本对比与相同版本提示
+	a.dupModalOpen = true
+	a.dupInfo = &software.DuplicateInfo{
+		SourceType:              software.SourceArchive,
+		SourcePath:              `c:\downloads\7z2409-x64.zip`,
+		IntendedName:            "7-Zip",
+		ExistingManagedSoftware: &a.managed[0],
+	}
+	tt.Frame()
+	if !tt.HasText("当前软件版本：v24.08") {
+		t.Fatalf("expected current version in archive duplicate modal, texts: %q", tt.Texts())
+	}
+
+	a.dupInfo = &software.DuplicateInfo{
+		SourceType:              software.SourceExecutable,
+		SourcePath:              exeIncoming,
+		IntendedName:            "7-Zip",
+		ExistingManagedSoftware: &a.managed[0],
+	}
+	tt.Frame()
+	if !tt.HasText("版本对比：v24.08 → v24.09") {
+		t.Fatalf("expected version comparison in executable duplicate modal, texts: %q", tt.Texts())
+	}
+
+	a.exeCache[strings.ToLower(exeIncoming)].version = "24.08"
+	tt.Frame()
+	if !tt.HasText("版本对比：v24.08 → v24.08（版本相同）") {
+		t.Fatalf("expected same version suffix in duplicate modal, texts: %q", tt.Texts())
+	}
+	a.dupModalOpen = false
+
+	// 6. 选择主程序弹窗渲染候选程序版本号
+	a.selectExeOpen = true
+	a.selectExeMode = "change"
+	a.selectExePaths = []string{exe7z, exeNoVer}
+	a.selectExeChoice = exe7z
+	tt.Frame()
+	if !tt.HasText("v24.08") {
+		t.Fatalf("expected candidate version badge in select executable modal, texts: %q", tt.Texts())
+	}
+	a.selectExeOpen = false
+
+	// 7. 开发者选项图标提取测试弹窗渲染文件版本
+	imgSrc := image.NewNRGBA(image.Rect(0, 0, 16, 16))
+	var pngBuf bytes.Buffer
+	if err := png.Encode(&pngBuf, imgSrc); err != nil {
+		t.Fatal(err)
+	}
+	bmp, err := ui.DecodeBitmap(pngBuf.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.devIconPath = exe7z
+	a.devIconDesc = "7-Zip File Manager"
+	a.devIconVersion = "24.08"
+	a.devIconBmp = bmp
+	a.devIconModalOpen = true
+	tt.Frame()
+	if !tt.HasText("文件版本：24.08") {
+		t.Fatalf("expected file version in dev icon test modal, texts: %q", tt.Texts())
+	}
+	a.devIconModalOpen = false
+
+	// 8. 发现新版本替换旧版本弹窗与降级提示渲染
+	a.dupModalOpen = true
+	a.dupRename = "Everything-1.4.1.1026"
+	a.dupInfo = &software.DuplicateInfo{
+		SourceType:              software.SourceArchive,
+		SourcePath:              `c:\downloads\Everything-1.4.1.1026.x64.zip`,
+		IntendedName:            "Everything-1.4.1.1026",
+		TargetInstallPath:       filepath.Clean(`c:\apps\Everything-1.4.1.1026`),
+		InstallDirExists:        true,
+		ExistingManagedSoftware: &a.managed[0],
+		IsVersionUpdate:         true,
+		TargetPathCollides:      false,
+		CurrentVersion:          "1.4.1.1024",
+		IncomingVersion:         "1.4.1.1026",
+	}
+	tt.Frame()
+	for _, want := range []string{
+		"发现新版本",
+		"版本对比：v1.4.1.1024 → v1.4.1.1026",
+		"替换旧版本",
+		"备份并替换",
+		"保留旧版并添加",
+	} {
+		if !tt.HasText(want) {
+			t.Fatalf("expected %q in version update modal, texts: %q", want, tt.Texts())
+		}
+	}
+
+	a.dupInfo.IncomingVersion = "1.4.1.1020"
+	tt.Frame()
+	if !tt.HasText("检测到已安装软件") || !tt.HasText("版本对比：v1.4.1.1024 → v1.4.1.1020（低于当前版本）") {
+		t.Fatalf("expected downgrade prompt in replace modal, texts: %q", tt.Texts())
+	}
+}

@@ -58,7 +58,7 @@ func (a *App) startDevIconTest() {
 			return
 		}
 		target := paths[0]
-		desc := winutil.GetFileDescription(target)
+		meta := winutil.GetFileMetadata(target)
 		var pngBytes []byte
 		if b, err := winutil.ExtractIconPNG(target, 128); err == nil && len(b) > 0 {
 			pngBytes = b
@@ -75,7 +75,8 @@ func (a *App) startDevIconTest() {
 				return
 			}
 			a.devIconPath = target
-			a.devIconDesc = desc
+			a.devIconDesc = meta.Description
+			a.devIconVersion = meta.Version
 			a.devIconBmp = bmp
 			a.devIconModalOpen = true
 		})

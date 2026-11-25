@@ -112,6 +112,20 @@ func pillBadge(c *ui.Context, label string, bg, fg ui.Color) {
 	})
 }
 
+// versionPillBadge 渲染紧凑的软件原生版本胶囊标签，支持悬停显示完整版本号。
+func versionPillBadge(c *ui.Context, label, tooltip string) {
+	t := c.Theme()
+	p := paletteOf(t)
+	badge := ui.Row(c).Padding(1, 7).Radius(999).Background(p.subtleBg).
+		Border(1, p.cardBorder).Center().Shrink(0)
+	if tooltip != "" {
+		badge.Tooltip(tooltip)
+	}
+	badge.Children(func() {
+		ui.Text(c, label).FontSize(11).TextColor(t.TextMuted).SingleLine()
+	})
+}
+
 // filterChip 渲染筛选栏胶囊按钮（支持激活态高亮与可选计数徽章）。
 func filterChip(c *ui.Context, key, label string, count int, active bool) ui.Element {
 	t := c.Theme()
