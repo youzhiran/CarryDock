@@ -21,10 +21,12 @@ import (
 )
 
 func (a *App) loadSettingsSnapshot() {
-	a.setSavedInstallPath = a.settingsSvc.GetInstallPath()
+	a.setUseRelativePaths = a.settingsSvc.GetUseRelativePaths()
+
+	a.setSavedInstallPath = a.settingsSvc.GetRawInstallPath()
 	a.setInstallPath = a.setSavedInstallPath
 
-	a.setSavedArchivePath = a.settingsSvc.GetArchivePath()
+	a.setSavedArchivePath = a.settingsSvc.GetRawArchivePath()
 	a.setArchivePath = a.setSavedArchivePath
 
 	a.setConfigFilePath = a.settingsSvc.ConfigFilePath()
@@ -70,11 +72,19 @@ func (a *App) loadSettingsSnapshot() {
 }
 
 func (a *App) installPathDirty() bool {
-	return strings.TrimSpace(a.setInstallPath) != a.setSavedInstallPath
+	cur := strings.TrimSpace(a.setInstallPath)
+	if a.setUseRelativePaths && cur != "" {
+		cur, _ = a.settingsSvc.FormatPathForStorage(cur)
+	}
+	return cur != a.setSavedInstallPath
 }
 
 func (a *App) archivePathDirty() bool {
-	return strings.TrimSpace(a.setArchivePath) != a.setSavedArchivePath
+	cur := strings.TrimSpace(a.setArchivePath)
+	if a.setUseRelativePaths && cur != "" {
+		cur, _ = a.settingsSvc.FormatPathForStorage(cur)
+	}
+	return cur != a.setSavedArchivePath
 }
 
 func (a *App) archiveHandlingDirty() bool {
@@ -103,9 +113,14 @@ func (a *App) saveInstallPath() {
 		a.logAndToastError(a.tr().Error, err)
 		return
 	}
-	a.setSavedInstallPath = val
-	a.setInstallPath = val
-	logger.Info("已保存安装目录配置: %s", val)
+	stored := a.settingsSvc.GetRawInstallPath()
+	a.setSavedInstallPath = stored
+	a.setInstallPath = stored
+	logger.Info("已保存安装目录配置: %s", stored)
+	if a.setUseRelativePaths && stored != "" && settings.IsAbsOrHasVolume(stored) {
+		a.toast(a.tr().Warning, a.tr().SettingsRelativeCrossDriveToast)
+		return
+	}
 	a.toast(a.tr().Success, a.tr().SettingsInstallPathSaved)
 }
 
@@ -115,9 +130,14 @@ func (a *App) saveArchivePath() {
 		a.logAndToastError(a.tr().Error, err)
 		return
 	}
-	a.setSavedArchivePath = val
-	a.setArchivePath = val
-	logger.Info("已保存归档目录配置: %s", val)
+	stored := a.settingsSvc.GetRawArchivePath()
+	a.setSavedArchivePath = stored
+	a.setArchivePath = stored
+	logger.Info("已保存归档目录配置: %s", stored)
+	if a.setUseRelativePaths && stored != "" && settings.IsAbsOrHasVolume(stored) {
+		a.toast(a.tr().Warning, a.tr().SettingsRelativeCrossDriveToast)
+		return
+	}
 	a.toast(a.tr().Success, a.tr().SettingsArchivePathSaved)
 }
 
@@ -189,7 +209,10 @@ func (a *App) saveAllSettings() bool {
 func (a *App) pickDirectoryInto(target *string, onPicked func()) {
 	win := a.win
 	title := a.tr().Browse
-	defaultPath := strings.TrimSpace(*target)
+	defaultPath := a.settingsSvc.ResolvePath(strings.TrimSpace(*target))
+	if defaultPath == "" && a.setUseRelativePaths {
+		defaultPath = a.settingsSvc.BaseDir()
+	}
 	go func() {
 		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
 			Parent:      win,
@@ -204,6 +227,46 @@ func (a *App) pickDirectoryInto(target *string, onPicked func()) {
 			*target = paths[0]
 			if onPicked != nil {
 				onPicked()
+			}
+		})
+	}()
+}
+
+func (a *App) applyRelativePathsMode(enabled bool) {
+	go func() {
+		summary, err := a.softwareSvc.SetRelativePathsMode(enabled)
+		a.update(func() {
+			tr := a.tr()
+			if err != nil {
+				a.setUseRelativePaths = a.settingsSvc.GetUseRelativePaths()
+				a.logAndToastError(tr.Error, err)
+				return
+			}
+			a.loadSettingsSnapshot()
+			a.reloadHome()
+			a.reloadArchives()
+
+			totalSkipped := summary.SettingsSkipped + summary.SoftwareSkipped
+			if enabled && totalSkipped > 0 {
+				a.showInfo(
+					tr.SettingsRelativePartialTitle,
+					i18n.Fmt(tr.SettingsRelativePartialBodyFmt, summary.SettingsSkipped, summary.SoftwareSkipped),
+				)
+				return
+			}
+			totalConverted := summary.SettingsConverted + summary.SoftwareConverted
+			if enabled {
+				if totalConverted > 0 {
+					a.toast(tr.Success, i18n.Fmt(tr.SettingsRelativeEnabledToastFmt, summary.SettingsConverted, summary.SoftwareConverted))
+				} else {
+					a.toast(tr.Success, tr.SettingsRelativeEnabledSimple)
+				}
+			} else {
+				if totalConverted > 0 {
+					a.toast(tr.Success, i18n.Fmt(tr.SettingsRelativeDisabledToastFmt, summary.SettingsConverted, summary.SoftwareConverted))
+				} else {
+					a.toast(tr.Success, tr.SettingsRelativeDisabledSimple)
+				}
 			}
 		})
 	}()
@@ -239,16 +302,43 @@ func (a *App) settingsView(c *ui.Context) {
 
 				// 1. 存储设置
 				settingsCard(c, iconHardDrive, tr.SettingsStorage, func() {
+					// 相对路径（U 盘 / 移动硬盘模式）
+					ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+						ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+							ui.Text(c, tr.SettingsUseRelativePaths).FontSize(13).Bold()
+							ui.Text(c, tr.SettingsUseRelativePathsDesc).FontSize(12).TextColor(t.TextMuted)
+						})
+						if ui.Switch(c.Key("set-relative-paths"), &a.setUseRelativePaths).Label(tr.SettingsUseRelativePaths).Changed() {
+							a.applyRelativePathsMode(a.setUseRelativePaths)
+						}
+					})
+					if a.setUseRelativePaths {
+						ui.Row(c).Padding(8, 12).Radius(8).Background(p.subtleBg).Border(1, p.cardBorder).
+							Gap(10).AlignItems(ui.Center).Children(func() {
+							ui.Text(c, i18n.Fmt(tr.SettingsRelativeBaseDirFmt, a.settingsSvc.BaseDir())).
+								FontSize(11).TextColor(t.TextMuted).Selectable().Grow(1).MinWidth(0)
+							if ui.Button(c.Key("set-relative-sync"), tr.SettingsRelativeConvertNow).Clicked() {
+								a.applyRelativePathsMode(true)
+							}
+						})
+					}
+
+					ui.Divider(c).Background(p.cardBorder)
+
 					// 安装路径
+					installHolder := tr.SettingsInstallPathHolder
+					if a.setUseRelativePaths {
+						installHolder = tr.SettingsRelativeInstallHolder
+					}
 					ui.Column(c).Gap(6).Children(func() {
 						ui.Text(c, tr.SettingsInstallPath).FontSize(13).Bold()
 						ui.Row(c).Gap(8).Children(func() {
 							in := ui.TextInput(c.Key("set-install"), &a.setInstallPath).
-								Placeholder(tr.SettingsInstallPathHolder).Grow(1).MinWidth(0)
+								Placeholder(installHolder).Grow(1).MinWidth(0)
 							if in.Changed() {
 								val := strings.TrimSpace(a.setInstallPath)
 								if err := a.settingsSvc.SaveInstallPath(val); err == nil {
-									a.setSavedInstallPath = val
+									a.setSavedInstallPath = a.settingsSvc.GetRawInstallPath()
 								}
 							}
 							if in.Submitted() {
@@ -258,20 +348,32 @@ func (a *App) settingsView(c *ui.Context) {
 								a.pickDirectoryInto(&a.setInstallPath, a.saveInstallPath)
 							}
 						})
+						if trimmedInstall := strings.TrimSpace(a.setInstallPath); trimmedInstall != "" {
+							if !settings.IsAbsOrHasVolume(trimmedInstall) {
+								ui.Text(c, i18n.Fmt(tr.SettingsRelativeResolvedPathFmt, a.settingsSvc.ResolvePath(trimmedInstall))).
+									FontSize(11).TextColor(t.TextMuted).Selectable()
+							} else if a.setUseRelativePaths && !a.settingsSvc.CanRelativize(trimmedInstall) {
+								ui.Text(c, tr.SettingsRelativeCrossDriveHint).FontSize(11).TextColor(t.Warning)
+							}
+						}
 					})
 
 					ui.Divider(c).Background(p.cardBorder)
 
 					// 归档路径
+					archiveHolder := tr.SettingsArchivePathHolder
+					if a.setUseRelativePaths {
+						archiveHolder = tr.SettingsRelativeArchiveHolder
+					}
 					ui.Column(c).Gap(6).Children(func() {
 						ui.Text(c, tr.SettingsArchivePath).FontSize(13).Bold()
 						ui.Row(c).Gap(8).Children(func() {
 							in := ui.TextInput(c.Key("set-archive"), &a.setArchivePath).
-								Placeholder(tr.SettingsArchivePathHolder).Grow(1).MinWidth(0)
+								Placeholder(archiveHolder).Grow(1).MinWidth(0)
 							if in.Changed() {
 								val := strings.TrimSpace(a.setArchivePath)
 								if err := a.settingsSvc.SaveArchivePath(val); err == nil {
-									a.setSavedArchivePath = val
+									a.setSavedArchivePath = a.settingsSvc.GetRawArchivePath()
 								}
 							}
 							if in.Submitted() {
@@ -281,6 +383,14 @@ func (a *App) settingsView(c *ui.Context) {
 								a.pickDirectoryInto(&a.setArchivePath, a.saveArchivePath)
 							}
 						})
+						if trimmedArchive := strings.TrimSpace(a.setArchivePath); trimmedArchive != "" {
+							if !settings.IsAbsOrHasVolume(trimmedArchive) {
+								ui.Text(c, i18n.Fmt(tr.SettingsRelativeResolvedPathFmt, a.settingsSvc.ResolvePath(trimmedArchive))).
+									FontSize(11).TextColor(t.TextMuted).Selectable()
+							} else if a.setUseRelativePaths && !a.settingsSvc.CanRelativize(trimmedArchive) {
+								ui.Text(c, tr.SettingsRelativeCrossDriveHint).FontSize(11).TextColor(t.Warning)
+							}
+						}
 					})
 
 					ui.Divider(c).Background(p.cardBorder)

@@ -118,6 +118,7 @@ type App struct {
 	backupScrollState    ui.ScrollState
 
 	// 设置页表单状态
+	setUseRelativePaths     bool
 	setInstallPath          string
 	setSavedInstallPath     string
 	setArchivePath          string

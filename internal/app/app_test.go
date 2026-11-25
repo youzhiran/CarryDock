@@ -1255,3 +1255,54 @@ func TestSettingsCheckUpdateOnStartupToggle(t *testing.T) {
 	}
 	waitPersisted(true)
 }
+
+func TestSettingsRelativePathsModeToggleAndPreview(t *testing.T) {
+	base := filepath.Join(t.TempDir(), "CarryDockUSB")
+	installDir := filepath.Join(base, "Apps")
+	if err := os.MkdirAll(installDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	store := storage.NewAtBaseDir(base)
+	setSvc := settings.NewService(store)
+	if err := setSvc.SaveInstallPath(installDir); err != nil {
+		t.Fatal(err)
+	}
+	swSvc := software.NewService(setSvc)
+	a := New(setSvc, swSvc, updater.NewService(), nil)
+	a.page = pageSettings
+
+	tt := ui.NewTester(a.View, 1020, 760)
+	if !tt.HasText("相对路径模式（U 盘 / 移动硬盘）") {
+		t.Fatalf("expected relative path mode toggle in Settings view, texts: %q", tt.Texts())
+	}
+
+	sw, ok := tt.AccessByRole(ui.RoleSwitch, "相对路径模式（U 盘 / 移动硬盘）")
+	if !ok {
+		t.Fatalf("expected RoleSwitch for relative path mode")
+	}
+	tt.ClickAt(sw.Bounds.X+sw.Bounds.W/2, sw.Bounds.Y+sw.Bounds.H/2)
+	tt.Frame()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if a.settingsSvc.GetUseRelativePaths() && a.setInstallPath == "."+string(filepath.Separator)+"Apps" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !a.settingsSvc.GetUseRelativePaths() {
+		t.Fatalf("expected GetUseRelativePaths() = true")
+	}
+	if a.setInstallPath != "."+string(filepath.Separator)+"Apps" {
+		t.Fatalf("expected setInstallPath converted to .\\Apps, got %q", a.setInstallPath)
+	}
+
+	tt.Frame()
+	if !tt.HasText("基准目录：" + base) {
+		t.Fatalf("expected base directory hint, texts: %q", tt.Texts())
+	}
+	if !tt.HasText("实际路径：" + installDir) {
+		t.Fatalf("expected resolved install path preview, texts: %q", tt.Texts())
+	}
+}

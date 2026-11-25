@@ -2,7 +2,9 @@ package settings
 
 import (
 	"path/filepath"
+	"runtime"
 	"slices"
+	"strings"
 	"testing"
 
 	"carrydock/internal/storage"
@@ -248,5 +250,146 @@ func TestCheckUpdateOnStartupSetting(t *testing.T) {
 	}
 	if !svc.GetCheckUpdateOnStartup() {
 		t.Fatalf("expected CheckUpdateOnStartup to be true after saving true")
+	}
+}
+
+func TestPortablePathHelpers(t *testing.T) {
+	base := filepath.Join(t.TempDir(), "CarryDock")
+	sub := filepath.Join(base, "Apps", "7-Zip")
+	parent := filepath.Join(filepath.Dir(base), "SharedApps")
+
+	if IsAbsOrHasVolume("") || IsAbsOrHasVolume(`.\Apps`) || IsAbsOrHasVolume(`..\Shared`) || IsAbsOrHasVolume(".") {
+		t.Fatalf("expected relative paths not to be treated as absolute")
+	}
+	if !IsAbsOrHasVolume(base) {
+		t.Fatalf("expected %q to be treated as absolute", base)
+	}
+	if runtime.GOOS == "windows" {
+		if !IsAbsOrHasVolume(`D:Apps`) || !IsAbsOrHasVolume(`\RootDir`) || !IsAbsOrHasVolume(`\\server\share\dir`) {
+			t.Fatalf("expected drive-relative, root-slash, and UNC paths to be treated as non-relative on Windows")
+		}
+	}
+
+	if got := ResolvePath(base, `.\Apps/7-Zip`); got != sub {
+		t.Fatalf("ResolvePath(%q, .\\Apps/7-Zip) = %q, want %q", base, got, sub)
+	}
+	if got := ResolvePath(base, "."); got != base {
+		t.Fatalf("ResolvePath(%q, .) = %q, want %q", base, got, base)
+	}
+	if got := ResolvePath(base, sub); got != sub {
+		t.Fatalf("ResolvePath absolute = %q, want %q", got, sub)
+	}
+
+	if rel, ok := ToRelativePath(base, sub); !ok || rel != "."+string(filepath.Separator)+filepath.Join("Apps", "7-Zip") {
+		t.Fatalf("ToRelativePath(sub) = (%q, %v)", rel, ok)
+	}
+	if rel, ok := ToRelativePath(base, base); !ok || rel != "." {
+		t.Fatalf("ToRelativePath(same) = (%q, %v), want (\".\", true)", rel, ok)
+	}
+	if rel, ok := ToRelativePath(base, parent); !ok || rel != ".."+string(filepath.Separator)+"SharedApps" {
+		t.Fatalf("ToRelativePath(parent) = (%q, %v)", rel, ok)
+	}
+
+	// Windows 盘符大小写差异与跨盘符回退校验
+	if runtime.GOOS == "windows" {
+		vol := filepath.VolumeName(base)
+		if len(vol) == 2 && vol[1] == ':' {
+			altVol := strings.ToLower(vol)
+			if altVol == vol {
+				altVol = strings.ToUpper(vol)
+			}
+			altSub := altVol + sub[len(vol):]
+			if rel, ok := ToRelativePath(base, altSub); !ok || rel != `.\Apps\7-Zip` {
+				t.Fatalf("ToRelativePath with diff drive case = (%q, %v), want (.\\Apps\\7-Zip, true)", rel, ok)
+			}
+
+			otherDrive := "Z:"
+			if strings.EqualFold(vol, "Z:") {
+				otherDrive = "Y:"
+			}
+			cross := otherDrive + `\External\Apps`
+			if CanRelativize(base, cross) {
+				t.Fatalf("expected CanRelativize(%q, %q) = false", base, cross)
+			}
+			if stored, isRel := FormatPathForMode(base, cross, true); isRel || stored != cross {
+				t.Fatalf("expected cross-drive fallback (%q, false), got (%q, %v)", cross, stored, isRel)
+			}
+		}
+	}
+}
+
+func TestApplyRelativePathsModeAndAlwaysResolveOnRead(t *testing.T) {
+	base := filepath.Join(t.TempDir(), "CarryDock")
+	store := storage.NewAtBaseDir(base)
+	svc := NewService(store)
+
+	absInstall := filepath.Join(base, "Portable")
+	absArchive := filepath.Join(base, "Archives")
+	absLog := filepath.Join(base, "logs", "custom.log")
+	if err := svc.SaveInstallPath(absInstall); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SaveArchivePath(absArchive); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SaveLogFilePath(absLog); err != nil {
+		t.Fatal(err)
+	}
+
+	// 开启相对路径模式，自动转换已设置路径
+	mig, err := svc.ApplyRelativePathsMode(true)
+	if err != nil {
+		t.Fatalf("ApplyRelativePathsMode(true) failed: %v", err)
+	}
+	if mig.Converted != 3 || len(mig.Unconvertible) != 0 {
+		t.Fatalf("unexpected migration result: %+v", mig)
+	}
+	if got := svc.GetRawInstallPath(); got != "."+string(filepath.Separator)+"Portable" {
+		t.Fatalf("GetRawInstallPath() = %q", got)
+	}
+	if got := svc.GetInstallPath(); got != absInstall {
+		t.Fatalf("GetInstallPath() = %q, want %q", got, absInstall)
+	}
+	if got := svc.GetRawArchivePath(); got != "."+string(filepath.Separator)+"Archives" {
+		t.Fatalf("GetRawArchivePath() = %q", got)
+	}
+	if got := svc.GetArchivePath(); got != absArchive {
+		t.Fatalf("GetArchivePath() = %q, want %q", got, absArchive)
+	}
+	if got := svc.GetRawLogFilePath(); got != "."+string(filepath.Separator)+filepath.Join("logs", "custom.log") {
+		t.Fatalf("GetRawLogFilePath() = %q", got)
+	}
+	if got := svc.GetLogFilePath(); got != absLog {
+		t.Fatalf("GetLogFilePath() = %q, want %q", got, absLog)
+	}
+
+	// 即使关闭开关，已有相对路径在读取时依然会被正确解析为绝对路径
+	if err := svc.SaveUseRelativePaths(false); err != nil {
+		t.Fatal(err)
+	}
+	if got := svc.GetInstallPath(); got != absInstall {
+		t.Fatalf("expected GetInstallPath to resolve relative path even when toggle is off, got %q", got)
+	}
+
+	// 完整关闭并还原为绝对路径，同时确认未设置的选填路径不会凭空写入
+	store2 := storage.NewAtBaseDir(filepath.Join(t.TempDir(), "CarryDock2"))
+	svc2 := NewService(store2)
+	_ = svc2.SaveInstallPath(filepath.Join(store2.BaseDir(), "Apps"))
+	if _, err := svc2.ApplyRelativePathsMode(true); err != nil {
+		t.Fatal(err)
+	}
+	if svc2.GetRawArchivePath() != "" || svc2.GetRawLogFilePath() != "" {
+		t.Fatalf("expected unset archive/log paths to stay empty")
+	}
+
+	migOff, err := svc.ApplyRelativePathsMode(false)
+	if err != nil {
+		t.Fatalf("ApplyRelativePathsMode(false) failed: %v", err)
+	}
+	if migOff.Converted != 3 {
+		t.Fatalf("expected 3 restored paths, got %+v", migOff)
+	}
+	if got := svc.GetRawInstallPath(); got != absInstall {
+		t.Fatalf("expected restored absolute install path %q, got %q", absInstall, got)
 	}
 }

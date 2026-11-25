@@ -25,6 +25,7 @@ const (
 	KeyThemeMode               = "theme_mode"
 	KeyThemeColor              = "theme_color"
 	KeyCheckUpdateOnStartup    = "check_update_on_startup"
+	KeyUseRelativePaths        = "use_relative_paths"
 
 	DefaultExecutableSearchMaxDepth = 3
 	MinSearchDepth                  = 1
@@ -35,6 +36,7 @@ const (
 	DefaultLanguage                 = "zh_CN"
 	DefaultFontFamily               = ""
 	DefaultCheckUpdateOnStartup     = true
+	DefaultUseRelativePaths         = false
 
 	LogLevelDebug   = "debug"
 	LogLevelInfo    = "info"
@@ -182,6 +184,12 @@ func FilterSystemFonts(raw []string) []string {
 	return out
 }
 
+// SettingsPathMigration 描述切换相对/绝对路径模式时配置项路径的转换统计。
+type SettingsPathMigration struct {
+	Converted     int
+	Unconvertible []string
+}
+
 // Service 封装应用各项设置的读取与持久化逻辑，与原版 app_data.json 字段保持一致。
 type Service struct {
 	store *storage.JSONStorage
@@ -287,27 +295,112 @@ func IsPresetThemeColor(color string) bool {
 	return slices.Contains(PresetThemeColors, norm)
 }
 
+// BaseDir 返回相对路径解析所锚定的程序根目录（CarryDock.exe 所在目录）。
+func (s *Service) BaseDir() string {
+	return s.store.BaseDir()
+}
+
+// ResolvePath 将原始路径（绝对或相对）解析为基于程序根目录的运行时路径。
+func (s *Service) ResolvePath(raw string) string {
+	return ResolvePath(s.BaseDir(), raw)
+}
+
+// CanRelativize 判断给定路径是否可转换为相对于程序根目录的路径。
+func (s *Service) CanRelativize(raw string) bool {
+	return CanRelativize(s.BaseDir(), raw)
+}
+
+// FormatPathForStorage 按当前相对路径模式格式化待保存的路径字符串。
+func (s *Service) FormatPathForStorage(raw string) (string, bool) {
+	return FormatPathForMode(s.BaseDir(), raw, s.GetUseRelativePaths())
+}
+
 // ConfigFilePath 返回配置文件绝对路径。
 func (s *Service) ConfigFilePath() string {
 	return s.store.FilePath()
 }
 
-func (s *Service) GetInstallPath() string {
+func (s *Service) GetUseRelativePaths() bool {
+	v, ok := s.store.GetBool(KeyUseRelativePaths)
+	if !ok {
+		return DefaultUseRelativePaths
+	}
+	return v
+}
+
+func (s *Service) SaveUseRelativePaths(enabled bool) error {
+	return s.store.Set(KeyUseRelativePaths, enabled)
+}
+
+// ApplyRelativePathsMode 切换相对路径模式，并批量转换 app_data.json 中已配置的安装/归档/日志路径。
+func (s *Service) ApplyRelativePathsMode(enabled bool) (SettingsPathMigration, error) {
+	var mig SettingsPathMigration
+	updates := map[string]any{
+		KeyUseRelativePaths: enabled,
+	}
+
+	convertKey := func(key, raw string) {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			return
+		}
+		formatted, isRel := FormatPathForMode(s.BaseDir(), trimmed, enabled)
+		updates[key] = formatted
+		if enabled && !isRel {
+			mig.Unconvertible = append(mig.Unconvertible, formatted)
+			return
+		}
+		if formatted != trimmed {
+			mig.Converted++
+		}
+	}
+
+	convertKey(KeyInstallPath, s.GetRawInstallPath())
+	convertKey(KeyArchivePath, s.GetRawArchivePath())
+	if rawLog, hasLog := s.store.GetString(KeyLogFilePath); hasLog && strings.TrimSpace(rawLog) != "" {
+		convertKey(KeyLogFilePath, rawLog)
+	}
+
+	if err := s.store.SetBatch(updates); err != nil {
+		return SettingsPathMigration{}, err
+	}
+	return mig, nil
+}
+
+// GetRawInstallPath 返回配置文件中保存的原始安装目录字符串（未解析相对路径）。
+func (s *Service) GetRawInstallPath() string {
 	v, _ := s.store.GetString(KeyInstallPath)
 	return strings.TrimSpace(v)
 }
 
-func (s *Service) SaveInstallPath(path string) error {
-	return s.store.Set(KeyInstallPath, strings.TrimSpace(path))
+func (s *Service) GetInstallPath() string {
+	return s.ResolvePath(s.GetRawInstallPath())
 }
 
-func (s *Service) GetArchivePath() string {
+func (s *Service) SaveInstallPath(path string) error {
+	trimmed := strings.TrimSpace(path)
+	if trimmed != "" && s.GetUseRelativePaths() {
+		trimmed, _ = FormatPathForMode(s.BaseDir(), trimmed, true)
+	}
+	return s.store.Set(KeyInstallPath, trimmed)
+}
+
+// GetRawArchivePath 返回配置文件中保存的原始归档目录字符串（未解析相对路径）。
+func (s *Service) GetRawArchivePath() string {
 	v, _ := s.store.GetString(KeyArchivePath)
 	return strings.TrimSpace(v)
 }
 
+func (s *Service) GetArchivePath() string {
+	return s.ResolvePath(s.GetRawArchivePath())
+}
+
 func (s *Service) SaveArchivePath(path string) error {
-	return s.store.Set(KeyArchivePath, strings.TrimSpace(path))
+	trimmed := strings.TrimSpace(path)
+	if trimmed != "" && s.GetUseRelativePaths() {
+		trimmed, _ = FormatPathForMode(s.BaseDir(), trimmed, true)
+	}
+	return s.store.Set(KeyArchivePath, trimmed)
 }
 
 func (s *Service) GetFontFamily() string {
@@ -402,16 +495,28 @@ func (s *Service) SaveEnableFileLogging(enabled bool) error {
 	return s.store.Set(KeyEnableFileLogging, enabled)
 }
 
-func (s *Service) GetLogFilePath() string {
+// GetRawLogFilePath 返回配置文件中显式保存的日志路径（未配置时返回空字符串）。
+func (s *Service) GetRawLogFilePath() string {
 	v, ok := s.store.GetString(KeyLogFilePath)
-	if ok && strings.TrimSpace(v) != "" {
-		return strings.TrimSpace(v)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(v)
+}
+
+func (s *Service) GetLogFilePath() string {
+	if raw := s.GetRawLogFilePath(); raw != "" {
+		return s.ResolvePath(raw)
 	}
 	return filepath.Join(filepath.Dir(s.store.FilePath()), "carrydock.log")
 }
 
 func (s *Service) SaveLogFilePath(path string) error {
-	return s.store.Set(KeyLogFilePath, strings.TrimSpace(path))
+	trimmed := strings.TrimSpace(path)
+	if trimmed != "" && s.GetUseRelativePaths() {
+		trimmed, _ = FormatPathForMode(s.BaseDir(), trimmed, true)
+	}
+	return s.store.Set(KeyLogFilePath, trimmed)
 }
 
 func (s *Service) GetLogLevel() string {

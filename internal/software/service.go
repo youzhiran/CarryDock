@@ -121,6 +121,16 @@ type BatchArchiveSummary struct {
 	Suggestions     []ArchiveAssociationSuggestion
 }
 
+// PathMigrationSummary 描述切换或同步相对路径模式时对配置及软件列表路径的转换统计。
+type PathMigrationSummary struct {
+	UseRelative       bool
+	SettingsConverted int
+	SettingsSkipped   int
+	SoftwareCount     int
+	SoftwareConverted int
+	SoftwareSkipped   int
+}
+
 // Service 封装绿驿管家的核心软件托管、解压、备份、还原、排序与归档管理逻辑。
 type Service struct {
 	settings *settings.Service
@@ -131,8 +141,7 @@ func NewService(settingsSvc *settings.Service) *Service {
 	return &Service{settings: settingsSvc}
 }
 
-// ResolveArchiveDirectoryPath 返回实际生效的归档根目录（若不存在会自动创建）。
-func (s *Service) ResolveArchiveDirectoryPath() (string, error) {
+func (s *Service) resolveArchiveDirectoryPathReadOnly() (string, error) {
 	archivePath := s.settings.GetArchivePath()
 	if archivePath == "" {
 		installPath := s.settings.GetInstallPath()
@@ -140,6 +149,15 @@ func (s *Service) ResolveArchiveDirectoryPath() (string, error) {
 			return "", ErrInstallPathNotConfigured
 		}
 		archivePath = filepath.Join(installPath, defaultArchiveFolderName)
+	}
+	return archivePath, nil
+}
+
+// ResolveArchiveDirectoryPath 返回实际生效的归档根目录（若不存在会自动创建）。
+func (s *Service) ResolveArchiveDirectoryPath() (string, error) {
+	archivePath, err := s.resolveArchiveDirectoryPathReadOnly()
+	if err != nil {
+		return "", err
 	}
 	if err := os.MkdirAll(archivePath, 0o755); err != nil {
 		return "", err
@@ -170,6 +188,123 @@ func (s *Service) softwareListPaths() (listPath, lockPath string, err error) {
 		nil
 }
 
+func (s *Service) resolveSoftwarePaths(sw *model.Software) {
+	if sw == nil {
+		return
+	}
+	sw.InstallPath = s.settings.ResolvePath(sw.InstallPath)
+	sw.ExecutablePath = s.settings.ResolvePath(sw.ExecutablePath)
+	sw.ArchivePath = s.settings.ResolvePath(sw.ArchivePath)
+	sw.BackupPath = s.settings.ResolvePath(sw.BackupPath)
+	sw.IconPath = s.settings.ResolvePath(sw.IconPath)
+}
+
+func (s *Service) formatSoftwarePathsForStorage(sw model.Software) (formatted model.Software, converted, skipped int) {
+	useRel := s.settings.GetUseRelativePaths()
+	baseDir := s.settings.BaseDir()
+	formatField := func(val string) string {
+		trimmed := strings.TrimSpace(val)
+		if trimmed == "" {
+			return ""
+		}
+		out, isRel := settings.FormatPathForMode(baseDir, trimmed, useRel)
+		if useRel {
+			if isRel {
+				converted++
+			} else {
+				skipped++
+			}
+		} else {
+			converted++
+		}
+		return out
+	}
+	sw.InstallPath = formatField(sw.InstallPath)
+	sw.ExecutablePath = formatField(sw.ExecutablePath)
+	sw.ArchivePath = formatField(sw.ArchivePath)
+	sw.BackupPath = formatField(sw.BackupPath)
+	sw.IconPath = formatField(sw.IconPath)
+	return sw, converted, skipped
+}
+
+// SetRelativePathsMode 切换相对路径（U 盘/便携）模式，并原子转换配置与 software_list.json 中的所有路径。
+func (s *Service) SetRelativePathsMode(enabled bool) (PathMigrationSummary, error) {
+	summary := PathMigrationSummary{UseRelative: enabled}
+
+	var loadedList []model.Software
+	rawByID := make(map[string]model.Software)
+	hasListFile := false
+	if archDir, err := s.resolveArchiveDirectoryPathReadOnly(); err == nil {
+		listPath := filepath.Join(archDir, softwareListFileName)
+		if fileExists(listPath) {
+			hasListFile = true
+			if raw, readErr := os.ReadFile(listPath); readErr == nil && len(strings.TrimSpace(string(raw))) > 0 {
+				var rawList []model.Software
+				if json.Unmarshal(raw, &rawList) == nil {
+					for _, item := range rawList {
+						rawByID[item.ID] = item
+					}
+				}
+			}
+			var loadErr error
+			loadedList, loadErr = s.LoadManagedSoftware()
+			if loadErr != nil {
+				return summary, loadErr
+			}
+		}
+	}
+
+	setMig, err := s.settings.ApplyRelativePathsMode(enabled)
+	if err != nil {
+		return summary, err
+	}
+	summary.SettingsConverted = setMig.Converted
+	summary.SettingsSkipped = len(setMig.Unconvertible)
+
+	if hasListFile {
+		summary.SoftwareCount = len(loadedList)
+		for _, item := range loadedList {
+			formatted, _, skipped := s.formatSoftwarePathsForStorage(item)
+			summary.SoftwareSkipped += skipped
+			if orig, ok := rawByID[item.ID]; ok {
+				if strings.TrimSpace(orig.InstallPath) != formatted.InstallPath {
+					summary.SoftwareConverted++
+				}
+				if strings.TrimSpace(orig.ExecutablePath) != formatted.ExecutablePath {
+					summary.SoftwareConverted++
+				}
+				if strings.TrimSpace(orig.ArchivePath) != formatted.ArchivePath {
+					summary.SoftwareConverted++
+				}
+				if strings.TrimSpace(orig.BackupPath) != formatted.BackupPath {
+					summary.SoftwareConverted++
+				}
+				if strings.TrimSpace(orig.IconPath) != formatted.IconPath {
+					summary.SoftwareConverted++
+				}
+			}
+		}
+		if err := s.saveManagedSoftware(loadedList); err != nil {
+			return summary, err
+		}
+	}
+	logger.Info(
+		"路径模式切换完成: relative=%v, 配置转换=%d(跳过=%d), 软件=%d(字段转换=%d, 跳过=%d)",
+		enabled,
+		summary.SettingsConverted,
+		summary.SettingsSkipped,
+		summary.SoftwareCount,
+		summary.SoftwareConverted,
+		summary.SoftwareSkipped,
+	)
+	return summary, nil
+}
+
+// SyncRelativePaths 按当前已开启/关闭的相对路径模式立即重新格式化全部配置与软件路径。
+func (s *Service) SyncRelativePaths() (PathMigrationSummary, error) {
+	return s.SetRelativePathsMode(s.settings.GetUseRelativePaths())
+}
+
 // LoadManagedSoftware 读取并按持久化 sortOrder 排序的已托管软件列表。
 // 修复了原版忽略 sortOrder 直接按数组索引覆盖的问题。
 func (s *Service) LoadManagedSoftware() ([]model.Software, error) {
@@ -194,6 +329,10 @@ func (s *Service) LoadManagedSoftware() ([]model.Software, error) {
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	for i := range list {
+		s.resolveSoftwarePaths(&list[i])
 	}
 
 	sort.SliceStable(list, func(i, j int) bool {
@@ -232,6 +371,7 @@ func (s *Service) saveManagedSoftware(list []model.Software) error {
 	})
 	for i := range managed {
 		managed[i].SortOrder = i
+		managed[i], _, _ = s.formatSoftwarePathsForStorage(managed[i])
 	}
 
 	listPath, lockPath, err := s.softwareListPaths()
@@ -269,8 +409,9 @@ func (s *Service) GetSoftwareList() ([]model.Software, error) {
 	}
 	backupDir := filepath.Join(archDir, backupSubfolderName)
 
-	// 扫描安装目录下未托管的一级子目录（使用完整路径比对归档目录，避免误跳过同名软件文件夹）。
+	// 扫描安装目录下未托管的一级子目录（使用完整路径比对归档目录及 CarryDock 自身 data 目录，避免误判）。
 	installPath := s.settings.GetInstallPath()
+	dataDir := filepath.Dir(s.settings.ConfigFilePath())
 	var unknownInstalls []model.Software
 	if installPath != "" && dirExists(installPath) {
 		entries, readErr := os.ReadDir(installPath)
@@ -284,7 +425,8 @@ func (s *Service) GetSoftwareList() ([]model.Software, error) {
 				if strings.EqualFold(name, defaultArchiveFolderName) ||
 					strings.HasPrefix(name, ".carrydock_staging_") ||
 					winutil.SamePath(fullPath, archDir) ||
-					(backupDir != "" && winutil.SamePath(fullPath, backupDir)) {
+					(backupDir != "" && winutil.SamePath(fullPath, backupDir)) ||
+					(dataDir != "" && winutil.SamePath(fullPath, dataDir)) {
 					continue
 				}
 				isManaged := false
@@ -1371,6 +1513,7 @@ func (s *Service) ArchiveInstallSubdirectories(
 		return nil, err
 	}
 
+	dataDir := filepath.Dir(s.settings.ConfigFilePath())
 	entries, err := os.ReadDir(installPath)
 	if err != nil {
 		return nil, err
@@ -1384,7 +1527,8 @@ func (s *Service) ArchiveInstallSubdirectories(
 		if strings.EqualFold(ent.Name(), defaultArchiveFolderName) ||
 			strings.HasPrefix(ent.Name(), ".carrydock_staging_") ||
 			winutil.SamePath(fullPath, archDir) ||
-			winutil.SamePath(fullPath, backupDir) {
+			winutil.SamePath(fullPath, backupDir) ||
+			(dataDir != "" && winutil.SamePath(fullPath, dataDir)) {
 			continue
 		}
 		dirs = append(dirs, fullPath)

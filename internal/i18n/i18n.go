@@ -257,106 +257,121 @@ type Strings struct {
 	DialogNoExecutable     string
 
 	// Settings
-	SettingsTitle                   string
-	SettingsDevHint                 string
-	SettingsDevHintContent          string
-	SettingsStorage                 string
-	SettingsInstallPath             string
-	SettingsInstallPathHolder       string
-	SettingsSaveInstallPath         string
-	SettingsInstallPathSaved        string
-	SettingsArchivePath             string
-	SettingsArchivePathHolder       string
-	SettingsSaveArchivePath         string
-	SettingsArchivePathSaved        string
-	SettingsConfigFilePath          string
-	SettingsOpenFileLocation        string
-	SettingsArchiveHandling         string
-	SettingsRemoveNested            string
-	SettingsRemoveNestedDesc        string
-	SettingsSaveArchiveHandling     string
-	SettingsArchiveHandlingSaved    string
-	SettingsTest7Zip                string
-	SettingsTest7ZipDesc            string
-	SettingsTest7ZipTitle           string
-	SettingsExecRecognition         string
-	SettingsMaxSearchDepth          string
-	SettingsExecExtensions          string
-	SettingsNoExtensions            string
-	SettingsSelectExtensions        string
-	SettingsSaveExecSettings        string
-	SettingsExecSettingsSaved       string
-	SettingsCommonExtensions        string
-	SettingsCustomExtensions        string
-	SettingsExtPlaceholder          string
-	SettingsExtInvalid              string
-	SettingsExtExists               string
-	SettingsExtSelectAtLeastOne     string
-	SettingsAppearance              string
-	SettingsAppFont                 string
-	SettingsSystemDefaultFont       string
-	SettingsPresetFonts             string
-	SettingsSystemFonts             string
-	SettingsFontUnavailable         string
-	SettingsFontDefaultDescFmt      string
-	SettingsFontDefaultDescPlain    string
-	SettingsFontMissingWarnFmt      string
-	SettingsFontLoading             string
-	SettingsThemeMode               string
-	SettingsThemeModeDesc           string
-	SettingsThemeModeSystem         string
-	SettingsThemeModeLight          string
-	SettingsThemeModeDark           string
-	SettingsThemeColor              string
-	SettingsThemeColorDesc          string
-	SettingsThemeColorSystem        string
-	SettingsThemeColorCustom        string
-	SettingsColorBlue               string
-	SettingsColorSky                string
-	SettingsColorTeal               string
-	SettingsColorGreen              string
-	SettingsColorPurple             string
-	SettingsColorPink               string
-	SettingsColorOrange             string
-	SettingsColorRed                string
-	SettingsLanguage                string
-	SettingsSaveLanguage            string
-	SettingsLanguageSaved           string
-	SettingsLogSettings             string
-	SettingsEnableFileLogging       string
-	SettingsEnableFileLoggingMsg    string
-	SettingsLogLevel                string
-	SettingsLogLevelDesc            string
-	SettingsLogLevelDebug           string
-	SettingsLogLevelInfo            string
-	SettingsLogLevelWarn            string
-	SettingsLogLevelError           string
-	SettingsLogLevelDebugHint       string
-	SettingsLogLevelInfoHint        string
-	SettingsLogLevelWarnHint        string
-	SettingsLogLevelErrorHint       string
-	SettingsLogFilePath             string
-	SettingsLogSettingsSaved        string
-	SettingsAbout                   string
-	SettingsVersion                 string
-	SettingsBuildTime               string
-	SettingsWebsite                 string
-	SettingsGitHub                  string
-	SettingsCheckUpdate             string
-	SettingsCheckUpdateOnStartup    string
-	SettingsCheckUpdateOnStartupMsg string
-	SettingsUpdateSettingsSaved     string
-	SettingsReinstallLatest         string
-	SettingsReinstallConfirm        string
-	SettingsReinstallMessage        string
-	SettingsReinstallButton         string
-	SettingsUnsavedTitle            string
-	SettingsUnsavedMessage          string
-	SettingsDiscardChanges          string
-	SettingsSaveAndContinue         string
-	SettingsSaveAll                 string
-	SettingsDevUnlocked             string
-	SettingsUnsavedBadge            string
+	SettingsTitle                    string
+	SettingsDevHint                  string
+	SettingsDevHintContent           string
+	SettingsStorage                  string
+	SettingsUseRelativePaths         string
+	SettingsUseRelativePathsDesc     string
+	SettingsRelativeBaseDirFmt       string
+	SettingsRelativeResolvedPathFmt  string
+	SettingsRelativeCrossDriveHint   string
+	SettingsRelativeCrossDriveToast  string
+	SettingsRelativeConvertNow       string
+	SettingsRelativeEnabledToastFmt  string
+	SettingsRelativeEnabledSimple    string
+	SettingsRelativeDisabledToastFmt string
+	SettingsRelativeDisabledSimple   string
+	SettingsRelativePartialTitle     string
+	SettingsRelativePartialBodyFmt   string
+	SettingsRelativeInstallHolder    string
+	SettingsRelativeArchiveHolder    string
+	SettingsInstallPath              string
+	SettingsInstallPathHolder        string
+	SettingsSaveInstallPath          string
+	SettingsInstallPathSaved         string
+	SettingsArchivePath              string
+	SettingsArchivePathHolder        string
+	SettingsSaveArchivePath          string
+	SettingsArchivePathSaved         string
+	SettingsConfigFilePath           string
+	SettingsOpenFileLocation         string
+	SettingsArchiveHandling          string
+	SettingsRemoveNested             string
+	SettingsRemoveNestedDesc         string
+	SettingsSaveArchiveHandling      string
+	SettingsArchiveHandlingSaved     string
+	SettingsTest7Zip                 string
+	SettingsTest7ZipDesc             string
+	SettingsTest7ZipTitle            string
+	SettingsExecRecognition          string
+	SettingsMaxSearchDepth           string
+	SettingsExecExtensions           string
+	SettingsNoExtensions             string
+	SettingsSelectExtensions         string
+	SettingsSaveExecSettings         string
+	SettingsExecSettingsSaved        string
+	SettingsCommonExtensions         string
+	SettingsCustomExtensions         string
+	SettingsExtPlaceholder           string
+	SettingsExtInvalid               string
+	SettingsExtExists                string
+	SettingsExtSelectAtLeastOne      string
+	SettingsAppearance               string
+	SettingsAppFont                  string
+	SettingsSystemDefaultFont        string
+	SettingsPresetFonts              string
+	SettingsSystemFonts              string
+	SettingsFontUnavailable          string
+	SettingsFontDefaultDescFmt       string
+	SettingsFontDefaultDescPlain     string
+	SettingsFontMissingWarnFmt       string
+	SettingsFontLoading              string
+	SettingsThemeMode                string
+	SettingsThemeModeDesc            string
+	SettingsThemeModeSystem          string
+	SettingsThemeModeLight           string
+	SettingsThemeModeDark            string
+	SettingsThemeColor               string
+	SettingsThemeColorDesc           string
+	SettingsThemeColorSystem         string
+	SettingsThemeColorCustom         string
+	SettingsColorBlue                string
+	SettingsColorSky                 string
+	SettingsColorTeal                string
+	SettingsColorGreen               string
+	SettingsColorPurple              string
+	SettingsColorPink                string
+	SettingsColorOrange              string
+	SettingsColorRed                 string
+	SettingsLanguage                 string
+	SettingsSaveLanguage             string
+	SettingsLanguageSaved            string
+	SettingsLogSettings              string
+	SettingsEnableFileLogging        string
+	SettingsEnableFileLoggingMsg     string
+	SettingsLogLevel                 string
+	SettingsLogLevelDesc             string
+	SettingsLogLevelDebug            string
+	SettingsLogLevelInfo             string
+	SettingsLogLevelWarn             string
+	SettingsLogLevelError            string
+	SettingsLogLevelDebugHint        string
+	SettingsLogLevelInfoHint         string
+	SettingsLogLevelWarnHint         string
+	SettingsLogLevelErrorHint        string
+	SettingsLogFilePath              string
+	SettingsLogSettingsSaved         string
+	SettingsAbout                    string
+	SettingsVersion                  string
+	SettingsBuildTime                string
+	SettingsWebsite                  string
+	SettingsGitHub                   string
+	SettingsCheckUpdate              string
+	SettingsCheckUpdateOnStartup     string
+	SettingsCheckUpdateOnStartupMsg  string
+	SettingsUpdateSettingsSaved      string
+	SettingsReinstallLatest          string
+	SettingsReinstallConfirm         string
+	SettingsReinstallMessage         string
+	SettingsReinstallButton          string
+	SettingsUnsavedTitle             string
+	SettingsUnsavedMessage           string
+	SettingsDiscardChanges           string
+	SettingsSaveAndContinue          string
+	SettingsSaveAll                  string
+	SettingsDevUnlocked              string
+	SettingsUnsavedBadge             string
 
 	// Update Dialog
 	UpdateChecking        string
@@ -620,106 +635,121 @@ var zhStrings = Strings{
 	DialogSelectExecutable: "选择主程序可执行文件",
 	DialogNoExecutable:     "未找到可执行文件",
 
-	SettingsTitle:                   "设置",
-	SettingsDevHint:                 "提示",
-	SettingsDevHintContent:          "目前为开发版本，如遇异常请反馈。",
-	SettingsStorage:                 "存储",
-	SettingsInstallPath:             "绿色软件安装目录",
-	SettingsInstallPathHolder:       "输入或选择绿色软件安装目录",
-	SettingsSaveInstallPath:         "保存安装路径",
-	SettingsInstallPathSaved:        "安装路径已保存。",
-	SettingsArchivePath:             "软件归档目录（可选，默认使用安装目录下的 ~archives）",
-	SettingsArchivePathHolder:       "留空则默认使用安装目录下的 ~archives",
-	SettingsSaveArchivePath:         "保存归档路径",
-	SettingsArchivePathSaved:        "归档路径已保存。",
-	SettingsConfigFilePath:          "配置文件位置",
-	SettingsOpenFileLocation:        "打开位置",
-	SettingsArchiveHandling:         "归档处理",
-	SettingsRemoveNested:            "解压后移除多余嵌套目录",
-	SettingsRemoveNestedDesc:        "如果压缩包内仅有一个顶层文件夹，自动将其内容上移",
-	SettingsSaveArchiveHandling:     "保存归档处理设置",
-	SettingsArchiveHandlingSaved:    "归档处理设置已保存。",
-	SettingsTest7Zip:                "检测 7-Zip 路径",
-	SettingsTest7ZipDesc:            "检查系统中是否已安装 7-Zip（用于解压 RAR 与 7Z 文件）",
-	SettingsTest7ZipTitle:           "7-Zip 路径检测结果",
-	SettingsExecRecognition:         "可执行文件识别",
-	SettingsMaxSearchDepth:          "最大搜索深度",
-	SettingsExecExtensions:          "可执行文件扩展名",
-	SettingsNoExtensions:            "未选择扩展名",
-	SettingsSelectExtensions:        "编辑扩展名",
-	SettingsSaveExecSettings:        "保存识别设置",
-	SettingsExecSettingsSaved:       "可执行文件识别设置已保存。",
-	SettingsCommonExtensions:        "常用扩展名",
-	SettingsCustomExtensions:        "自定义扩展名",
-	SettingsExtPlaceholder:          "例如 exe 或 .cmd",
-	SettingsExtInvalid:              "请输入有效的扩展名。",
-	SettingsExtExists:               "该扩展名已存在。",
-	SettingsExtSelectAtLeastOne:     "请至少保留一个扩展名。",
-	SettingsAppearance:              "外观",
-	SettingsAppFont:                 "应用字体",
-	SettingsSystemDefaultFont:       "自动默认",
-	SettingsPresetFonts:             "预设字体",
-	SettingsSystemFonts:             "系统已安装字体",
-	SettingsFontUnavailable:         "未安装",
-	SettingsFontDefaultDescFmt:      "优先顺序：PingFang → 鸿蒙 → 微软雅黑（当前：%s）",
-	SettingsFontDefaultDescPlain:    "优先顺序：PingFang → 鸿蒙 → 微软雅黑",
-	SettingsFontMissingWarnFmt:      "该字体在当前系统未安装，已自动回退至 %s",
-	SettingsFontLoading:             "正在扫描系统字体...",
-	SettingsThemeMode:               "主题模式",
-	SettingsThemeModeDesc:           "切换浅色或深色外观，或跟随系统设置",
-	SettingsThemeModeSystem:         "跟随系统",
-	SettingsThemeModeLight:          "浅色",
-	SettingsThemeModeDark:           "深色",
-	SettingsThemeColor:              "主题颜色",
-	SettingsThemeColorDesc:          "自定义界面强调色、按钮与高亮配色",
-	SettingsThemeColorSystem:        "跟随系统",
-	SettingsThemeColorCustom:        "自定义",
-	SettingsColorBlue:               "经典蓝",
-	SettingsColorSky:                "天空蓝",
-	SettingsColorTeal:               "青碧色",
-	SettingsColorGreen:              "翡翠绿",
-	SettingsColorPurple:             "紫罗兰",
-	SettingsColorPink:               "玫红色",
-	SettingsColorOrange:             "琥珀橙",
-	SettingsColorRed:                "绯红色",
-	SettingsLanguage:                "界面语言",
-	SettingsSaveLanguage:            "保存语言设置",
-	SettingsLanguageSaved:           "语言设置已保存。",
-	SettingsLogSettings:             "日志设置",
-	SettingsEnableFileLogging:       "启用文件日志",
-	SettingsEnableFileLoggingMsg:    "将运行日志保存到文件以便排查问题",
-	SettingsLogLevel:                "日志输出级别",
-	SettingsLogLevelDesc:            "控制控制台与日志文件的最低输出策略",
-	SettingsLogLevelDebug:           "调试 (DEBUG)",
-	SettingsLogLevelInfo:            "常规 (INFO)",
-	SettingsLogLevelWarn:            "警告 (WARN)",
-	SettingsLogLevelError:           "仅错误 (ERROR)",
-	SettingsLogLevelDebugHint:       "当前策略：输出全部日志（DEBUG / INFO / WARN / ERROR），包含列表刷新、元数据提取与残留备份匹配细节",
-	SettingsLogLevelInfoHint:        "当前策略：输出常规业务及异常日志（INFO / WARN / ERROR），记录软件托管、解压、备份、关联与更新操作",
-	SettingsLogLevelWarnHint:        "当前策略：仅输出警告与错误日志（WARN / ERROR），忽略常规操作记录",
-	SettingsLogLevelErrorHint:       "当前策略：仅输出错误日志（ERROR），仅在操作失败或发生异常时记录",
-	SettingsLogFilePath:             "日志文件位置",
-	SettingsLogSettingsSaved:        "日志设置已保存。",
-	SettingsAbout:                   "关于",
-	SettingsVersion:                 "版本",
-	SettingsBuildTime:               "构建时间",
-	SettingsWebsite:                 "官方网站",
-	SettingsGitHub:                  "GitHub 仓库",
-	SettingsCheckUpdate:             "检查更新",
-	SettingsCheckUpdateOnStartup:    "启动时检查更新",
-	SettingsCheckUpdateOnStartupMsg: "应用启动时自动在后台静默检查新版本",
-	SettingsUpdateSettingsSaved:     "更新设置已保存。",
-	SettingsReinstallLatest:         "重新安装最新版本",
-	SettingsReinstallConfirm:        "重新安装应用",
-	SettingsReinstallMessage:        "这将从 GitHub Releases 下载并重新安装最新版本（保留配置文件）。确定继续吗？",
-	SettingsReinstallButton:         "重新安装",
-	SettingsUnsavedTitle:            "存在未保存的更改",
-	SettingsUnsavedMessage:          "设置页有尚未保存的更改，切换页面前要保存吗？",
-	SettingsDiscardChanges:          "放弃更改",
-	SettingsSaveAndContinue:         "保存并继续",
-	SettingsSaveAll:                 "全部保存",
-	SettingsDevUnlocked:             "已开启开发者选项",
-	SettingsUnsavedBadge:            "未保存",
+	SettingsTitle:                    "设置",
+	SettingsDevHint:                  "提示",
+	SettingsDevHintContent:           "目前为开发版本，如遇异常请反馈。",
+	SettingsStorage:                  "存储",
+	SettingsUseRelativePaths:         "相对路径模式（U 盘 / 移动硬盘）",
+	SettingsUseRelativePathsDesc:     "将安装目录、归档目录及所有软件启动项基于 CarryDock.exe 所在位置保存为相对路径，拷入 U 盘即可在任意电脑直接运行",
+	SettingsRelativeBaseDirFmt:       "基准目录：%s",
+	SettingsRelativeResolvedPathFmt:  "实际路径：%s",
+	SettingsRelativeCrossDriveHint:   "当前路径与程序不在同一盘符，将保留为绝对路径；移至同一盘符下可自动转为相对路径。",
+	SettingsRelativeCrossDriveToast:  "路径已保存，但与程序不在同一盘符，暂保留为绝对路径。",
+	SettingsRelativeConvertNow:       "立即同步转换",
+	SettingsRelativeEnabledToastFmt:  "已开启相对路径模式，共转换 %d 项配置与 %d 项软件路径。",
+	SettingsRelativeEnabledSimple:    "已开启相对路径模式，后续路径将基于程序所在目录保存。",
+	SettingsRelativeDisabledToastFmt: "已关闭相对路径模式，共恢复 %d 项配置与 %d 项软件路径为绝对路径。",
+	SettingsRelativeDisabledSimple:   "已关闭相对路径模式，后续路径将保存为绝对路径。",
+	SettingsRelativePartialTitle:     "部分路径保留为绝对路径",
+	SettingsRelativePartialBodyFmt:   "已开启相对路径模式，但有 %d 项设置路径与 %d 项软件路径因与 CarryDock.exe 不在同一盘符，仍保留为绝对路径。",
+	SettingsRelativeInstallHolder:    "输入或选择安装目录（如 .\\Apps 或 .）",
+	SettingsRelativeArchiveHolder:    "留空默认使用安装目录下的 ~archives（可填如 .\\~archives）",
+	SettingsInstallPath:              "绿色软件安装目录",
+	SettingsInstallPathHolder:        "输入或选择绿色软件安装目录",
+	SettingsSaveInstallPath:          "保存安装路径",
+	SettingsInstallPathSaved:         "安装路径已保存。",
+	SettingsArchivePath:              "软件归档目录（可选，默认使用安装目录下的 ~archives）",
+	SettingsArchivePathHolder:        "留空则默认使用安装目录下的 ~archives",
+	SettingsSaveArchivePath:          "保存归档路径",
+	SettingsArchivePathSaved:         "归档路径已保存。",
+	SettingsConfigFilePath:           "配置文件位置",
+	SettingsOpenFileLocation:         "打开位置",
+	SettingsArchiveHandling:          "归档处理",
+	SettingsRemoveNested:             "解压后移除多余嵌套目录",
+	SettingsRemoveNestedDesc:         "如果压缩包内仅有一个顶层文件夹，自动将其内容上移",
+	SettingsSaveArchiveHandling:      "保存归档处理设置",
+	SettingsArchiveHandlingSaved:     "归档处理设置已保存。",
+	SettingsTest7Zip:                 "检测 7-Zip 路径",
+	SettingsTest7ZipDesc:             "检查系统中是否已安装 7-Zip（用于解压 RAR 与 7Z 文件）",
+	SettingsTest7ZipTitle:            "7-Zip 路径检测结果",
+	SettingsExecRecognition:          "可执行文件识别",
+	SettingsMaxSearchDepth:           "最大搜索深度",
+	SettingsExecExtensions:           "可执行文件扩展名",
+	SettingsNoExtensions:             "未选择扩展名",
+	SettingsSelectExtensions:         "编辑扩展名",
+	SettingsSaveExecSettings:         "保存识别设置",
+	SettingsExecSettingsSaved:        "可执行文件识别设置已保存。",
+	SettingsCommonExtensions:         "常用扩展名",
+	SettingsCustomExtensions:         "自定义扩展名",
+	SettingsExtPlaceholder:           "例如 exe 或 .cmd",
+	SettingsExtInvalid:               "请输入有效的扩展名。",
+	SettingsExtExists:                "该扩展名已存在。",
+	SettingsExtSelectAtLeastOne:      "请至少保留一个扩展名。",
+	SettingsAppearance:               "外观",
+	SettingsAppFont:                  "应用字体",
+	SettingsSystemDefaultFont:        "自动默认",
+	SettingsPresetFonts:              "预设字体",
+	SettingsSystemFonts:              "系统已安装字体",
+	SettingsFontUnavailable:          "未安装",
+	SettingsFontDefaultDescFmt:       "优先顺序：PingFang → 鸿蒙 → 微软雅黑（当前：%s）",
+	SettingsFontDefaultDescPlain:     "优先顺序：PingFang → 鸿蒙 → 微软雅黑",
+	SettingsFontMissingWarnFmt:       "该字体在当前系统未安装，已自动回退至 %s",
+	SettingsFontLoading:              "正在扫描系统字体...",
+	SettingsThemeMode:                "主题模式",
+	SettingsThemeModeDesc:            "切换浅色或深色外观，或跟随系统设置",
+	SettingsThemeModeSystem:          "跟随系统",
+	SettingsThemeModeLight:           "浅色",
+	SettingsThemeModeDark:            "深色",
+	SettingsThemeColor:               "主题颜色",
+	SettingsThemeColorDesc:           "自定义界面强调色、按钮与高亮配色",
+	SettingsThemeColorSystem:         "跟随系统",
+	SettingsThemeColorCustom:         "自定义",
+	SettingsColorBlue:                "经典蓝",
+	SettingsColorSky:                 "天空蓝",
+	SettingsColorTeal:                "青碧色",
+	SettingsColorGreen:               "翡翠绿",
+	SettingsColorPurple:              "紫罗兰",
+	SettingsColorPink:                "玫红色",
+	SettingsColorOrange:              "琥珀橙",
+	SettingsColorRed:                 "绯红色",
+	SettingsLanguage:                 "界面语言",
+	SettingsSaveLanguage:             "保存语言设置",
+	SettingsLanguageSaved:            "语言设置已保存。",
+	SettingsLogSettings:              "日志设置",
+	SettingsEnableFileLogging:        "启用文件日志",
+	SettingsEnableFileLoggingMsg:     "将运行日志保存到文件以便排查问题",
+	SettingsLogLevel:                 "日志输出级别",
+	SettingsLogLevelDesc:             "控制控制台与日志文件的最低输出策略",
+	SettingsLogLevelDebug:            "调试 (DEBUG)",
+	SettingsLogLevelInfo:             "常规 (INFO)",
+	SettingsLogLevelWarn:             "警告 (WARN)",
+	SettingsLogLevelError:            "仅错误 (ERROR)",
+	SettingsLogLevelDebugHint:        "当前策略：输出全部日志（DEBUG / INFO / WARN / ERROR），包含列表刷新、元数据提取与残留备份匹配细节",
+	SettingsLogLevelInfoHint:         "当前策略：输出常规业务及异常日志（INFO / WARN / ERROR），记录软件托管、解压、备份、关联与更新操作",
+	SettingsLogLevelWarnHint:         "当前策略：仅输出警告与错误日志（WARN / ERROR），忽略常规操作记录",
+	SettingsLogLevelErrorHint:        "当前策略：仅输出错误日志（ERROR），仅在操作失败或发生异常时记录",
+	SettingsLogFilePath:              "日志文件位置",
+	SettingsLogSettingsSaved:         "日志设置已保存。",
+	SettingsAbout:                    "关于",
+	SettingsVersion:                  "版本",
+	SettingsBuildTime:                "构建时间",
+	SettingsWebsite:                  "官方网站",
+	SettingsGitHub:                   "GitHub 仓库",
+	SettingsCheckUpdate:              "检查更新",
+	SettingsCheckUpdateOnStartup:     "启动时检查更新",
+	SettingsCheckUpdateOnStartupMsg:  "应用启动时自动在后台静默检查新版本",
+	SettingsUpdateSettingsSaved:      "更新设置已保存。",
+	SettingsReinstallLatest:          "重新安装最新版本",
+	SettingsReinstallConfirm:         "重新安装应用",
+	SettingsReinstallMessage:         "这将从 GitHub Releases 下载并重新安装最新版本（保留配置文件）。确定继续吗？",
+	SettingsReinstallButton:          "重新安装",
+	SettingsUnsavedTitle:             "存在未保存的更改",
+	SettingsUnsavedMessage:           "设置页有尚未保存的更改，切换页面前要保存吗？",
+	SettingsDiscardChanges:           "放弃更改",
+	SettingsSaveAndContinue:          "保存并继续",
+	SettingsSaveAll:                  "全部保存",
+	SettingsDevUnlocked:              "已开启开发者选项",
+	SettingsUnsavedBadge:             "未保存",
 
 	UpdateChecking:        "正在检查更新...",
 	UpdateUpToDate:        "当前已是最新版本。",
@@ -981,106 +1011,121 @@ var enStrings = Strings{
 	DialogSelectExecutable: "Select Main Executable",
 	DialogNoExecutable:     "No executables found",
 
-	SettingsTitle:                   "Settings",
-	SettingsDevHint:                 "Notice",
-	SettingsDevHintContent:          "This is currently a development version. Please report any issues you encounter.",
-	SettingsStorage:                 "Storage",
-	SettingsInstallPath:             "Installation Directory",
-	SettingsInstallPathHolder:       "Enter or browse portable software root directory",
-	SettingsSaveInstallPath:         "Save Install Path",
-	SettingsInstallPathSaved:        "Installation path saved.",
-	SettingsArchivePath:             "Archive Directory (optional; defaults to ~archives inside install dir)",
-	SettingsArchivePathHolder:       "Leave blank to use ~archives inside install directory",
-	SettingsSaveArchivePath:         "Save Archive Path",
-	SettingsArchivePathSaved:        "Archive path saved.",
-	SettingsConfigFilePath:          "Configuration File",
-	SettingsOpenFileLocation:        "Open Location",
-	SettingsArchiveHandling:         "Archive Handling",
-	SettingsRemoveNested:            "Remove redundant nested directories",
-	SettingsRemoveNestedDesc:        "Flatten single top-level folder automatically after extraction",
-	SettingsSaveArchiveHandling:     "Save Archive Settings",
-	SettingsArchiveHandlingSaved:    "Archive handling settings saved.",
-	SettingsTest7Zip:                "Test 7-Zip Detection",
-	SettingsTest7ZipDesc:            "Check if 7-Zip is installed for RAR and 7Z extraction",
-	SettingsTest7ZipTitle:           "7-Zip Path Detection",
-	SettingsExecRecognition:         "Executable Recognition",
-	SettingsMaxSearchDepth:          "Max Search Depth",
-	SettingsExecExtensions:          "Executable Extensions",
-	SettingsNoExtensions:            "No extensions selected",
-	SettingsSelectExtensions:        "Edit Extensions",
-	SettingsSaveExecSettings:        "Save Recognition Settings",
-	SettingsExecSettingsSaved:       "Executable recognition settings saved.",
-	SettingsCommonExtensions:        "Common Extensions",
-	SettingsCustomExtensions:        "Custom Extension",
-	SettingsExtPlaceholder:          "e.g. exe or .cmd",
-	SettingsExtInvalid:              "Please enter a valid extension.",
-	SettingsExtExists:               "This extension already exists.",
-	SettingsExtSelectAtLeastOne:     "Please keep at least one extension.",
-	SettingsAppearance:              "Appearance",
-	SettingsAppFont:                 "Application Font",
-	SettingsSystemDefaultFont:       "Auto Default",
-	SettingsPresetFonts:             "Preset Fonts",
-	SettingsSystemFonts:             "System Fonts",
-	SettingsFontUnavailable:         "Unavailable",
-	SettingsFontDefaultDescFmt:      "Priority: PingFang → HarmonyOS → YaHei (Active: %s)",
-	SettingsFontDefaultDescPlain:    "Priority: PingFang → HarmonyOS → YaHei",
-	SettingsFontMissingWarnFmt:      "Font not installed on this system; falling back to %s",
-	SettingsFontLoading:             "Loading system fonts...",
-	SettingsThemeMode:               "Theme Mode",
-	SettingsThemeModeDesc:           "Switch between light and dark appearance, or follow system",
-	SettingsThemeModeSystem:         "System",
-	SettingsThemeModeLight:          "Light",
-	SettingsThemeModeDark:           "Dark",
-	SettingsThemeColor:              "Theme Color",
-	SettingsThemeColorDesc:          "Customize accent color for buttons and highlights",
-	SettingsThemeColorSystem:        "System",
-	SettingsThemeColorCustom:        "Custom",
-	SettingsColorBlue:               "Blue",
-	SettingsColorSky:                "Sky",
-	SettingsColorTeal:               "Teal",
-	SettingsColorGreen:              "Green",
-	SettingsColorPurple:             "Purple",
-	SettingsColorPink:               "Pink",
-	SettingsColorOrange:             "Orange",
-	SettingsColorRed:                "Red",
-	SettingsLanguage:                "Language",
-	SettingsSaveLanguage:            "Save Language",
-	SettingsLanguageSaved:           "Language saved.",
-	SettingsLogSettings:             "Logging",
-	SettingsEnableFileLogging:       "Enable File Logging",
-	SettingsEnableFileLoggingMsg:    "Write logs to disk for troubleshooting",
-	SettingsLogLevel:                "Log Output Level",
-	SettingsLogLevelDesc:            "Control the minimum severity strategy for console and file logs",
-	SettingsLogLevelDebug:           "Debug (DEBUG)",
-	SettingsLogLevelInfo:            "Standard (INFO)",
-	SettingsLogLevelWarn:            "Warning (WARN)",
-	SettingsLogLevelError:           "Error Only (ERROR)",
-	SettingsLogLevelDebugHint:       "Current strategy: Output all logs (DEBUG / INFO / WARN / ERROR), including list refresh, metadata extraction, and backup matching details",
-	SettingsLogLevelInfoHint:        "Current strategy: Output standard and error logs (INFO / WARN / ERROR) for software hosting, extraction, backup, linking, and updates",
-	SettingsLogLevelWarnHint:        "Current strategy: Output only warnings and errors (WARN / ERROR), omitting routine operations",
-	SettingsLogLevelErrorHint:       "Current strategy: Output only errors (ERROR) when operations fail",
-	SettingsLogFilePath:             "Log File",
-	SettingsLogSettingsSaved:        "Log settings saved.",
-	SettingsAbout:                   "About",
-	SettingsVersion:                 "Version",
-	SettingsBuildTime:               "Build Time",
-	SettingsWebsite:                 "Official Website",
-	SettingsGitHub:                  "GitHub Repository",
-	SettingsCheckUpdate:             "Check for Updates",
-	SettingsCheckUpdateOnStartup:    "Check for Updates on Startup",
-	SettingsCheckUpdateOnStartupMsg: "Automatically check for new versions in the background on startup",
-	SettingsUpdateSettingsSaved:     "Update settings saved.",
-	SettingsReinstallLatest:         "Reinstall Latest Version",
-	SettingsReinstallConfirm:        "Reinstall Application",
-	SettingsReinstallMessage:        "This will download and reinstall the latest GitHub release while preserving your configuration. Continue?",
-	SettingsReinstallButton:         "Reinstall",
-	SettingsUnsavedTitle:            "Unsaved Changes",
-	SettingsUnsavedMessage:          "You have unsaved changes in Settings. Save before leaving?",
-	SettingsDiscardChanges:          "Discard",
-	SettingsSaveAndContinue:         "Save & Continue",
-	SettingsSaveAll:                 "Save All",
-	SettingsDevUnlocked:             "Developer Options enabled",
-	SettingsUnsavedBadge:            "Unsaved",
+	SettingsTitle:                    "Settings",
+	SettingsDevHint:                  "Notice",
+	SettingsDevHintContent:           "This is currently a development version. Please report any issues you encounter.",
+	SettingsStorage:                  "Storage",
+	SettingsUseRelativePaths:         "Relative Path Mode (USB / Portable)",
+	SettingsUseRelativePathsDesc:     "Store install, archive, and launch paths relative to CarryDock.exe so the entire folder works from any USB drive or PC with zero setup",
+	SettingsRelativeBaseDirFmt:       "Base directory: %s",
+	SettingsRelativeResolvedPathFmt:  "Resolved path: %s",
+	SettingsRelativeCrossDriveHint:   "Path is on a different drive from CarryDock.exe and will stay absolute until moved to the same drive.",
+	SettingsRelativeCrossDriveToast:  "Path saved as absolute because it is on a different drive from CarryDock.exe.",
+	SettingsRelativeConvertNow:       "Sync & Convert Now",
+	SettingsRelativeEnabledToastFmt:  "Relative path mode enabled (%d setting and %d software paths converted).",
+	SettingsRelativeEnabledSimple:    "Relative path mode enabled. Paths will be stored relative to CarryDock.exe.",
+	SettingsRelativeDisabledToastFmt: "Relative path mode disabled (%d setting and %d software paths restored to absolute).",
+	SettingsRelativeDisabledSimple:   "Relative path mode disabled. Paths will be stored as absolute.",
+	SettingsRelativePartialTitle:     "Some Paths Kept Absolute",
+	SettingsRelativePartialBodyFmt:   "Relative path mode is enabled, but %d setting path(s) and %d software path(s) are on a different drive from CarryDock.exe and remain absolute.",
+	SettingsRelativeInstallHolder:    "Enter or browse install dir (e.g. .\\Apps or .)",
+	SettingsRelativeArchiveHolder:    "Leave blank for ~archives inside install dir (e.g. .\\~archives)",
+	SettingsInstallPath:              "Installation Directory",
+	SettingsInstallPathHolder:        "Enter or browse portable software root directory",
+	SettingsSaveInstallPath:          "Save Install Path",
+	SettingsInstallPathSaved:         "Installation path saved.",
+	SettingsArchivePath:              "Archive Directory (optional; defaults to ~archives inside install dir)",
+	SettingsArchivePathHolder:        "Leave blank to use ~archives inside install directory",
+	SettingsSaveArchivePath:          "Save Archive Path",
+	SettingsArchivePathSaved:         "Archive path saved.",
+	SettingsConfigFilePath:           "Configuration File",
+	SettingsOpenFileLocation:         "Open Location",
+	SettingsArchiveHandling:          "Archive Handling",
+	SettingsRemoveNested:             "Remove redundant nested directories",
+	SettingsRemoveNestedDesc:         "Flatten single top-level folder automatically after extraction",
+	SettingsSaveArchiveHandling:      "Save Archive Settings",
+	SettingsArchiveHandlingSaved:     "Archive handling settings saved.",
+	SettingsTest7Zip:                 "Test 7-Zip Detection",
+	SettingsTest7ZipDesc:             "Check if 7-Zip is installed for RAR and 7Z extraction",
+	SettingsTest7ZipTitle:            "7-Zip Path Detection",
+	SettingsExecRecognition:          "Executable Recognition",
+	SettingsMaxSearchDepth:           "Max Search Depth",
+	SettingsExecExtensions:           "Executable Extensions",
+	SettingsNoExtensions:             "No extensions selected",
+	SettingsSelectExtensions:         "Edit Extensions",
+	SettingsSaveExecSettings:         "Save Recognition Settings",
+	SettingsExecSettingsSaved:        "Executable recognition settings saved.",
+	SettingsCommonExtensions:         "Common Extensions",
+	SettingsCustomExtensions:         "Custom Extension",
+	SettingsExtPlaceholder:           "e.g. exe or .cmd",
+	SettingsExtInvalid:               "Please enter a valid extension.",
+	SettingsExtExists:                "This extension already exists.",
+	SettingsExtSelectAtLeastOne:      "Please keep at least one extension.",
+	SettingsAppearance:               "Appearance",
+	SettingsAppFont:                  "Application Font",
+	SettingsSystemDefaultFont:        "Auto Default",
+	SettingsPresetFonts:              "Preset Fonts",
+	SettingsSystemFonts:              "System Fonts",
+	SettingsFontUnavailable:          "Unavailable",
+	SettingsFontDefaultDescFmt:       "Priority: PingFang → HarmonyOS → YaHei (Active: %s)",
+	SettingsFontDefaultDescPlain:     "Priority: PingFang → HarmonyOS → YaHei",
+	SettingsFontMissingWarnFmt:       "Font not installed on this system; falling back to %s",
+	SettingsFontLoading:              "Loading system fonts...",
+	SettingsThemeMode:                "Theme Mode",
+	SettingsThemeModeDesc:            "Switch between light and dark appearance, or follow system",
+	SettingsThemeModeSystem:          "System",
+	SettingsThemeModeLight:           "Light",
+	SettingsThemeModeDark:            "Dark",
+	SettingsThemeColor:               "Theme Color",
+	SettingsThemeColorDesc:           "Customize accent color for buttons and highlights",
+	SettingsThemeColorSystem:         "System",
+	SettingsThemeColorCustom:         "Custom",
+	SettingsColorBlue:                "Blue",
+	SettingsColorSky:                 "Sky",
+	SettingsColorTeal:                "Teal",
+	SettingsColorGreen:               "Green",
+	SettingsColorPurple:              "Purple",
+	SettingsColorPink:                "Pink",
+	SettingsColorOrange:              "Orange",
+	SettingsColorRed:                 "Red",
+	SettingsLanguage:                 "Language",
+	SettingsSaveLanguage:             "Save Language",
+	SettingsLanguageSaved:            "Language saved.",
+	SettingsLogSettings:              "Logging",
+	SettingsEnableFileLogging:        "Enable File Logging",
+	SettingsEnableFileLoggingMsg:     "Write logs to disk for troubleshooting",
+	SettingsLogLevel:                 "Log Output Level",
+	SettingsLogLevelDesc:             "Control the minimum severity strategy for console and file logs",
+	SettingsLogLevelDebug:            "Debug (DEBUG)",
+	SettingsLogLevelInfo:             "Standard (INFO)",
+	SettingsLogLevelWarn:             "Warning (WARN)",
+	SettingsLogLevelError:            "Error Only (ERROR)",
+	SettingsLogLevelDebugHint:        "Current strategy: Output all logs (DEBUG / INFO / WARN / ERROR), including list refresh, metadata extraction, and backup matching details",
+	SettingsLogLevelInfoHint:         "Current strategy: Output standard and error logs (INFO / WARN / ERROR) for software hosting, extraction, backup, linking, and updates",
+	SettingsLogLevelWarnHint:         "Current strategy: Output only warnings and errors (WARN / ERROR), omitting routine operations",
+	SettingsLogLevelErrorHint:        "Current strategy: Output only errors (ERROR) when operations fail",
+	SettingsLogFilePath:              "Log File",
+	SettingsLogSettingsSaved:         "Log settings saved.",
+	SettingsAbout:                    "About",
+	SettingsVersion:                  "Version",
+	SettingsBuildTime:                "Build Time",
+	SettingsWebsite:                  "Official Website",
+	SettingsGitHub:                   "GitHub Repository",
+	SettingsCheckUpdate:              "Check for Updates",
+	SettingsCheckUpdateOnStartup:     "Check for Updates on Startup",
+	SettingsCheckUpdateOnStartupMsg:  "Automatically check for new versions in the background on startup",
+	SettingsUpdateSettingsSaved:      "Update settings saved.",
+	SettingsReinstallLatest:          "Reinstall Latest Version",
+	SettingsReinstallConfirm:         "Reinstall Application",
+	SettingsReinstallMessage:         "This will download and reinstall the latest GitHub release while preserving your configuration. Continue?",
+	SettingsReinstallButton:          "Reinstall",
+	SettingsUnsavedTitle:             "Unsaved Changes",
+	SettingsUnsavedMessage:           "You have unsaved changes in Settings. Save before leaving?",
+	SettingsDiscardChanges:           "Discard",
+	SettingsSaveAndContinue:          "Save & Continue",
+	SettingsSaveAll:                  "Save All",
+	SettingsDevUnlocked:              "Developer Options enabled",
+	SettingsUnsavedBadge:             "Unsaved",
 
 	UpdateChecking:        "Checking for updates...",
 	UpdateUpToDate:        "You are already on the latest version.",

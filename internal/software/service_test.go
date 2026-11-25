@@ -624,3 +624,188 @@ func TestAddNewVersionExecutablePromptsAndReplacesOldVersion(t *testing.T) {
 		t.Fatalf("expected only rufus-4.6 in managed list, got %+v", managedAfter)
 	}
 }
+
+func copyDirForTest(t *testing.T, src, dst string) {
+	t.Helper()
+	err := filepath.WalkDir(src, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
+	})
+	if err != nil {
+		t.Fatalf("copyDirForTest(%s -> %s) failed: %v", src, dst, err)
+	}
+}
+
+func TestRelativePathsUSBMigrationEndToEnd(t *testing.T) {
+	rootA := filepath.Join(t.TempDir(), "OldPC", "CarryDock")
+	storeA := storage.NewAtBaseDir(rootA)
+	setSvcA := settings.NewService(storeA)
+	installDirA := filepath.Join(rootA, "Apps")
+	if err := os.MkdirAll(installDirA, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := setSvcA.SaveInstallPath(installDirA); err != nil {
+		t.Fatal(err)
+	}
+	svcA := NewService(setSvcA)
+
+	srcZip := filepath.Join(t.TempDir(), "NotePad.zip")
+	makeZip(t, srcZip, map[string]string{
+		"NotePad/notepad.exe": "bin",
+	})
+	if res := svcA.AddSoftwareFromFile(srcZip); res.Type != AddSuccess {
+		t.Fatalf("AddSoftwareFromFile failed: %+v", res)
+	}
+	listA, err := svcA.LoadManagedSoftware()
+	if err != nil || len(listA) != 1 {
+		t.Fatalf("LoadManagedSoftware failed: %v, len=%d", err, len(listA))
+	}
+	if _, err := svcA.CreateBackupForSoftware(listA[0]); err != nil {
+		t.Fatalf("CreateBackupForSoftware failed: %v", err)
+	}
+
+	// 开启相对路径模式，转换配置和 software_list.json
+	summary, err := svcA.SetRelativePathsMode(true)
+	if err != nil {
+		t.Fatalf("SetRelativePathsMode(true) failed: %v", err)
+	}
+	if summary.SettingsConverted != 1 || summary.SoftwareCount != 1 || summary.SoftwareConverted < 4 || summary.SoftwareSkipped != 0 {
+		t.Fatalf("unexpected summary: %+v", summary)
+	}
+
+	rawCfg, err := os.ReadFile(storeA.FilePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(rawCfg), rootA) {
+		t.Fatalf("expected app_data.json to contain no absolute root %q, got:\n%s", rootA, string(rawCfg))
+	}
+	archDirA, err := svcA.ResolveArchiveDirectoryPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawListA, err := os.ReadFile(filepath.Join(archDirA, softwareListFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(rawListA), rootA) {
+		t.Fatalf("expected software_list.json to contain no absolute root %q, got:\n%s", rootA, string(rawListA))
+	}
+
+	// 模拟将整个 CarryDock 文件夹拷入新电脑/U 盘路径 rootB
+	rootB := filepath.Join(t.TempDir(), "MovedUSB", "CarryDock")
+	copyDirForTest(t, rootA, rootB)
+
+	storeB := storage.NewAtBaseDir(rootB)
+	setSvcB := settings.NewService(storeB)
+	svcB := NewService(setSvcB)
+
+	wantInstallB := filepath.Join(rootB, "Apps")
+	if got := setSvcB.GetInstallPath(); got != wantInstallB {
+		t.Fatalf("GetInstallPath after move = %q, want %q", got, wantInstallB)
+	}
+
+	listB, err := svcB.LoadManagedSoftware()
+	if err != nil || len(listB) != 1 {
+		t.Fatalf("LoadManagedSoftware after move failed: %v, len=%d", err, len(listB))
+	}
+	swB := listB[0]
+	if !swB.InstallExists || !swB.ArchiveExists || !swB.IsBackupArchive {
+		t.Fatalf("expected moved software artifacts to exist under rootB, got %+v", swB)
+	}
+	if !strings.HasPrefix(swB.InstallPath, rootB) || !strings.HasPrefix(swB.ExecutablePath, rootB) ||
+		!strings.HasPrefix(swB.ArchivePath, rootB) || !strings.HasPrefix(swB.BackupPath, rootB) {
+		t.Fatalf("expected all runtime paths resolved under rootB %q, got %+v", rootB, swB)
+	}
+
+	// 在新位置新增软件与重命名目录，仍应以相对路径落盘
+	extraExe := filepath.Join(t.TempDir(), "QuickTool.exe")
+	if err := os.WriteFile(extraExe, []byte("exe"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if res := svcB.AddSoftwareFromFile(extraExe); res.Type != AddSuccess {
+		t.Fatalf("AddSoftwareFromFile after move failed: %+v", res)
+	}
+	if err := svcB.RenameSoftwareFolder(swB, "NotePadPro"); err != nil {
+		t.Fatalf("RenameSoftwareFolder after move failed: %v", err)
+	}
+
+	archDirB, _ := svcB.ResolveArchiveDirectoryPath()
+	rawListB, err := os.ReadFile(filepath.Join(archDirB, softwareListFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(rawListB), rootB) {
+		t.Fatalf("expected newly saved software_list.json under rootB to stay relative, got:\n%s", string(rawListB))
+	}
+
+	// 关闭相对路径模式，恢复为当前机器绝对路径
+	offSummary, err := svcB.SetRelativePathsMode(false)
+	if err != nil {
+		t.Fatalf("SetRelativePathsMode(false) failed: %v", err)
+	}
+	if offSummary.SettingsConverted != 1 || offSummary.SoftwareConverted == 0 {
+		t.Fatalf("unexpected disable summary: %+v", offSummary)
+	}
+	rawListBOff, _ := os.ReadFile(filepath.Join(archDirB, softwareListFileName))
+	if !strings.Contains(strings.ReplaceAll(string(rawListBOff), `\\`, `\`), rootB) {
+		t.Fatalf("expected software_list.json to contain rootB after disabling relative mode, got:\n%s", string(rawListBOff))
+	}
+}
+
+func TestInstallPathDotExcludesDataDirectory(t *testing.T) {
+	base := filepath.Join(t.TempDir(), "CarryDockPortable")
+	store := storage.NewAtBaseDir(base)
+	setSvc := settings.NewService(store)
+	if _, err := setSvc.ApplyRelativePathsMode(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := setSvc.SaveInstallPath("."); err != nil {
+		t.Fatal(err)
+	}
+	// 创建 CarryDock 自身的 data/ 目录及一个绿色软件目录
+	if err := os.MkdirAll(filepath.Join(base, "data"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(base, "MyApp"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(base, "MyApp", "myapp.exe"), []byte("exe"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := NewService(setSvc)
+	all, err := svc.GetSoftwareList()
+	if err != nil {
+		t.Fatalf("GetSoftwareList failed: %v", err)
+	}
+	for _, sw := range all {
+		if strings.EqualFold(sw.Name, "data") {
+			t.Fatalf("expected CarryDock data directory to be excluded from software list, got %+v", all)
+		}
+	}
+
+	summary, err := svc.ArchiveInstallSubdirectories(false, nil)
+	if err != nil {
+		t.Fatalf("ArchiveInstallSubdirectories failed: %v", err)
+	}
+	for _, name := range summary.Archived {
+		if strings.EqualFold(name, "data") {
+			t.Fatalf("expected CarryDock data directory not to be archived as software")
+		}
+	}
+}

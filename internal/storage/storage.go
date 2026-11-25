@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"carrydock/internal/logger"
@@ -21,6 +22,7 @@ const (
 // 同时通过进程内互斥锁与跨进程独占文件锁防止并发覆盖，并采用原子替换写入避免断电损坏。
 type JSONStorage struct {
 	mu       sync.Mutex
+	baseDir  string
 	dbPath   string
 	lockPath string
 	cache    map[string]any
@@ -41,18 +43,49 @@ func Default() *JSONStorage {
 		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 			exe = resolved
 		}
-		baseDir := filepath.Dir(exe)
-		defaultStorage = NewAtDir(filepath.Join(baseDir, dataDirName))
+		baseDir := filepath.Clean(filepath.Dir(exe))
+		if abs, absErr := filepath.Abs(baseDir); absErr == nil {
+			baseDir = abs
+		}
+		defaultStorage = NewAtBaseDir(baseDir)
 	})
 	return defaultStorage
 }
 
 // NewAtDir 在指定数据目录创建 JSONStorage 实例（便于单元测试隔离）。
 func NewAtDir(dataDir string) *JSONStorage {
+	cleanDataDir := filepath.Clean(strings.TrimSpace(dataDir))
+	if abs, err := filepath.Abs(cleanDataDir); err == nil {
+		cleanDataDir = abs
+	}
+	baseDir := cleanDataDir
+	if strings.EqualFold(filepath.Base(cleanDataDir), dataDirName) {
+		baseDir = filepath.Dir(cleanDataDir)
+	}
 	return &JSONStorage{
+		baseDir:  baseDir,
+		dbPath:   filepath.Join(cleanDataDir, dbFileName),
+		lockPath: filepath.Join(cleanDataDir, lockFileName),
+	}
+}
+
+// NewAtBaseDir 在指定程序根目录创建 JSONStorage 实例，数据目录固定位于 <baseDir>/data 下。
+func NewAtBaseDir(baseDir string) *JSONStorage {
+	cleanBase := filepath.Clean(strings.TrimSpace(baseDir))
+	if abs, err := filepath.Abs(cleanBase); err == nil {
+		cleanBase = abs
+	}
+	dataDir := filepath.Join(cleanBase, dataDirName)
+	return &JSONStorage{
+		baseDir:  cleanBase,
 		dbPath:   filepath.Join(dataDir, dbFileName),
 		lockPath: filepath.Join(dataDir, lockFileName),
 	}
+}
+
+// BaseDir 返回当前存储锚定的程序根目录（即 CarryDock.exe 所在目录）。
+func (s *JSONStorage) BaseDir() string {
+	return s.baseDir
 }
 
 // FilePath 返回 app_data.json 的绝对路径。
