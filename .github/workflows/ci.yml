@@ -72,6 +72,18 @@ jobs:
           echo "build_num=$buildNum" >> $env:GITHUB_OUTPUT
           echo "build_time=$now" >> $env:GITHUB_OUTPUT
 
+      - name: Generate Release Notes
+        id: notes
+        run: |
+          & .github/scripts/extract-changelog.ps1 `
+            -ChangelogPath "CHANGELOG.md" `
+            -Tag "${{ github.ref_name }}" `
+            -Version "${{ steps.build.outputs.version }}" `
+            -BuildNum "${{ steps.build.outputs.build_num }}" `
+            -BuildTime "${{ steps.build.outputs.build_time }}" `
+            -OutputPath "dist/release-notes.md"
+          echo "notes_file=dist/release-notes.md" >> $env:GITHUB_OUTPUT
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -85,7 +97,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           files: ${{ steps.build.outputs.zip_file }}
-          body: |
-            CarryDock Windows Release (MyGo Native UI)
-            - Version: ${{ steps.build.outputs.version }}+${{ steps.build.outputs.build_num }}
-            - Build Time: ${{ steps.build.outputs.build_time }}
+          body_path: ${{ steps.notes.outputs.notes_file }}
